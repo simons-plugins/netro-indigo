@@ -101,6 +101,10 @@ class Plugin(indigo.PluginBase):
             values_dict["SupportsTemperatureReporting"] = True
         elif type_id == "Netro":
             values_dict["SupportsBatteryLevel"] = False
+        elif type_id == "sprinkler":
+            dev_id.zoneCount = 12
+            self.logger.debug("update zone count")
+            dev_id.replaceOnServer()
         return True, values_dict
 
     ########################################
