@@ -117,4 +117,64 @@
         </States>
         <UiDisplayStateId>soilMoisture</UiDisplayStateId>
     </Device>
+    <Device type="sprinkler" id="sprinkler">
+        <Name>Netro Sprinklers</Name>
+        <ConfigUI>
+            <Field type="textfield" id="apiVersion" hidden="true">
+                <Label/>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="id">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Id</TriggerLabel>
+                <ControlPageLabel>Id</ControlPageLabel>
+            </State>
+            <State id="activeSchedule">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Active Rachio Schedule</TriggerLabel>
+                <ControlPageLabel>Active Rachio Schedule</ControlPageLabel>
+            </State>
+            <State id="address">
+                <ValueType>String</ValueType>
+                <TriggerLabel>MAC Address</TriggerLabel>
+                <ControlPageLabel>MAC Address</ControlPageLabel>
+            </State>
+            <State id="model">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Model</TriggerLabel>
+                <ControlPageLabel>Model</ControlPageLabel>
+            </State>
+            <State id="name">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Name</TriggerLabel>
+                <ControlPageLabel>Name</ControlPageLabel>
+            </State>
+            <State id="inStandbyMode">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>In Standby Mode</TriggerLabel>
+                <ControlPageLabel>In Standby Mode</ControlPageLabel>
+            </State>
+            <State id="paused">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>Paused</TriggerLabel>
+                <ControlPageLabel>Paused</ControlPageLabel>
+            </State>
+            <State id="scheduleModeType">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Schedule Mode Type</TriggerLabel>
+                <ControlPageLabel>Schedule Mode Type</ControlPageLabel>
+            </State>
+            <State id="serialNumber">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Serial Number</TriggerLabel>
+                <ControlPageLabel>Serial Number</ControlPageLabel>
+            </State>
+            <State id="status">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Status</TriggerLabel>
+                <ControlPageLabel>Status</ControlPageLabel>
+            </State>
+        </States>
+    </Device>
 </Devices>

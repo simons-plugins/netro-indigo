@@ -44,7 +44,7 @@ class Plugin(indigo.PluginBase):
                     #testing
                     self.logger.debug(u"Device ID: " + dev.address)
                     self.serialNo = str(dev.address)
-                    self.refreshDelay = int(dev.ownerProps["refresh"]) * 60
+
                     self.logger.debug("testing testing")
                     #Whisperer Sensor Device Updates
                     if dev.deviceTypeId == "Whisperer":
@@ -53,7 +53,9 @@ class Plugin(indigo.PluginBase):
 
                             #debug
                             self.logger.debug("devCustomStates")
-                            self.logger.debug(sensorValuesLatest)
+                            self.refreshDelay = int(dev.ownerProps["refresh"]) * 60
+
+                            #self.logger.debug(sensorValuesLatest)
                             indigo.debugger()
                             self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
                             if dev.onState is not None:
@@ -76,15 +78,16 @@ class Plugin(indigo.PluginBase):
                     elif dev.deviceTypeId == "Netro":
                         controllerValuesLatest = self.callControllerAPI(self.serialNo)
                         self.logger.debug("devCustomStates")
+                        self.refreshDelay = int(dev.ownerProps["refresh"]) * 60
                         self.logger.debug(controllerValuesLatest)
                         indigo.debugger()
                         self.cd_key_val_list = controllerValuesLatest['controllerKeyValuesList']
                         dev.updateStatesOnServer(self.cd_key_val_list)
-                    elif dev.onState is not None:
-                        dev.updateStateOnServer("onOffState", not dev.onState)
-                        dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
-                    else:
-                        dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
+                        if dev.onState is not None:
+                            dev.updateStateOnServer("onOffState", not dev.onState)
+                            dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
+                        else:
+                            dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
                 self.sleep(int(self.refreshDelay))
         except self.StopThread:
             pass  # Optionally catch the StopThread exception and do any needed cleanup.
@@ -103,6 +106,10 @@ class Plugin(indigo.PluginBase):
     ########################################
     def deviceStartComm(self, dev):
         # Called when communication with the hardware should be started.
+        if dev.deviceTypeId == "sprinkler":
+            dev.zoneCount = 12
+            self.logger.debug("update zone count")
+            dev.replaceOnServer()
         pass
 
     def deviceStopComm(self, dev):
@@ -174,6 +181,8 @@ class Plugin(indigo.PluginBase):
         # self.logger.info(u"Latest sensor #readings"+currentReading)
         return self.controllerInfo
 
+    #def zonesUpdate(self):
+        #self.cd_jzones
 
     def callSchedulesAPI(self, serial):
         self.sh_urlData = "http://api.netrohome.com/npa/v1/schedules.json?key=" + serial
