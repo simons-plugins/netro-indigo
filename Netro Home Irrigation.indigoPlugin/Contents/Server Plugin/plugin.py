@@ -154,8 +154,9 @@ class Plugin(indigo.PluginBase):
         self.cd_jdata = self.cd_jsonData['data']
         self.cd_jmeta = self.cd_jsonData['meta']
         self.cd_jdevice = self.cd_jdata['device']
-        self.cd_jzones = self.cd_jdevice['zones']
+        self.cd_jzones = self.cd_jdevice['zones']  #zone details
         self.cd_status = self.cd_jsonData['status']
+
         self.cd_key_values = [
             {'key': 'status', 'value': self.cd_jsonData['status']},
             {'key': 'token_remaining', 'value': self.cd_jmeta['token_remaining']},
@@ -164,6 +165,7 @@ class Plugin(indigo.PluginBase):
             {'key': 'software_version', 'value': self.cd_jdevice['sw_version']},
             {'key': 'zone_num', 'value': self.cd_jdevice['zone_num']}
         ]
+
         self.controllerInfo = dict()
         self.controllerInfo['controllerStatus'] = self.cd_jsonData['status']
         self.controllerInfo['controllerMeta'] = self.cd_jsonData['meta']
