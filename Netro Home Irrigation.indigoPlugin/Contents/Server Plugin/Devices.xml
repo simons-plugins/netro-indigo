@@ -1,0 +1,120 @@
+<?xml version="1.0"?>
+
+<Devices>
+    <Device type="sensor" subType="kSensorDeviceSubType.Humidity, ui=Plant Moisture Sensor"  id="Whisperer">
+        <Name>Whisperer Plant Sensor</Name>
+        <ConfigUI>
+            <Field id="address" type="textfield" defaultValue="98cdac4896c4">
+                <Label>Serial Number:</Label>
+            </Field>
+            <Field id="refresh" type="textfield" defaultValue="60">
+                <Label>Refresh Interval (mins):</Label>
+            </Field>
+            <Field id="SupportsOnState" type="checkbox" defaultValue="false">
+                <Label>Show ON/OFF state:</Label>
+            </Field>
+            <Field id="SupportsSensorValue" type="checkbox" defaultValue="true">
+                <Label>Show sensor value state:</Label>
+            </Field>
+            <Field id="SupportsStatusRequest" type="checkbox" defaultValue="true">
+                <Label>Enable status request / refresh button:</Label>
+            </Field>
+
+        </ConfigUI>
+        <States>
+            <State id="humidity">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Humidity</TriggerLabel>
+                <ControlPageLabel>Humidity</ControlPageLabel>
+            </State>
+            <State id="temperature">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Temperature</TriggerLabel>
+                <ControlPageLabel>Temperature</ControlPageLabel>
+            </State>
+            <State id="soilTemperature">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Soil Temperature</TriggerLabel>
+                <ControlPageLabel>Soil Temperature</ControlPageLabel>
+            </State>
+            <State id="soilMoisture">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Soil Moisture</TriggerLabel>
+                <ControlPageLabel>Soil Moisture</ControlPageLabel>
+            </State>
+            <State id="sunlight">
+                <ValueType>Number</ValueType>
+                <TriggerLabel>Sunlight (lux)</TriggerLabel>
+                <ControlPageLabel>Sunlight (lux)</ControlPageLabel>
+            </State>
+            <State id="readingID">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Sensor Reading ID</TriggerLabel>
+                <ControlPageLabel>Sensor Reading ID</ControlPageLabel>
+            </State>
+            <State id="readingTime">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor Reading Time</TriggerLabel>
+                <ControlPageLabel>Sensor Reading ID</ControlPageLabel>
+            </State>
+            <State id="readingLocalDate">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor Reading Local Date</TriggerLabel>
+                <ControlPageLabel>Sensor Reading Local Date</ControlPageLabel>
+            </State>
+            <State id="readingLocalTime">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor Reading Local Time</TriggerLabel>
+                <ControlPageLabel>Sensor Reading Local Time</ControlPageLabel>
+            </State>
+        </States>
+        <UiDisplayStateId>soilMoisture</UiDisplayStateId>
+    </Device>
+    <Device type="relay" id="Netro">
+        <Name>Netro Irrigation Controller</Name>
+        <ConfigUI>
+            <Field id="address" type="textfield" defaultValue="a4cf12b8d5e2">
+                <Label>Serial Number:</Label>
+            </Field>
+            <Field id="refresh" type="textfield" defaultValue="60">
+                <Label>Refresh Interval (mins):</Label>
+            </Field>
+            <Field id="SupportsStatusRequest" type="checkbox" defaultValue="true">
+                <Label>Enable status request / refresh button:</Label>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="status">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Netro Status</TriggerLabel>
+                <ControlPageLabel>Netro Status</ControlPageLabel>
+            </State>
+            <State id="token_remaining">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>API Tokens Remaining</TriggerLabel>
+                <ControlPageLabel>API Tokens Remaining</ControlPageLabel>
+            </State>
+            <State id="last_active">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Last Active Time</TriggerLabel>
+                <ControlPageLabel>Last Active Time</ControlPageLabel>
+            </State>
+            <State id="name">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Controller Name</TriggerLabel>
+                <ControlPageLabel>Controller Name</ControlPageLabel>
+            </State>
+            <State id="software_version">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Controller Software Version</TriggerLabel>
+                <ControlPageLabel>Controller Software Version</ControlPageLabel>
+            </State>
+            <State id="zone_num">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Total Zones</TriggerLabel>
+                <ControlPageLabel>Total Zones</ControlPageLabel>
+            </State>
+        </States>
+        <UiDisplayStateId>soilMoisture</UiDisplayStateId>
+    </Device>
+</Devices>
