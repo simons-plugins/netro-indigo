@@ -4,13 +4,16 @@
 # Copyright (c) 2022, Perceptive Automation, LLC. All rights reserved.
 # https://www.indigodomo.com
 
-import indigo
+# ============================== Native Imports ===============================
 import urllib.request
 import json
 
-import os
-import sys
-import random
+# ============================== Custom Imports ===============================
+try:
+    # noinspection PyUnresolvedReferences
+    import indigo
+except ImportError:
+    pass
 
 # Change to allow pycharm testing without indigo module
 
@@ -112,7 +115,7 @@ class Plugin(indigo.PluginBase):
             self.data = self.openUrl.read()
             self.jsonData = json.loads(self.data)
         else:
-            print("Error receiving data", openUrl.getcode())
+            print("Error receiving data", self.openUrl.getcode())
         return self.jsonData
 
     def callSensorAPI(self, serial):
@@ -171,16 +174,16 @@ class Plugin(indigo.PluginBase):
 
 
     def callSchedulesAPI(self, serial):
-        urlData = "http://api.netrohome.com/npa/v1/schedules.json?key=" + serial
-        jsonData = getResponse(urlData)
+        self.sh_urlData = "http://api.netrohome.com/npa/v1/schedules.json?key=" + serial
+        self.sh_jsonData = self.getResponse(self.sh_urlData)
         # print the state id and state name corresponding
-        jdata = jsonData['data']
-        jmeta = jsonData['meta']
-        jschedules = jdata['schedules']
+        self.sh_jdata = self.sh_jsonDatajsonData['data']
+        self.sh_jmeta = self.sh_jsonData['meta']
+        self.sh_jschedules = self.sh_jdata['schedules']
         # need to bucket each zone schedules into their own dicts
-        status = jsonData['status']
-        print(status)
-        jschedules.sort(key=lambda x: x.get('id'), reverse=False)
+        self.sh_status = self.sh_jsonData['status']
+        print(self.sh_status)
+        self.sh_jschedules.sort(key=lambda x: x.get('id'), reverse=False)
 
 
     #######################
