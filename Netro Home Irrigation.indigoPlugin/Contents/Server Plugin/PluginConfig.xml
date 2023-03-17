@@ -27,6 +27,22 @@
 			<Option value="50">Critical Errors Only</Option>
 		</List>
 	</Field>
+	<Field id="pollingInterval" type="textfield" defaultValue="3">
+        <Label>Polling interval:</Label>
+    </Field>
+	<Field id="pollingIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+		<Label>Number of minutes to wait between polling Rachio for the status of your controller. 3 minutes is the minimum, but you may need to make it larger if you have multiple controllers to avoid Rachio rate limits.</Label>
+	</Field>
+    <Field id="apiCallTimeout" type="textfield" defaultValue="5">
+        <Label>API call timeout:</Label>
+    </Field>
+	<Field id="apiCallTimeoutLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+		<Label>Number of seconds to wait for the API to reply before continuing. You probably don't need to adjust this unless instructed by support.</Label>
+	</Field>
+    <Field id="sep3" type="separator"/>
+    <Field id="maxZoneRunTime" type="textfield" defaultValue="10800">
+        <Label>Max Run Time per Zone</Label>
+    </Field>
 
 	<Field id="pluginLogLevel" type="menu" defaultValue="20" alwaysUseInDialogHeightCalc="true">
 		<Label>Logging Level - Plugin Event Log:</Label>

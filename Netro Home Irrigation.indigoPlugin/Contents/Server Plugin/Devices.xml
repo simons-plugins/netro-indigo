@@ -70,7 +70,7 @@
         </States>
         <UiDisplayStateId>soilMoisture</UiDisplayStateId>
     </Device>
-    <Device type="relay" id="Netro">
+    <Device type="sprinkler" id="Netro">
         <Name>Netro Irrigation Controller</Name>
         <ConfigUI>
             <Field id="address" type="textfield" defaultValue="a4cf12b8d5e2">
@@ -81,6 +81,13 @@
             </Field>
             <Field id="SupportsStatusRequest" type="checkbox" defaultValue="true">
                 <Label>Enable status request / refresh button:</Label>
+            </Field>
+            <Field id="SupportsOnState" type="checkbox" defaultValue="true">
+                <Label>Show ON/OFF state:</Label>
+            </Field>
+            <Field type="checkbox" id="OverrideScheduleActions" defaultValue="false">
+                <Label>Override schedule actions:</Label>
+                <Description>Plugin overrides high-level actions</Description>
             </Field>
         </ConfigUI>
         <States>
@@ -109,46 +116,25 @@
                 <TriggerLabel>Controller Software Version</TriggerLabel>
                 <ControlPageLabel>Controller Software Version</ControlPageLabel>
             </State>
-            <State id="zone_num">
+            <State id="NumZones">
                 <ValueType>String</ValueType>
                 <TriggerLabel>Total Zones</TriggerLabel>
                 <ControlPageLabel>Total Zones</ControlPageLabel>
-            </State>
-        </States>
-        <UiDisplayStateId>soilMoisture</UiDisplayStateId>
-    </Device>
-    <Device type="sprinkler" id="sprinkler">
-        <Name>Netro Sprinklers</Name>
-        <ConfigUI>
-            <Field type="textfield" id="apiVersion" hidden="true">
-                <Label/>
-            </Field>
-        </ConfigUI>
-        <States>
-            <State id="id">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Id</TriggerLabel>
-                <ControlPageLabel>Id</ControlPageLabel>
             </State>
             <State id="activeSchedule">
                 <ValueType>String</ValueType>
                 <TriggerLabel>Active Rachio Schedule</TriggerLabel>
                 <ControlPageLabel>Active Rachio Schedule</ControlPageLabel>
             </State>
-            <State id="address">
-                <ValueType>String</ValueType>
-                <TriggerLabel>MAC Address</TriggerLabel>
-                <ControlPageLabel>MAC Address</ControlPageLabel>
-            </State>
             <State id="model">
                 <ValueType>String</ValueType>
                 <TriggerLabel>Model</TriggerLabel>
                 <ControlPageLabel>Model</ControlPageLabel>
             </State>
-            <State id="name">
+            <State id="ZoneNames">
                 <ValueType>String</ValueType>
-                <TriggerLabel>Name</TriggerLabel>
-                <ControlPageLabel>Name</ControlPageLabel>
+                <TriggerLabel>Zone Names</TriggerLabel>
+                <ControlPageLabel>Zone Names</ControlPageLabel>
             </State>
             <State id="inStandbyMode">
                 <ValueType>Boolean</ValueType>

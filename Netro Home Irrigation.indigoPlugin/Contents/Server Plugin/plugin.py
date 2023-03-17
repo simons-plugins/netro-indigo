@@ -7,6 +7,7 @@
 # ============================== Native Imports ===============================
 import urllib.request
 import json
+import copy
 
 # ============================== Custom Imports ===============================
 try:
@@ -101,19 +102,15 @@ class Plugin(indigo.PluginBase):
             values_dict["SupportsTemperatureReporting"] = True
         elif type_id == "Netro":
             values_dict["SupportsBatteryLevel"] = False
-        elif type_id == "sprinkler":
-            dev_id.zoneCount = 12
-            self.logger.debug("update zone count")
-            dev_id.replaceOnServer()
+
+
+
+
         return True, values_dict
 
     ########################################
     def deviceStartComm(self, dev):
         # Called when communication with the hardware should be started.
-        if dev.deviceTypeId == "sprinkler":
-            dev.zoneCount = 12
-            self.logger.debug("update zone count")
-            dev.replaceOnServer()
         pass
 
     def deviceStopComm(self, dev):
@@ -137,6 +134,7 @@ class Plugin(indigo.PluginBase):
         self.sensorReadings = self.jdata['sensor_data']
         self.sensorReadings.sort(key=lambda x: x.get('id'), reverse=True)
         self.devStates=self.sensorReadings[0]
+        self.logger.debug(self.devStates)
         indigo.debugger()
         self.key_values_list = [
             {'key': 'sensorValue', 'value': self.devStates['moisture'], 'uiValue':  f"{self.devStates['moisture']:.1f} %"},
@@ -148,6 +146,7 @@ class Plugin(indigo.PluginBase):
             {'key': 'readingTime', 'value': self.devStates['time']},
             {'key': 'readingLocalDate', 'value': self.devStates['local_time']},
             {'key': 'readingLocalTime', 'value': self.devStates['local_date']},
+            {'key': 'supportsOnState', 'value': 'true'},
             {'key': 'batteryLevel', 'value': self.devStates['battery_level']}
         ]
         self.sensorValues = dict()
@@ -160,6 +159,7 @@ class Plugin(indigo.PluginBase):
 
     def callControllerAPI(self, serial):
         self.cd_urlData = "http://api.netrohome.com/npa/v1/info.json?key=" + serial
+        self.logger.debug(self.cd_urlData)
         self.cd_jsonData = self.getResponse(self.cd_urlData)
         # print the state id and state name corresponding
         self.cd_jdata = self.cd_jsonData['data']
@@ -183,6 +183,20 @@ class Plugin(indigo.PluginBase):
         self.controllerInfo['controllerDevice'] = self.cd_jdata['device']
         self.controllerInfo['controllerKeyValuesList'] = self.cd_key_values
         # self.logger.info(u"Latest sensor #readings"+currentReading)
+
+
+        for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled]:
+            if dev.deviceTypeId == "sprinkler":
+                maxZoneDurations = 60
+                activeScheduleName = 'lawn'
+                props = copy.deepcopy(dev.pluginProps)
+
+                props["NumZones"] = 4
+                #props["ZoneNames"] = ['garden','lawn','front','veg bed']
+                #props["MaxZoneDurations"] = maxZoneDurations
+                #if activeScheduleName:props["ScheduledZoneDurations"] = activeScheduleName
+                #dev.replacePluginPropsOnServer(props)
+
         return self.controllerInfo
 
     #def zonesUpdate(self):
