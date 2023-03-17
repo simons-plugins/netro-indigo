@@ -1,37 +1,16 @@
 <?xml version="1.0"?>
 <PluginConfig>
-    <SupportURL>https://forums.indigodomo.com/</SupportURL>
-    <Field id="description" type="label">
-        <Label>This Plugin links to the Netro Home Irrigation Controller. </Label>
+    <Field id="topLabel" type="label">
+        <Label>To use the Netro Plugin, you need to enter your controller serial number, which is found in the Netro  app </Label>
     </Field>
-    <Field id="copyright" type="label">
-        <Label>Copyright © 2023 Simon</Label>
+    <Field id="accessToken" type="textfield">
+        <Label>Serial Number:</Label>
     </Field>
-
-	<Field id="space-1" type="label" alwaysUseInDialogHeightCalc="true"><Label/></Field>
-
-    <Field id="separator-1" type="separator" alwaysUseInDialogHeightCalc="true"/>
-	<Field id="header-1" type="label" alwaysUseInDialogHeightCalc="true" fontColor="green">
-        <Label>PLUGIN / INDIGO EVENT LOG LOGGING</Label>
-    </Field>
-
-	<Field id="space-7" type="label" alwaysUseInDialogHeightCalc="true"><Label/></Field>
-
-	<Field id="eventLogLevel" type="menu" defaultValue="20" alwaysUseInDialogHeightCalc="true">
-		<Label>Logging Level - Indigo Event Log:</Label>
-		<List>
-			<Option value="10">Debug Messages</Option>
-			<Option value="20">Informational Messages</Option>
-			<Option value="30">Warning Messages</Option>
-			<Option value="40">Error Messages</Option>
-			<Option value="50">Critical Errors Only</Option>
-		</List>
-	</Field>
-	<Field id="pollingInterval" type="textfield" defaultValue="3">
+    <Field id="pollingInterval" type="textfield" defaultValue="3">
         <Label>Polling interval:</Label>
     </Field>
 	<Field id="pollingIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
-		<Label>Number of minutes to wait between polling Rachio for the status of your controller. 3 minutes is the minimum, but you may need to make it larger if you have multiple controllers to avoid Rachio rate limits.</Label>
+		<Label>Number of minutes to wait between polling Netro for the status of your controller. 2 minutes is the default, there are 2000 calls allowed in a day, you can call more frequently if prepared to have periods with no updates until your tokens refresh.</Label>
 	</Field>
     <Field id="apiCallTimeout" type="textfield" defaultValue="5">
         <Label>API call timeout:</Label>
@@ -40,25 +19,7 @@
 		<Label>Number of seconds to wait for the API to reply before continuing. You probably don't need to adjust this unless instructed by support.</Label>
 	</Field>
     <Field id="sep3" type="separator"/>
-    <Field id="maxZoneRunTime" type="textfield" defaultValue="10800">
+    <Field id="maxZoneRunTime" type="textfield" defaultValue="3600">
         <Label>Max Run Time per Zone</Label>
     </Field>
-
-	<Field id="pluginLogLevel" type="menu" defaultValue="20" alwaysUseInDialogHeightCalc="true">
-		<Label>Logging Level - Plugin Event Log:</Label>
-		<List>
-			<Option value="10">Debug Messages</Option>
-			<Option value="20">Informational Messages</Option>
-			<Option value="30">Warning Messages</Option>
-			<Option value="40">Error Messages</Option>
-			<Option value="50">Critical Errors Only</Option>
-		</List>
-	</Field>
-
-	<Field id="space-8" type="label" alwaysUseInDialogHeightCalc="true"><Label/></Field>
-
-	<Field id="space-9" type="label" alwaysUseInDialogHeightCalc="true"><Label/></Field>
-
-    <Field id="separator-4" type="separator" alwaysUseInDialogHeightCalc="true"/>
-
-</PluginConfig>
+ </PluginConfig>

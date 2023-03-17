@@ -2,24 +2,31 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>PluginVersion</key>
-    <string>2022.0.1</string>
-    <key>ServerApiVersion</key>
-    <string>3.0</string>
+	<key>PluginVersion</key>
+	<string>2022.0.2</string>
+	<key>ServerApiVersion</key>
+	<string>3.0</string>
 	<key>IwsApiVersion</key>
 	<string>1.0.0</string>
 	<key>CFBundleDisplayName</key>
-	<string>Netro Home Irrigation</string>
+	<string>Netro Sprinklers</string>
 	<key>CFBundleIdentifier</key>
-	<string>com.indigosimon.Netro</string>
+	<string>com.simons-plugins.netro</string>
 	<key>CFBundleVersion</key>
-	<string>1.0.0</string>
+	<string>1.0.1</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>https://wiki.indigodomo.com/doku.php?id=plugins:example_dev_sensor_1</string>
+			<string>https://github.com/simons-plugins/netro-indigo</string>
 		</dict>
 	</array>
+	<key>GithubInfo</key>
+	<dict>
+		<key>GithubRepo</key>
+		<string>Netro-indigo</string>
+		<key>GithubUser</key>
+		<string>IndigoDomotics</string>
+	</dict>
 </dict>
 </plist>
