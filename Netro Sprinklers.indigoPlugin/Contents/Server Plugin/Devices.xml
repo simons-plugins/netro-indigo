@@ -1,0 +1,230 @@
+<?xml version="1.0"?>
+<!-- If your plugin defines device types, you can define them here.-->
+
+<Devices>
+    <!-- This device illustrates how a plugin can inherit Indigo's sprinkler
+    device behavior including active zone states, and sprinkler actions, and
+    will support Indigo and Indigo Touch's native UI for sprinkler type devices.
+    -->
+    <Device type="sprinkler" id="sprinkler">
+        <Name>Netro Sprinkler Controller</Name>
+        <ConfigUI>
+            <!-- The ConfigUI here is just an example of the type of device
+            specific UI that might be needed. Here you might specify a text
+            field for an IP address, a serial port popup, or other device
+            specific options.
+            -->
+            <Field type="menu" id="id">
+                <Label>Device:</Label>
+                <List class="self" method="availableControllers"/>
+            </Field>
+            <Field type="menu" id="units" defaultValue="US">
+                <Label>Weather units in:</Label>
+                <List>
+                    <Option value="US">US</Option>
+                    <Option value="METRIC">Metric</Option>
+                </List>
+            </Field>
+            <Field type="checkbox" id="PumpControlOn" defaultValue="false" hidden="true">
+                <Label/>
+            </Field>
+            <Field type="textfield" id="apiVersion" hidden="true">
+                <Label/>
+            </Field>
+            <Field type="checkbox" id="supportsOnState" defaultValue="true" hidden="true">
+                <Label/>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="serial">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Id</TriggerLabel>
+                <ControlPageLabel>Id</ControlPageLabel>
+            </State>
+            <State id="id">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Id</TriggerLabel>
+                <ControlPageLabel>Id</ControlPageLabel>
+            </State>
+            <State id="token_remaining">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Tokens Remaining</TriggerLabel>
+                <ControlPageLabel>Tokens Remaining</ControlPageLabel>
+            </State>
+            <State id="token_reset">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Token reset time</TriggerLabel>
+                <ControlPageLabel>Token reset time</ControlPageLabel>
+            </State>
+            <State id="api_version">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>API Version</TriggerLabel>
+                <ControlPageLabel>API Version</ControlPageLabel>
+            </State>
+            <State id="time">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Refresh time</TriggerLabel>
+                <ControlPageLabel>Refresh time</ControlPageLabel>
+            </State>
+            <State id="last_active">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Last Active Time</TriggerLabel>
+                <ControlPageLabel>Last Active Time</ControlPageLabel>
+            </State>
+            <State id="activeSchedule">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Active Netro Schedule</TriggerLabel>
+                <ControlPageLabel>Active Netro Schedule</ControlPageLabel>
+            </State>
+            <State id="address">
+                <ValueType>String</ValueType>
+                <TriggerLabel>MAC Address</TriggerLabel>
+                <ControlPageLabel>MAC Address</ControlPageLabel>
+            </State>
+            <State id="model">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Model</TriggerLabel>
+                <ControlPageLabel>Model</ControlPageLabel>
+            </State>
+            <State id="name">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Name</TriggerLabel>
+                <ControlPageLabel>Name</ControlPageLabel>
+            </State>
+            <State id="inStandbyMode">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>In Standby Mode</TriggerLabel>
+                <ControlPageLabel>In Standby Mode</ControlPageLabel>
+            </State>
+            <State id="paused">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>Paused</TriggerLabel>
+                <ControlPageLabel>Paused</ControlPageLabel>
+            </State>
+            <State id="scheduleModeType">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Schedule Mode Type</TriggerLabel>
+                <ControlPageLabel>Schedule Mode Type</ControlPageLabel>
+            </State>
+            <State id="serialNumber">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Serial Number</TriggerLabel>
+                <ControlPageLabel>Serial Number</ControlPageLabel>
+            </State>
+            <State id="status">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Status</TriggerLabel>
+                <ControlPageLabel>Status</ControlPageLabel>
+            </State>
+        </States>
+    </Device>
+    <Device type="sensor" subType="kSensorDeviceSubType.Humidity, ui=Plant Moisture Sensor"  id="Whisperer">
+        <Name>Whisperer Plant Sensor</Name>
+        <ConfigUI>
+            <Field id="address" type="textfield" defaultValue="98cdac4896c4">
+                <Label>Serial Number:</Label>
+            </Field>
+            <Field id="refresh" type="textfield" defaultValue="60">
+                <Label>Refresh Interval (mins):</Label>
+            </Field>
+            <Field id="SupportsOnState" type="checkbox" defaultValue="false">
+                <Label>Show ON/OFF state:</Label>
+            </Field>
+            <Field id="SupportsSensorValue" type="checkbox" defaultValue="true">
+                <Label>Show sensor value state:</Label>
+            </Field>
+            <Field id="SupportsStatusRequest" type="checkbox" defaultValue="true">
+                <Label>Enable status request / refresh button:</Label>
+            </Field>
+
+        </ConfigUI>
+        <States>
+            <State id="humidity">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Humidity</TriggerLabel>
+                <ControlPageLabel>Humidity</ControlPageLabel>
+            </State>
+            <State id="temperature">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Temperature</TriggerLabel>
+                <ControlPageLabel>Temperature</ControlPageLabel>
+            </State>
+            <State id="soilTemperature">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Soil Temperature</TriggerLabel>
+                <ControlPageLabel>Soil Temperature</ControlPageLabel>
+            </State>
+            <State id="soilMoisture">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Soil Moisture</TriggerLabel>
+                <ControlPageLabel>Soil Moisture</ControlPageLabel>
+            </State>
+            <State id="sunlight">
+                <ValueType>Number</ValueType>
+                <TriggerLabel>Sunlight (lux)</TriggerLabel>
+                <ControlPageLabel>Sunlight (lux)</ControlPageLabel>
+            </State>
+            <State id="readingID">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Sensor Reading ID</TriggerLabel>
+                <ControlPageLabel>Sensor Reading ID</ControlPageLabel>
+            </State>
+            <State id="readingTime">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor Reading Time</TriggerLabel>
+                <ControlPageLabel>Sensor Reading ID</ControlPageLabel>
+            </State>
+            <State id="readingLocalDate">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor Reading Local Date</TriggerLabel>
+                <ControlPageLabel>Sensor Reading Local Date</ControlPageLabel>
+            </State>
+            <State id="readingLocalTime">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor Reading Local Time</TriggerLabel>
+                <ControlPageLabel>Sensor Reading Local Time</ControlPageLabel>
+            </State>
+            <State id="id">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor id</TriggerLabel>
+                <ControlPageLabel>Sensor id</ControlPageLabel>
+            </State>
+            <State id="serial">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor id</TriggerLabel>
+                <ControlPageLabel>Sensor id</ControlPageLabel>
+            </State>
+            <State id="token_remaining">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Sensor id</TriggerLabel>
+                <ControlPageLabel>Sensor id</ControlPageLabel>
+            </State>
+            <State id="last_active">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor id</TriggerLabel>
+                <ControlPageLabel>Sensor id</ControlPageLabel>
+            </State>
+            <State id="token_reset">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor id</TriggerLabel>
+                <ControlPageLabel>Sensor id</ControlPageLabel>
+            </State>
+            <State id="time">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor id</TriggerLabel>
+                <ControlPageLabel>Sensor id</ControlPageLabel>
+            </State>
+            <State id="api_last_active">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor id</TriggerLabel>
+                <ControlPageLabel>Sensor id</ControlPageLabel>
+            </State>
+            <State id="sensor_last_active">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Sensor id</TriggerLabel>
+                <ControlPageLabel>Sensor id</ControlPageLabel>
+            </State>
+        </States>
+        <UiDisplayStateId>soilMoisture</UiDisplayStateId>
+    </Device>
+</Devices>
