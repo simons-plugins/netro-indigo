@@ -25,14 +25,14 @@ THROTTLE_LIMIT_TIMER = 61  # number of minutes to wait if we've received a throt
 FORECAST_UPDATE_INTERVAL = 60  # minutes between forecast updates
 
 API_URL = "http://api.netrohome.com/npa/v{apiVersion}/info.json?key="
-PERSON_URL = API_URL +  "a4cf12b8d5e2"
+PERSON_URL = API_URL + "{deviceId}"
 PERSON_INFO_URL = PERSON_URL.format(apiVersion=NETRO_API_VERSION, personId="")
 DEVICE_BASE_URL = API_URL + ""
-DEVICE_GET_URL = DEVICE_BASE_URL + "a4cf12b8d5e2"
-DEVICE_CURRENT_SCHEDULE_URL = "http://api.netrohome.com/npa/v{apiVersion}/schedules.json?key=a4cf12b8d5e2"
+DEVICE_GET_URL = DEVICE_BASE_URL + "{deviceId}"
+DEVICE_CURRENT_SCHEDULE_URL = "http://api.netrohome.com/npa/v{apiVersion}/schedules.json?key=" + "{deviceId}"
 DEVICE_STOP_WATERING_URL = DEVICE_BASE_URL + "stop_water"
-DEVICE_TURN_OFF_URL = DEVICE_BASE_URL + "off"
-DEVICE_TURN_ON_URL = DEVICE_BASE_URL + "on"
+DEVICE_TURN_OFF_URL = "http://api.netrohome.com/npa/v{apiVersion}/set_status.json?key=" + "{deviceId}"
+DEVICE_TURN_ON_URL = "http://api.netrohome.com/npa/v{apiVersion}/set_status.json?key=" + "{deviceId}"
 DEVICE_GET_FORECAST_URL = DEVICE_GET_URL + "/forecast?units={units}"
 ZONE_URL = API_URL + "zone/"
 ZONE_START_URL = ZONE_URL + "start"
@@ -233,7 +233,7 @@ class Plugin(indigo.PluginBase):
                 #block below for Netro device dicts
                 '''
                 try:
-                    indigo.debugger()
+                    #indigo.debugger()
                     reply_dict = self._make_api_call(PERSON_URL.format(apiVersion=NETRO_API_VERSION, personId=self.access_token))
                     
                     reply_dict_data = reply_dict["data"]
@@ -265,7 +265,7 @@ class Plugin(indigo.PluginBase):
                     self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                     self._fireTrigger("personInfoCall")
                     return
-                indigo.debugger()
+                #indigo.debugger()
                 #self.logger.debug(type(self.person["device"]))
                 current_device_uuids = [s.states["id"] for s in indigo.devices.iter(filter="self.sprinkler")]
                 self.unused_devices = {dev_dict["id"]: dev_dict for dev_dict in self.person["devices"] if
@@ -276,10 +276,10 @@ class Plugin(indigo.PluginBase):
                                    dev_dict["id"] in current_device_uuids]
 
                 for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled]:
-                    indigo.debugger()
+                   # indigo.debugger()
                     # Update defined Netro controllers
                     for dev_dict in defined_devices:
-                        indigo.debugger()
+                        #indigo.debugger()
                         # Find the matching update dict for the device
                         if dev_dict["id"] == dev.states["id"]:
                             # Update any changed information for the device - we only look at the data that may change
@@ -412,7 +412,7 @@ class Plugin(indigo.PluginBase):
 
 
     def callSensorAPI(self, serial):
-        indigo.debugger()
+       # indigo.debugger()
         urlData = "http://api.netrohome.com/npa/v1/sensor_data.json?key=" + serial
         self.logger.debug(urlData)
         jsonData = self.getResponse(urlData)
@@ -422,7 +422,7 @@ class Plugin(indigo.PluginBase):
         sensorReadings.sort(key=lambda x: x.get('id'), reverse=True)
         devStates=sensorReadings[0]
         self.logger.debug(devStates)
-        indigo.debugger()
+       # indigo.debugger()
         key_values_list = [
             {'key': 'sensorValue', 'value': devStates['moisture'], 'uiValue':  f"{devStates['moisture']:.1f} %"},
             {'key': 'humidity', 'value': devStates['moisture']},
@@ -510,11 +510,14 @@ class Plugin(indigo.PluginBase):
         self.logger.threaddebug(f"validateDeviceConfigUi")
         if typeId == "Whisperer":
             valuesDict["SupportsBatteryLevel"] = True
+            valuesDict["SupportsOnState"] = True
             valuesDict["NumTemperatureInputs"] = 1
             valuesDict["NumHumidityInputs"] = 1
             valuesDict["SupportsTemperatureReporting"] = True
             valuesDict["configured"] = True
         else:
+            if typeId = "Sprinkler"
+                valuesDict["SupportsOnState"] = True
             if devId:
                 dev = indigo.devices[devId]
                 if dev.pluginProps.get("id", None) != valuesDict["id"]:
@@ -573,7 +576,7 @@ class Plugin(indigo.PluginBase):
         if not dev.pluginProps["configured"]:
             # Get the full device info and update the newly created device
             dev_dict = self.unused_devices.get(dev.pluginProps["id"], None)
-            indigo.debugger()
+            #indigo.debugger()
             if dev_dict:
                 # Update all the states here
                 if dev_dict["status"] == "ONLINE":
@@ -637,7 +640,7 @@ class Plugin(indigo.PluginBase):
                     dev.updateStatesOnServer(update_list)
 
                 # Update zone information as necessary - these are properties, not states.
-                indigo.debugger()
+                #indigo.debugger()
                 zoneNames = ""
                 maxZoneDurations = ""
                 for zone in sorted(dev_dict["zones"], key=itemgetter('ith')):
@@ -654,6 +657,7 @@ class Plugin(indigo.PluginBase):
                     props["ScheduledZoneDurations"] = activeScheduleName
                 props["configured"] = True
                 props["apiVersion"] = NETRO_API_VERSION
+                props["supportsOnState"]= True
                 dev.replacePluginPropsOnServer(props)
 
             else:
@@ -665,7 +669,7 @@ class Plugin(indigo.PluginBase):
             if dev.sensorValue is not None:
                 sensorValuesLatest = self.callSensorAPI(self.serialNo)
                 self.refreshDelay = int(dev.ownerProps["refresh"]) * 60
-                indigo.debugger()
+
                 self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
                 if dev.onState is not None:
                     self.key_val_list.append({'key': 'onOffState', 'value': not dev.onState})
@@ -840,15 +844,19 @@ class Plugin(indigo.PluginBase):
     ########################################
     def setStandbyMode(self, pluginAction, dev):
         try:
-            data = {
-                "id": dev.states["id"],
-            }
+            #indigo.debugger()
             if pluginAction.props["mode"]:
                 # You turn the device off to put it into standby mode
-                url = DEVICE_TURN_OFF_URL.format(apiVersion=NETRO_API_VERSION)
+                data = {
+                    "status":0,
+                }
+                url = DEVICE_TURN_OFF_URL.format(apiVersion=NETRO_API_VERSION, deviceId=dev_dict["serial"])
             else:
                 # You turn the device on to take it out of standby mode
-                url = DEVICE_TURN_ON_URL.format(apiVersion=NETRO_API_VERSION)
+                data = {
+                    "status":1,
+                }
+                url = DEVICE_TURN_ON_URL.format(apiVersion=NETRO_API_VERSION, deviceId=dev_dict["serial"])
             self._make_api_call(url, request_method="put", data=data)
             self.logger.info(f"Standby mode for controller '{dev.name}' turned {'on' if pluginAction.props['mode'] else 'off'}")
         except Exception as exc:
@@ -869,6 +877,7 @@ class Plugin(indigo.PluginBase):
         self.debug = not self.debug
 
     def toggleStandbyMode(self, valuesDict, typeId):
+        indigo.debugger()
         try:
             deviceId = int(valuesDict["targetDevice"])
             dev = indigo.devices[deviceId]
@@ -877,15 +886,19 @@ class Plugin(indigo.PluginBase):
             return False
 
         try:
-            data = {
-                "id": dev.states["id"],
-            }
-            if dev.onState:
-                url = DEVICE_TURN_OFF_URL.format(apiVersion=NETRO_API_VERSION)
-            else:
-                url = DEVICE_TURN_ON_URL.format(apiVersion=NETRO_API_VERSION)
 
-            self._make_api_call(url, request_method="put", data=data)
+            if dev.onState:
+                data = {
+                    "status":0,
+                }
+                url = DEVICE_TURN_ON_URL.format(apiVersion=NETRO_API_VERSION, deviceId=dev_dict["serial"])
+            else:
+                data = {
+                    "status":1,
+                }
+                url = DEVICE_TURN_ON_URL.format(apiVersion=NETRO_API_VERSION, deviceId=dev_dict["serial"])
+
+            self._make_api_call(url, request_method="post", data=data)
             self.logger.info("{}: Toggling standby mode".format(dev.name))
         except Exception as exc:
             self.logger.error("Could not set standby mode - check your controller.")

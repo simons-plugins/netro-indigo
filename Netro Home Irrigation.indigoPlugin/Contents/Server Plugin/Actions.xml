@@ -10,35 +10,19 @@
 -->
 <Actions>
     <Action id="runSchedule" deviceFilter="self" uiPath="DeviceActions">
-        <Name>Run Rachio Schedule</Name>
-        <CallbackMethod>runRachioSchedule</CallbackMethod>
+        <Name>Run manual watering</Name>
+        <CallbackMethod>runWater</CallbackMethod>
         <ConfigUI>
             <Field type="label" id="schedule_label">
-                <Label>Select the Rachio schedule to run from the list below. Note, not all Rachio schedules can be run dynamically so only some may show in the list.</Label>
+                <Label>Select the zones to water from the below list.</Label>
             </Field>
             <Field type="menu" id="scheduleId">
-                <Label>Schedule:</Label>
+                <Label>Zones:</Label>
                 <List class="self" method="availableSchedules"/>
             </Field>
         </ConfigUI>
     </Action>
-    <Action id="setSeasonalAdjustment" deviceFilter="self" uiPath="DeviceActions">
-        <Name>Set Seasonal Adjustment</Name>
-        <CallbackMethod>setSeasonalAdjustment</CallbackMethod>
-        <ConfigUI>
-            <Field type="menu" id="scheduleId">
-                <Label>Schedule:</Label>
-                <List class="self" method="availableSchedules"/>
-            </Field>
-            <Field type="textfield" id="adjustment">
-                <Label>Adjustment percentage:</Label>
-            </Field>
-            <Field type="label" id="adj_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
-                <Label>Adjustment value is an integer range from -100 (-100%) to 100 (100%). For example, 50 increases by 50%, -33 reduces by 33%.</Label>
-            </Field>
-        </ConfigUI>
-    </Action>
-    <Action id="setStandbyMode" deviceFilter="self" uiPath="DeviceActions">
+     <Action id="setStandbyMode" deviceFilter="self" uiPath="DeviceActions">
         <Name>Set Standby Mode</Name>
         <CallbackMethod>setStandbyMode</CallbackMethod>
         <ConfigUI>
@@ -51,7 +35,15 @@
             </Field>
         </ConfigUI>
     </Action>
-
+     <Action id="stopWater" deviceFilter="self" uiPath="DeviceActions">
+        <Name>Stop all active watering</Name>
+        <CallbackMethod>stopWater</CallbackMethod>
+        <ConfigUI>
+            <Field type="label" id="stopWater">
+                <Label>This will stop all current watering schedules and all remainng manual schedules.</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
     <Action id="webhook" uiPath="hidden">
         <Name>Reflector Webhooks</Name>
         <CallbackMethod>reflector_handler</CallbackMethod>
