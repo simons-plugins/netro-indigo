@@ -25,21 +25,22 @@ THROTTLE_LIMIT_TIMER = 61  # number of minutes to wait if we've received a throt
 FORECAST_UPDATE_INTERVAL = 60  # minutes between forecast updates
 
 API_URL = "http://api.netrohome.com/npa/v{apiVersion}/info.json?key="
-PERSON_URL = API_URL + "{deviceId}"
-PERSON_INFO_URL = PERSON_URL.format(apiVersion=NETRO_API_VERSION, personId="")
+PERSON_URL = API_URL + "{personId}"
+PERSON_INFO_URL = PERSON_URL.format(apiVersion=NETRO_API_VERSION, personId="info")
 DEVICE_BASE_URL = API_URL + ""
 DEVICE_GET_URL = DEVICE_BASE_URL + "{deviceId}"
+
 DEVICE_CURRENT_SCHEDULE_URL = "http://api.netrohome.com/npa/v{apiVersion}/schedules.json?key=" + "{deviceId}"
 DEVICE_STOP_WATERING_URL = DEVICE_BASE_URL + "stop_water"
-DEVICE_TURN_OFF_URL = "http://api.netrohome.com/npa/v{apiVersion}/set_status.json?key=" + "{deviceId}"
-DEVICE_TURN_ON_URL = "http://api.netrohome.com/npa/v{apiVersion}/set_status.json?key=" + "{deviceId}"
-DEVICE_GET_FORECAST_URL = DEVICE_GET_URL + "/forecast?units={units}"
+DEVICE_TURN_OFF_URL = "http://api.netrohome.com/npa/v{apiVersion}/set_status.json"
+DEVICE_TURN_ON_URL = "http://api.netrohome.com/npa/v{apiVersion}/set_status.json"
+DEVICE_NO_WATER = "http://api.netrohome.com/npa/v{apiVersion}/no_water.json"
+# DEVICE_GET_FORECAST_URL = DEVICE_GET_URL + "/forecast?units={units}"
 ZONE_URL = API_URL + "zone/"
 ZONE_START_URL = ZONE_URL + "start"
-SCHEDULERULE_URL = API_URL + "schedulerule/{scheduleRuleId}"
-SCHEDULERULE_START_URL = SCHEDULERULE_URL.format(apiVersion=NETRO_API_VERSION, scheduleRuleId="start")
-SCHEDULERULE_SEASONAL_ADJ_URL = SCHEDULERULE_URL.format(apiVersion=NETRO_API_VERSION,
-                                                        scheduleRuleId="seasonal_adjustment")
+# SCHEDULERULE_URL = API_URL + "schedulerule/{scheduleRuleId}"
+# SCHEDULERULE_START_URL = SCHEDULERULE_URL.format(apiVersion=NETRO_API_VERSION, scheduleRuleId="start")
+# SCHEDULERULE_SEASONAL_ADJ_URL = SCHEDULERULE_URL.format(apiVersion=NETRO_API_VERSION,scheduleRuleId="seasonal_adjustment")
 
 
 ALL_OPERATIONAL_ERROR_EVENTS = {
@@ -99,8 +100,8 @@ class Plugin(indigo.PluginBase):
 
         if self.access_token:
             self.headers = {
-            #    "Content-Type": "application/json",
-            #    "Authorization": f"Bearer {self.access_token}"
+                "Content-Type": "application/json",
+                "Accept": "application/json"
             }
         else:
             self.logger.warn("You must specify your API token in the plugin's config before the plugin can be used.")
@@ -114,32 +115,32 @@ class Plugin(indigo.PluginBase):
 
     def _make_api_call(self, url, request_method="get", data=None):
         try:
+            indigo.debugger()
             self.logger.debug(url)
             if request_method == "put":
                 method = requests.put
             elif request_method == "post":
                 method = requests.post
-            elif request_method == "delete":
-                method = requests.delete
             else:
                 method = requests.get
             if data and request_method in ["put", "post"]:
-                r = method(url, data=json.dumps(data), headers=self.headers, timeout=self.timeout)
+                #indigo.debugger()
+                r = method(url, data=json.dumps(data), headers=self.headers)
+                if r.status_code == 200:
+                    return_val = r.json()
+                elif r.status_code == 204:
+                    return_val = True
+                else:
+                    r.raise_for_status()
+                    self._displayed_connection_error = False
             else:
                 openUrl = urllib.request.urlopen(url)
-            if openUrl.getcode() == 200:
-                data = openUrl.read()
+                if openUrl.getcode() == 200:
+                    data = openUrl.read()
+                    return_val = json.loads(data)
+                else:
+                    print("Error receiving data", openUrl.getcode())
 
-                return_val = json.loads(data)
-            else:
-                print("Error receiving data", openUrl.getcode())
-            #if r.status_code == 200:
-            #    return_val = r.json()
-            #elif r.status_code == 204:
-            #    return_val = True
-            #else:
-            #    r.raise_for_status()
-            #self._displayed_connection_error = False
             return return_val
         except requests.exceptions.ConnectionError as exc:
             if not self._displayed_connection_error:
@@ -177,13 +178,13 @@ class Plugin(indigo.PluginBase):
     ########################################
     def _get_device_dict(self, dev_id):
         indigo.debugger()
+        dev_list = [dev_dict for dev_dict in self.person["devices"] if dev_dict["id"] == dev_id]
+        if len(dev_list):
+            return dev_list[0]
+        else:
+            return None
 
-        def _get_device_dict(self, dev_id):
-            dev_list = [dev_dict for dev_dict in self.person["devices"] if dev_dict["id"] == dev_id]
-            if len(dev_list):
-                return dev_list[0]
-            else:
-                return None
+
 
     ########################################
     def _get_zone_dict(self, dev_id, zoneNumber):
@@ -317,28 +318,39 @@ class Plugin(indigo.PluginBase):
 
                             activeScheduleName = None
                             # Get the current schedule for the device - it will tell us if it's running or not
+                            indigo.debugger()
                             try:
-                                current_schedule_dict = self._make_api_call(
+                                schedule_dict = self._make_api_call(
                                     DEVICE_CURRENT_SCHEDULE_URL.format(apiVersion=NETRO_API_VERSION,
                                                                        deviceId=dev.states["serial"]))
+                                #loop all possible schedules to find active
+                                all_schedules_data = schedule_dict["data"]
+                                all_schedules = all_schedules_data["schedules"]
+
+                                for sch_dict in all_schedules:
+                                    if sch_dict["status"] == "EXECUTING":
+                                        current_schedule_dict = sch_dict
+                                    else:
+                                        current_schedule_dict =  ""
+
                                 if len(current_schedule_dict):
                                     # Something is running, so we need to figure out if it's a manual or automatic schedule and
                                     # if it's automatic (a Netro schedule) then we need to get the name of that schedule
                                     update_list.append(
-                                        {"key": "activeZone", "value": current_schedule_dict["ith"]})
-                                    if current_schedule_dict["type"] == "AUTOMATIC":
+                                        {"key": "activeZone", "value": current_schedule_dict["zone"]})
+                                    if current_schedule_dict["source"] == "AUTOMATIC":
                                         schedule_detail_dict = self._make_api_call(
                                             SCHEDULERULE_URL.format(apiVersion=NETRO_API_VERSION,
                                                                     scheduleRuleId=current_schedule_dict[
                                                                         "scheduleRuleId"]))
                                         update_list.append(
-                                            {"key": "activeSchedule", "value": schedule_detail_dict["name"]})
+                                            {"key": "activeSchedule", "value": schedule_detail_dict["source"]})
                                         activeScheduleName = schedule_detail_dict["name"]
 
                                     else:
                                         update_list.append(
-                                            {"key": "activeSchedule", "value": current_schedule_dict["type"].title()})
-                                        activeScheduleName = current_schedule_dict["type"].title()
+                                            {"key": "activeSchedule", "value": current_schedule_dict["source"].title()})
+                                        activeScheduleName = current_schedule_dict["source"].title()
                                 else:
                                     update_list.append({"key": "activeSchedule", "value": "No active schedule"})
                                     # Show no zones active
@@ -837,24 +849,50 @@ class Plugin(indigo.PluginBase):
                     self._fireTrigger("startNetroScheduleFailed", dev.id)
         self.logger.error("No Netro schedule found matching action configuration - check your action.")
 
+    ########################################
+    def setNoWater(self, pluginAction, dev):
+        num_Days = pluginAction.props["numDaysNoWater"]
+        dev_dict = self._get_device_dict(dev.states["id"])
+
+        if dev_dict:
+                try:
+                    data = {
+                        "key": self.access_token,
+                        "days": num_Days,
+                    }
+                    url = DEVICE_NO_WATER.format(apiVersion=NETRO_API_VERSION)
+                    response = self._make_api_call(url, request_method="post", data=data)
+                    response_status= response["status"]
+                    self.logger.debug(response)
+                    if response_status = "OK":
+                        self.logger.info(f"Stop watering for  '{num_Days}'  day(s)")
+                    else:
+                        self.logger.info(f"Error setting rain delay")
+                    #self.logger.warn("Note: frequently requesting dynamic status updates may cause failures later because of Rachio API polling limits. Use sparingly.")
+                    return
+                except Exception as exc:
+                    self.logger.debug("API error: \n{}".format(traceback.format_exc(10)))
+                    self._fireTrigger("setNoWater", dev.id)
 
     ########################################
     def setStandbyMode(self, pluginAction, dev):
         try:
-            #indigo.debugger()
+            indigo.debugger()
             if pluginAction.props["mode"]:
                 # You turn the device off to put it into standby mode
                 data = {
+                    "key":self.access_token,
                     "status":0,
                 }
-                url = DEVICE_TURN_OFF_URL.format(apiVersion=NETRO_API_VERSION, deviceId=dev_dict["serial"])
+                url = DEVICE_TURN_OFF_URL.format(apiVersion=NETRO_API_VERSION, deviceId=self.access_token)
             else:
                 # You turn the device on to take it out of standby mode
                 data = {
+                    "key": self.access_token,
                     "status":1,
                 }
-                url = DEVICE_TURN_ON_URL.format(apiVersion=NETRO_API_VERSION, deviceId=dev_dict["serial"])
-            self._make_api_call(url, request_method="put", data=data)
+                url = DEVICE_TURN_ON_URL.format(apiVersion=NETRO_API_VERSION, deviceId=self.access_token)
+            self._make_api_call(url, request_method="post", data=data)
             self.logger.info(f"Standby mode for controller '{dev.name}' turned {'on' if pluginAction.props['mode'] else 'off'}")
         except Exception as exc:
             self.logger.error("Could not set standby mode - check your controller.")
@@ -894,10 +932,11 @@ class Plugin(indigo.PluginBase):
                 }
                 url = DEVICE_TURN_ON_URL.format(apiVersion=NETRO_API_VERSION, deviceId=dev_dict["serial"])
 
+            self.logger.debug(url)
             self._make_api_call(url, request_method="post", data=data)
             self.logger.info("{}: Toggling standby mode".format(dev.name))
         except Exception as exc:
-            self.logger.error("Could not set standby mode - check your controller.")
+            self.logger.error("Could not toggle standby mode - check your controller.")
             self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
             self._fireTrigger("setStandbyFailed", dev.id)
 

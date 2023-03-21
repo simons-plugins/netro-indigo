@@ -4,7 +4,7 @@
 		<Name>Toggle Debugging</Name>
         <CallbackMethod>toggleDebugging</CallbackMethod>
 	</MenuItem>
-    <MenuItem id="toggleStandby">
+<!--    <MenuItem id="toggleStandby">
         <Name>Toggle Controller Standby Mode</Name>
         <CallbackMethod>toggleStandbyMode</CallbackMethod>
         <ConfigUI>
@@ -13,7 +13,7 @@
                 <List class="self" filter="" method="pickController" dynamicReload="true"/>
             </Field>
         </ConfigUI>
-    </MenuItem>
+    </MenuItem>-->
 	<MenuItem id="updateAllStatus">
 		<Name>Update All Status</Name>
         <CallbackMethod>updateAllStatus</CallbackMethod>

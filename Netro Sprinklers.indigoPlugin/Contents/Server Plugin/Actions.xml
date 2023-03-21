@@ -56,5 +56,17 @@
         <Name>Reflector Webhooks</Name>
         <CallbackMethod>reflector_handler</CallbackMethod>
     </Action>
-    
+
+    <Action id="setNoWater" deviceFilter="self" uiPath="DeviceActions">
+        <Name>Set Rain Delay for x days</Name>
+        <CallbackMethod>setNoWater</CallbackMethod>
+        <ConfigUI>
+            <Field type="textfield" id="numDaysNoWater">
+                <Label>Number of days:</Label>
+            </Field>
+            <Field type="label" id="adj_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
+                <Label>Number of days to stop watering for. Today is 1, defualt is 1</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
 </Actions>
