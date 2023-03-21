@@ -864,7 +864,7 @@ class Plugin(indigo.PluginBase):
                     response = self._make_api_call(url, request_method="post", data=data)
                     response_status= response["status"]
                     self.logger.debug(response)
-                    if response_status = "OK":
+                    if response_status == "OK":
                         self.logger.info(f"Stop watering for  '{num_Days}'  day(s)")
                     else:
                         self.logger.info(f"Error setting rain delay")
