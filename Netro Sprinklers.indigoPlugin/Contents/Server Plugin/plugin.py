@@ -276,7 +276,7 @@ class Plugin(indigo.PluginBase):
                                    dev_dict["id"] in current_device_uuids]
 
                 for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled]:
-                   # indigo.debugger()
+                    # indigo.debugger()
                     # Update defined Netro controllers
                     for dev_dict in defined_devices:
                         #indigo.debugger()
@@ -412,7 +412,7 @@ class Plugin(indigo.PluginBase):
 
 
     def callSensorAPI(self, serial):
-       # indigo.debugger()
+        # indigo.debugger()
         urlData = "http://api.netrohome.com/npa/v1/sensor_data.json?key=" + serial
         self.logger.debug(urlData)
         jsonData = self.getResponse(urlData)
@@ -422,7 +422,7 @@ class Plugin(indigo.PluginBase):
         sensorReadings.sort(key=lambda x: x.get('id'), reverse=True)
         devStates=sensorReadings[0]
         self.logger.debug(devStates)
-       # indigo.debugger()
+        # indigo.debugger()
         key_values_list = [
             {'key': 'sensorValue', 'value': devStates['moisture'], 'uiValue':  f"{devStates['moisture']:.1f} %"},
             {'key': 'humidity', 'value': devStates['moisture']},
@@ -510,14 +510,11 @@ class Plugin(indigo.PluginBase):
         self.logger.threaddebug(f"validateDeviceConfigUi")
         if typeId == "Whisperer":
             valuesDict["SupportsBatteryLevel"] = True
-            valuesDict["SupportsOnState"] = True
             valuesDict["NumTemperatureInputs"] = 1
             valuesDict["NumHumidityInputs"] = 1
             valuesDict["SupportsTemperatureReporting"] = True
             valuesDict["configured"] = True
         else:
-            if typeId = "Sprinkler"
-                valuesDict["SupportsOnState"] = True
             if devId:
                 dev = indigo.devices[devId]
                 if dev.pluginProps.get("id", None) != valuesDict["id"]:
@@ -877,7 +874,6 @@ class Plugin(indigo.PluginBase):
         self.debug = not self.debug
 
     def toggleStandbyMode(self, valuesDict, typeId):
-        indigo.debugger()
         try:
             deviceId = int(valuesDict["targetDevice"])
             dev = indigo.devices[deviceId]

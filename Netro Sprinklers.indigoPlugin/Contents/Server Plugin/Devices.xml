@@ -31,9 +31,6 @@
             <Field type="textfield" id="apiVersion" hidden="true">
                 <Label/>
             </Field>
-            <Field type="checkbox" id="supportsOnState" defaultValue="true" hidden="true">
-                <Label/>
-            </Field>
         </ConfigUI>
         <States>
             <State id="serial">
