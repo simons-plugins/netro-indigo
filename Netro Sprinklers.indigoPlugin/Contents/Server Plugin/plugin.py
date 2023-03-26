@@ -380,6 +380,11 @@ class Plugin(indigo.PluginBase):
                             if activeScheduleName:
                                 props["ScheduledZoneDurations"] = activeScheduleName
                             dev.replacePluginPropsOnServer(props)
+
+                            # Update Moisture levels per Zone
+                            update_moisture = self.callMoisturesAPI(netroSerial)
+                            dev.updateStatesOnServer(update_moisture)
+
                     #Update Whisperer Plant Sensors
                     if dev.deviceTypeId == "Whisperer":
                         self.logger.debug(u"Device ID: " + dev.address)
@@ -422,6 +427,30 @@ class Plugin(indigo.PluginBase):
             print("Error receiving data", openUrl.getcode())
         return jsonData
 
+    def callMoisturesAPI(self,serial):
+        urlData = "http://api.netrohome.com/npa/v1/moistures.json?key=" + serial
+        jsonData = self.getResponse(urlData)
+        jdata = jsonData['data']
+        jmoistures = jdata['moistures']
+        jmoistures.sort(key=lambda x: x.get('id'), reverse=True)
+        currentMoistures = jmoistures[0]
+        maxDate = currentMoistures['date']
+        maxDateMoistures = list(filter(lambda maxdate: maxdate['date'] == maxDate, jmoistures))
+        moisture_keys = []
+        moisture_values = []
+        i = 1
+        for x in maxDateMoistures:
+            moisture_keys.append("zone_" + str(i) + "_moisture")
+            moisture_values.append(str(x["moisture"]))
+            i = i + 1
+        current_moistures = []
+        lenList = len(moisture_keys)
+        for elements in range(0, lenList):
+            key = moisture_keys[elements]
+            value = moisture_values[elements]
+            dict = {"key": key, "value": value}
+            current_moistures.append(dict)
+        return current_moistures
 
     def callSensorAPI(self, serial):
         # indigo.debugger()
@@ -585,7 +614,7 @@ class Plugin(indigo.PluginBase):
         if not dev.pluginProps["configured"]:
             # Get the full device info and update the newly created device
             dev_dict = self.unused_devices.get(dev.pluginProps["id"], None)
-            #indigo.debugger()
+            indigo.debugger()
             if dev_dict:
                 # Update all the states here
                 if dev_dict["status"] == "ONLINE":
@@ -911,34 +940,6 @@ class Plugin(indigo.PluginBase):
             self.pluginPrefs["showDebugInfo"] = True
         self.debug = not self.debug
 
-    def toggleStandbyMode(self, valuesDict, typeId):
-        try:
-            deviceId = int(valuesDict["targetDevice"])
-            dev = indigo.devices[deviceId]
-        except (Exception,):
-            self.logger.error(u"Bad Device specified for Toggle Standby Mode operation")
-            return False
-
-        try:
-
-            if dev.onState:
-                data = {
-                    "status":0,
-                }
-                url = DEVICE_TURN_ON_URL.format(apiVersion=NETRO_API_VERSION, deviceId=dev_dict["serial"])
-            else:
-                data = {
-                    "status":1,
-                }
-                url = DEVICE_TURN_ON_URL.format(apiVersion=NETRO_API_VERSION, deviceId=dev_dict["serial"])
-
-            self.logger.debug(url)
-            self._make_api_call(url, request_method="post", data=data)
-            self.logger.info("{}: Toggling standby mode".format(dev.name))
-        except Exception as exc:
-            self.logger.error("Could not toggle standby mode - check your controller.")
-            self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
-            self._fireTrigger("setStandbyFailed", dev.id)
 
     ########################################
     def updateAllStatus(self):
