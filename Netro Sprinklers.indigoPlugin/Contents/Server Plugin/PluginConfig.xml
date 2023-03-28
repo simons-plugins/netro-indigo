@@ -3,15 +3,6 @@
     <Field id="topLabel" type="label">
         <Label>To use the Netro Plugin, you need to enter your controller serial number, which is found in the Netro  app </Label>
     </Field>
-    <Field id="accessToken" type="textfield">
-        <Label>Serial Number:</Label>
-    </Field>
-    <Field id="pollingInterval" type="textfield" defaultValue="3">
-        <Label>Polling interval:</Label>
-    </Field>
-	<Field id="pollingIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
-		<Label>Number of minutes to wait between polling Netro for the status of your controller. 2 minutes is the default, there are 2000 calls allowed in a day, you can call more frequently if prepared to have periods with no updates until your tokens refresh.</Label>
-	</Field>
     <Field id="apiCallTimeout" type="textfield" defaultValue="5">
         <Label>API call timeout:</Label>
     </Field>

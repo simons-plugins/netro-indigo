@@ -14,9 +14,11 @@
             field for an IP address, a serial port popup, or other device
             specific options.
             -->
-            <Field type="menu" id="id">
-                <Label>Device:</Label>
-                <List class="self" method="availableControllers"/>
+            <Field id="address" type="textfield" defaultValue="a4cf12b8d5e2">
+                <Label>Serial Number:</Label>
+            </Field>
+            <Field id="refresh" type="textfield" defaultValue="2">
+                <Label>Refresh Interval (mins):</Label>
             </Field>
             <Field type="menu" id="units" defaultValue="US">
                 <Label>Weather units in:</Label>
