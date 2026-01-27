@@ -35,19 +35,13 @@ DEVICE_STOP_WATERING_URL = DEVICE_BASE_URL + "stop_water"
 DEVICE_TURN_OFF_URL = "http://api.netrohome.com/npa/v{apiVersion}/set_status.json"
 DEVICE_TURN_ON_URL = "http://api.netrohome.com/npa/v{apiVersion}/set_status.json"
 DEVICE_NO_WATER = "http://api.netrohome.com/npa/v{apiVersion}/no_water.json"
-# DEVICE_GET_FORECAST_URL = DEVICE_GET_URL + "/forecast?units={units}"
 ZONE_URL = API_URL + "zone/"
 ZONE_START_URL = ZONE_URL + "start"
-# SCHEDULERULE_URL = API_URL + "schedulerule/{scheduleRuleId}"
-# SCHEDULERULE_START_URL = SCHEDULERULE_URL.format(apiVersion=NETRO_API_VERSION, scheduleRuleId="start")
-# SCHEDULERULE_SEASONAL_ADJ_URL = SCHEDULERULE_URL.format(apiVersion=NETRO_API_VERSION,scheduleRuleId="seasonal_adjustment")
 
 
 ALL_OPERATIONAL_ERROR_EVENTS = {
     "startZoneFailed",
     "stopFailed",
-    "startNetroScheduleFailed",
-    "setSeasonalAdjustmentFailed",
     "setStandbyFailed",
 }
 
@@ -86,7 +80,6 @@ class Plugin(indigo.PluginBase):
     def __init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs):
         super(Plugin, self).__init__(pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
         # Used to control when to show connection errors (vs just repeated retries)
-        #indigo.debugger()
         self._displayed_connection_error = False
         self.pluginId = pluginId
         self.debug = pluginPrefs.get("showDebugInfo", False)
@@ -108,6 +101,10 @@ class Plugin(indigo.PluginBase):
             self.headers = None
         self.triggerDict = {}
 
+        # Initialize throttle and weather update tracking
+        self.throttle_next_call = None
+        self._next_weather_update = datetime.now()
+
 
     ########################################
     # Internal helper methods
@@ -115,7 +112,6 @@ class Plugin(indigo.PluginBase):
 
     def _make_api_call(self, url, request_method="get", data=None):
         try:
-            indigo.debugger()
             self.logger.debug(url)
             if request_method == "put":
                 method = requests.put
@@ -124,8 +120,7 @@ class Plugin(indigo.PluginBase):
             else:
                 method = requests.get
             if data and request_method in ["put", "post"]:
-                #indigo.debugger()
-                r = method(url, data=json.dumps(data), headers=self.headers)
+                        r = method(url, data=json.dumps(data), headers=self.headers)
                 if r.status_code == 200:
                     return_val = r.json()
                 elif r.status_code == 204:
@@ -174,10 +169,8 @@ class Plugin(indigo.PluginBase):
             self.logger.debug(
                 f"Connection to Netro API server failed with exception:\n{traceback.format_exc(10)}")
             raise exc
-        indigo.debugger()
     ########################################
     def _get_device_dict(self, dev_id):
-        indigo.debugger()
         dev_list = [dev_dict for dev_dict in self.person["devices"] if dev_dict["id"] == dev_id]
         if len(dev_list):
             return dev_list[0]
@@ -188,7 +181,6 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def _get_zone_dict(self, dev_id, zoneNumber):
-        indigo.debugger()
         dev_dict = self._get_device_dict(dev_id)
         if dev_dict:
             zone_list = [zone_dict for zone_dict in dev_dict["zones"] if zone_dict["ith"] == zoneNumber]
@@ -201,13 +193,11 @@ class Plugin(indigo.PluginBase):
         self.logger.debug("_update_from_netro")
         try:
             for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled]:
-                    # indigo.debugger()
-
+            
                     # Update defined Netro controllers
                     if dev.deviceTypeId == "sprinkler":
                         try:
-                            # indigo.debugger()
-                            reply_dict = self._make_api_call(
+                                                reply_dict = self._make_api_call(
                                 PERSON_URL.format(apiVersion=NETRO_API_VERSION, personId=dev.address))
 
                             reply_dict_data = reply_dict["data"]
@@ -239,8 +229,7 @@ class Plugin(indigo.PluginBase):
                             self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                             self._fireTrigger("personInfoCall")
                             return
-                        #indigo.debugger()
-                        update_list = [{"key": "id", "value": reply_dict_device["id"]},
+                                        update_list = [{"key": "id", "value": reply_dict_device["id"]},
                                        {"key": "api_version", "value": reply_dict_device["version"]},
                                        {"key": "address", "value": get_key_from_dict("macAddress", reply_dict_device)},
                                        {"key": "model", "value": get_key_from_dict("model", reply_dict_device)},
@@ -263,8 +252,7 @@ class Plugin(indigo.PluginBase):
                         activeScheduleName = None
 
                         # Get the current schedule for the device - it will tell us if it's running or not
-                        indigo.debugger()
-                        try:
+                                    try:
                             schedule_dict = self._make_api_call(
                                 DEVICE_CURRENT_SCHEDULE_URL.format(apiVersion=NETRO_API_VERSION,
                                                                    deviceId=netroSerial))
@@ -272,30 +260,20 @@ class Plugin(indigo.PluginBase):
                             all_schedules_data = schedule_dict["data"]
                             all_schedules = all_schedules_data["schedules"]
 
+                            current_schedule_dict = None
                             for sch_dict in all_schedules:
                                 if sch_dict["status"] == "EXECUTING":
                                     current_schedule_dict = sch_dict
-                                else:
-                                    current_schedule_dict =  ""
+                                    break
 
-                            if len(current_schedule_dict):
-                                # Something is running, so we need to figure out if it's a manual or automatic schedule and
-                                # if it's automatic (a Netro schedule) then we need to get the name of that schedule
+                            if current_schedule_dict:
+                                # Something is running - use the source field to show schedule type
                                 update_list.append(
                                     {"key": "activeZone", "value": current_schedule_dict["zone"]})
-                                if current_schedule_dict["source"] == "AUTOMATIC":
-                                    schedule_detail_dict = self._make_api_call(
-                                        SCHEDULERULE_URL.format(apiVersion=NETRO_API_VERSION,
-                                                                scheduleRuleId=current_schedule_dict[
-                                                                    "scheduleRuleId"]))
-                                    update_list.append(
-                                        {"key": "activeSchedule", "value": schedule_detail_dict["source"]})
-                                    activeScheduleName = schedule_detail_dict["name"]
-
-                                else:
-                                    update_list.append(
-                                        {"key": "activeSchedule", "value": current_schedule_dict["source"].title()})
-                                    activeScheduleName = current_schedule_dict["source"].title()
+                                # Display schedule source (AUTOMATIC, MANUAL, SMART, FIX)
+                                update_list.append(
+                                    {"key": "activeSchedule", "value": current_schedule_dict["source"].title()})
+                                activeScheduleName = current_schedule_dict["source"].title()
                             else:
                                 update_list.append({"key": "activeSchedule", "value": "No active schedule"})
                                 # Show no zones active
@@ -312,8 +290,7 @@ class Plugin(indigo.PluginBase):
                         # Update zone information as necessary - these are properties, not states.
                         zoneNames = ""
                         maxZoneDurations = ""
-                        indigo.debugger()
-                        dev_dict=ls_reply_dict_devices[0]
+                                    dev_dict=ls_reply_dict_devices[0]
                         for zone in sorted(dev_dict["zones"], key=itemgetter('ith')):
                             zoneNames += ", {}".format(zone["name"]) if len(zoneNames) else zone["name"]
                             #if len(maxZoneDurations):
@@ -339,8 +316,7 @@ class Plugin(indigo.PluginBase):
                         if dev.sensorValue is not None:
                             sensorValuesLatest = self.callSensorAPI(self.serialNo)
                             self.refreshDelay = int(dev.ownerProps["refresh"]) * 60
-                            indigo.debugger()
-                            self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
+                                            self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
                             if dev.onState is not None:
                                 self.key_val_list.append({'key': 'onOffState', 'value': not dev.onState})
                                 dev.updateStatesOnServer(self.key_val_list)
@@ -394,7 +370,6 @@ class Plugin(indigo.PluginBase):
         return current_moistures
 
     def callSensorAPI(self, serial):
-        # indigo.debugger()
         urlData = "http://api.netrohome.com/npa/v1/sensor_data.json?key=" + serial
         self.logger.debug(urlData)
         jsonData = self.getResponse(urlData)
@@ -404,7 +379,6 @@ class Plugin(indigo.PluginBase):
         sensorReadings.sort(key=lambda x: x.get('id'), reverse=True)
         devStates=sensorReadings[0]
         self.logger.debug(devStates)
-        # indigo.debugger()
         key_values_list = [
             {'key': 'sensorValue', 'value': devStates['moisture'], 'uiValue':  f"{devStates['moisture']:.1f} %"},
             {'key': 'humidity', 'value': devStates['moisture']},
@@ -414,10 +388,9 @@ class Plugin(indigo.PluginBase):
             {'key': 'sunlight', 'value': devStates['sunlight']},
             {'key': 'readingID', 'value': devStates['id']},
             {'key': 'readingTime', 'value': devStates['time']},
-            {'key': 'readingLocalDate', 'value': devStates['local_time']},
-            {'key': 'readingLocalTime', 'value': devStates['local_date']},
+            {'key': 'readingLocalDate', 'value': devStates['local_date']},
+            {'key': 'readingLocalTime', 'value': devStates['local_time']},
             {'key': 'id', 'value': devStates['id']},
-            {'key': 'serial', 'value': devStates['id']},
             {'key': 'token_remaining', 'value': jmeta["token_remaining"]},
             {'key': 'token_reset', 'value': jmeta["token_reset"]},
             {'key': 'api_last_active', 'value': jmeta["last_active"]},
@@ -472,14 +445,6 @@ class Plugin(indigo.PluginBase):
         return controller_list
 
     ########################################
-    def availableSchedules(self, dev_filter="", valuesDict=None, typeId="", targetId=0):
-        schedule_list = []
-        dev = indigo.devices.get(targetId, None)
-        if dev:
-            dev_dict = self._get_device_dict(dev.states["id"])
-            schedule_list = [(rule_dict["id"], rule_dict['name']) for rule_dict in dev_dict["scheduleRules"]]
-        return schedule_list
-
     ########################################
     def sprinklerList(self, dev_filter="", valuesDict=None, typeId="", targetId=0):
         self.logger.threaddebug(f"sprinklerList")
@@ -501,12 +466,6 @@ class Plugin(indigo.PluginBase):
     def validateActionConfigUi(self, valuesDict, typeId, devId):
         self.logger.threaddebug(f"validateActionConfigUi")
         errorsDict = indigo.Dict()
-        if typeId == "setSeasonalAdjustment":
-            try:
-                if int(valuesDict["adjustment"]) not in range(-100, 100):
-                    raise Exception()
-            except (Exception,):
-                errorsDict["adjustment"] = "Must be an integer from -100 to 100 (a percentage)"
         if len(errorsDict):
             return False, valuesDict, errorsDict
         return True, valuesDict
@@ -540,12 +499,11 @@ class Plugin(indigo.PluginBase):
     ########################################
     def didDeviceCommPropertyChange(self, origDev, newDev):
         self.logger.threaddebug(f"didDeviceCommPropertyChange")
-        return True if origDev.states["serial"] != newDev.states["serial"] else False
+        return True if origDev.states["id"] != newDev.states["id"] else False
 
     ########################################
     def deviceStartComm(self, dev):
         # Get the full device info and update the newly created device
-        indigo.debugger()
         # Update all the states here
         self._update_from_netro()
 
@@ -610,13 +568,20 @@ class Plugin(indigo.PluginBase):
     # Sprinkler Control Action callback
     ########################################
     def actionControlSprinkler(self, action, dev):
+        # Check if throttle period has expired
+        if self.throttle_next_call and datetime.now() < self.throttle_next_call:
+            self.logger.error(f"API calls have violated rate limit - next connection attempt at {self.throttle_next_call:%H:%M:%S}")
+            if action.sprinklerAction == indigo.kSprinklerAction.ZoneOn:
+                self._fireTrigger("startZoneFailed", dev.id)
+            elif action.sprinklerAction == indigo.kSprinklerAction.AllZonesOff:
+                self._fireTrigger("stopFailed", dev.id)
+            return
+        elif self.throttle_next_call:
+            # Throttle period has expired, reset it
+            self.throttle_next_call = None
+
         # ZONE ON #
         if action.sprinklerAction == indigo.kSprinklerAction.ZoneOn:
-            if self.throttle_next_call:
-                self.logger.error(f"API calls have violated rate limit - next connection attempt at {self.throttle_next_call:%H:%M:%S}"
-                                  )
-                self._fireTrigger("startZoneFailed", dev.id)
-            else:
                 zone_dict = self._get_zone_dict(dev.states["id"], action.zoneIndex)
                 self.logger.debug(f"zone_dict: {zone_dict}")
                 if zone_dict:
@@ -682,25 +647,6 @@ class Plugin(indigo.PluginBase):
     ########################################
     # Custom Plugin Action callbacks defined in Actions.xml
     ########################################
-    def runNetroSchedule(self, pluginAction, dev):
-        schedule_rule_id = pluginAction.props["scheduleId"]
-
-        dev_dict = self._get_device_dict(dev.states["id"])
-        if dev_dict:
-            schedule_id_dict = {rule_dict["id"]: rule_dict["name"] for rule_dict in dev_dict["scheduleRules"]}
-            if schedule_rule_id in schedule_id_dict.keys():
-                try:
-                    data = {
-                        "id": schedule_rule_id,
-                    }
-                    self._make_api_call(SCHEDULERULE_START_URL, request_method="put", data=data)
-                    self.logger.info(f"Netro schedule '{schedule_id_dict[schedule_rule_id]}' started")
-                    self.logger.warn("Note: frequently requesting dynamic status updates may cause failures later because of Netro API polling limits. Use sparingly.")
-                    return
-                except Exception as exc:
-                    self.logger.debug("API error: \n{}".format(traceback.format_exc(10)))
-                    self._fireTrigger("startNetroScheduleFailed", dev.id)
-        self.logger.error("No Netro schedule found matching action configuration - check your action.")
 
     ########################################
     def setNoWater(self, pluginAction, dev):
@@ -721,7 +667,6 @@ class Plugin(indigo.PluginBase):
                         self.logger.info(f"Stop watering for  '{num_Days}'  day(s)")
                     else:
                         self.logger.info(f"Error setting rain delay")
-                    #self.logger.warn("Note: frequently requesting dynamic status updates may cause failures later because of Rachio API polling limits. Use sparingly.")
                     return
                 except Exception as exc:
                     self.logger.debug("API error: \n{}".format(traceback.format_exc(10)))
@@ -730,7 +675,6 @@ class Plugin(indigo.PluginBase):
     ########################################
     def setStandbyMode(self, pluginAction, dev):
         try:
-            indigo.debugger()
             if pluginAction.props["mode"]:
                 # You turn the device off to put it into standby mode
                 data = {
