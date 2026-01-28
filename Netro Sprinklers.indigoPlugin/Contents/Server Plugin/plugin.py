@@ -292,16 +292,26 @@ class Plugin(indigo.PluginBase):
                             try:
                                 schedule_dict = self._make_api_call(
                                     f"{DEVICE_SCHEDULES_URL}?key={netroSerial}")
-                                # Loop all possible schedules to find active
+                                # Loop all possible schedules to find active and next
                                 all_schedules_data = schedule_dict["data"]
                                 all_schedules = all_schedules_data["schedules"]
 
                                 current_schedule_dict = None
+                                next_schedule_dict = None
+                                earliest_start_time = None
+
                                 for sch_dict in all_schedules:
+                                    # Find currently executing schedule
                                     if sch_dict["status"] == "EXECUTING":
                                         current_schedule_dict = sch_dict
-                                        break
+                                    # Find next valid (upcoming) schedule with earliest start time
+                                    elif sch_dict["status"] == "VALID":
+                                        start_time = sch_dict.get("start_time", 0)
+                                        if earliest_start_time is None or start_time < earliest_start_time:
+                                            earliest_start_time = start_time
+                                            next_schedule_dict = sch_dict
 
+                                # Update current/active schedule states
                                 if current_schedule_dict:
                                     # Something is running - use the source field to show schedule type
                                     update_list.append(
@@ -314,6 +324,32 @@ class Plugin(indigo.PluginBase):
                                     update_list.append({"key": "activeSchedule", "value": "No active schedule"})
                                     # Show no zones active
                                     update_list.append({"key": "activeZone", "value": 0})
+
+                                # Update next schedule states
+                                if next_schedule_dict:
+                                    # Convert timestamp to readable format
+                                    start_time_ms = next_schedule_dict.get("start_time", 0)
+                                    start_time_dt = datetime.fromtimestamp(start_time_ms / 1000.0)
+                                    start_time_str = start_time_dt.strftime("%Y-%m-%d %H:%M:%S")
+
+                                    update_list.append(
+                                        {"key": "nextScheduleTime", "value": start_time_str})
+                                    update_list.append(
+                                        {"key": "nextScheduleZone", "value": next_schedule_dict.get("zone_name", f"Zone {next_schedule_dict['zone']}")})
+                                    update_list.append(
+                                        {"key": "nextScheduleSource", "value": next_schedule_dict["source"].title()})
+                                    # Duration is in seconds, convert to minutes (defensive coding)
+                                    duration_sec = next_schedule_dict.get("duration") or 0
+                                    duration_min = int(duration_sec / 60)
+                                    update_list.append(
+                                        {"key": "nextScheduleDuration", "value": duration_min})
+                                else:
+                                    # No upcoming schedules
+                                    update_list.append({"key": "nextScheduleTime", "value": "No upcoming schedule"})
+                                    update_list.append({"key": "nextScheduleZone", "value": "None"})
+                                    update_list.append({"key": "nextScheduleSource", "value": "None"})
+                                    update_list.append({"key": "nextScheduleDuration", "value": 0})
+
                             except Exception as exc:
                                 update_list.append({"key": "activeSchedule", "value": "Error getting current schedule"})
                                 self.logger.debug("API error: \n{}".format(traceback.format_exc(10)))
@@ -326,16 +362,24 @@ class Plugin(indigo.PluginBase):
                             # Update zone information as necessary - these are properties, not states.
                             zoneNames = ""
                             maxZoneDurations = []
+                            zones_data = []  # Store zone data for getZoneList()
                             dev_dict = ls_reply_dict_devices[0]
                             for zone in sorted(dev_dict["zones"], key=itemgetter('ith')):
                                 zoneNames += ", {}".format(zone["name"]) if len(zoneNames) else zone["name"]
                                 # Set max duration to plugin max for enabled zones, 0 for disabled zones
                                 max_duration = self.maxZoneRunTime if zone["enabled"] else 0
                                 maxZoneDurations.append(str(max_duration))
+                                # Store zone ID and name for dropdown lists
+                                zones_data.append({
+                                    "id": zone["id"],
+                                    "name": zone["name"],
+                                    "enabled": zone["enabled"]
+                                })
                             props = copy.deepcopy(dev.pluginProps)
                             props["NumZones"] = len(dev_dict["zones"])
                             props["ZoneNames"] = zoneNames
                             props["MaxZoneDurations"] = ", ".join(maxZoneDurations)
+                            props["zones"] = json.dumps(zones_data)  # Store as JSON string
                             if activeScheduleName:
                                 props["ScheduledZoneDurations"] = activeScheduleName
                             dev.replacePluginPropsOnServer(props)
@@ -541,8 +585,87 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def validateActionConfigUi(self, valuesDict, typeId, devId):
-        self.logger.threaddebug(f"validateActionConfigUi")
+        """Validate action configuration before saving.
+
+        Args:
+            valuesDict: Action configuration values
+            typeId: Action type ID
+            devId: Device ID
+
+        Returns:
+            Tuple of (is_valid, valuesDict, errorsDict)
+        """
+        self.logger.threaddebug(f"validateActionConfigUi for {typeId}")
         errorsDict = indigo.Dict()
+
+        if typeId == "startZoneWithDelay":
+            # Validate duration (1-180 minutes)
+            try:
+                duration = int(valuesDict.get("duration", 15))
+                if duration < 1 or duration > 180:
+                    errorsDict["duration"] = "Duration must be between 1 and 180 minutes"
+            except (ValueError, TypeError):
+                errorsDict["duration"] = "Duration must be a valid number"
+
+            # Validate delay (0-60 minutes)
+            try:
+                delay = int(valuesDict.get("delay", 0))
+                if delay < 0 or delay > 60:
+                    errorsDict["delay"] = "Delay must be between 0 and 60 minutes"
+            except (ValueError, TypeError):
+                errorsDict["delay"] = "Delay must be a valid number"
+
+            # Validate start_time if provided (must be valid Unix timestamp)
+            start_time = valuesDict.get("start_time", "").strip()
+            if start_time:
+                try:
+                    int(start_time)
+                except ValueError:
+                    errorsDict["start_time"] = "Start time must be a valid Unix timestamp (integer)"
+
+            # Validate zone selected
+            if not valuesDict.get("zone"):
+                errorsDict["zone"] = "You must select a zone"
+
+        elif typeId == "reportWeather":
+            # Validate required temperature field
+            temperature = valuesDict.get("temperature", "").strip()
+            if not temperature:
+                errorsDict["temperature"] = "Current temperature is required"
+            else:
+                try:
+                    float(temperature)
+                except ValueError:
+                    errorsDict["temperature"] = "Temperature must be a valid number"
+
+            # Validate optional numeric fields if provided
+            for field, label, min_val, max_val in [
+                ("t_max", "Max temperature", -50, 150),
+                ("t_min", "Min temperature", -50, 150),
+                ("humidity", "Humidity", 0, 100),
+                ("rain", "Rainfall", 0, 100),
+                ("rain_prob", "Rain probability", 0, 100),
+                ("wind_speed", "Wind speed", 0, 200),
+                ("pressure", "Pressure", 20, 35)
+            ]:
+                value = valuesDict.get(field, "").strip()
+                if value:
+                    try:
+                        num_value = float(value)
+                        if num_value < min_val or num_value > max_val:
+                            errorsDict[field] = f"{label} must be between {min_val} and {max_val}"
+                    except ValueError:
+                        errorsDict[field] = f"{label} must be a valid number"
+
+            # Validate date format if provided
+            date_str = valuesDict.get("date", "").strip()
+            if date_str:
+                from datetime import datetime
+                try:
+                    datetime.strptime(date_str, "%Y-%m-%d")
+                except ValueError:
+                    errorsDict["date"] = "Date must be in YYYY-MM-DD format"
+
         if len(errorsDict):
             return False, valuesDict, errorsDict
         return True, valuesDict
@@ -831,6 +954,169 @@ class Plugin(indigo.PluginBase):
             self.logger.error("Could not set standby mode - check your controller.")
             self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
             self._fireTrigger("setStandbyFailed", dev.id)
+
+    ########################################
+    def startZoneWithDelay(self, pluginAction, dev):
+        """Start a zone with optional delay or scheduled start time.
+
+        Args:
+            pluginAction: Action parameters containing zone, duration, delay, start_time
+            dev: Sprinkler controller device
+        """
+        try:
+            zone_id = pluginAction.props.get("zone")
+            duration = int(pluginAction.props.get("duration", 15))
+            delay = int(pluginAction.props.get("delay", 0))
+            start_time = pluginAction.props.get("start_time", "").strip()
+
+            # Validate parameters
+            if not zone_id:
+                self.logger.error("No zone selected")
+                return
+
+            if duration < 1 or duration > 180:
+                self.logger.error(f"Duration must be between 1 and 180 minutes (got {duration})")
+                return
+
+            if delay < 0 or delay > 60:
+                self.logger.error(f"Delay must be between 0 and 60 minutes (got {delay})")
+                return
+
+            # Build API request (use device's serial number, not plugin prefs)
+            data = {
+                "key": dev.address,
+                "zones": [
+                    {
+                        "id": zone_id,
+                        "duration": duration
+                    }
+                ]
+            }
+
+            # Add optional parameters
+            if delay > 0:
+                data["delay"] = delay
+
+            if start_time:
+                try:
+                    data["start_time"] = int(start_time)
+                except ValueError:
+                    self.logger.error(f"Invalid start_time format (must be Unix timestamp): {start_time}")
+                    return
+
+            # Make API call
+            response = self._make_api_call(DEVICE_WATER_URL, request_method="post", data=data)
+            response_status = response.get("status")
+
+            if response_status == "OK":
+                if start_time:
+                    self.logger.info(f"Zone '{zone_id}' scheduled to start at timestamp {start_time} for {duration} minutes")
+                elif delay > 0:
+                    self.logger.info(f"Zone '{zone_id}' will start in {delay} minutes for {duration} minutes")
+                else:
+                    self.logger.info(f"Zone '{zone_id}' started for {duration} minutes")
+            else:
+                self.logger.error(f"Error starting zone: {response}")
+                self._fireTrigger("startZoneFailed", dev.id)
+
+        except Exception as exc:
+            self.logger.error(f"Could not start zone with delay: {exc}")
+            self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+            self._fireTrigger("startZoneFailed", dev.id)
+
+    ########################################
+    def reportWeather(self, pluginAction, dev):
+        """Report local weather data to Netro to improve scheduling.
+
+        Args:
+            pluginAction: Action parameters containing weather data
+            dev: Sprinkler controller device
+        """
+        try:
+            from datetime import date
+
+            # Build weather data payload (use device's serial number, not plugin prefs)
+            data = {
+                "key": dev.address,
+                "condition": int(pluginAction.props.get("condition", 0)),
+                "date": pluginAction.props.get("date", "").strip() or date.today().strftime("%Y-%m-%d")
+            }
+
+            # Add optional weather parameters if provided
+            optional_fields = {
+                "temperature": "t",
+                "t_max": "t_max",
+                "t_min": "t_min",
+                "humidity": "humidity",
+                "rain": "rain",
+                "rain_prob": "rain_prob",
+                "wind_speed": "wind_speed",
+                "pressure": "pressure"
+            }
+
+            for field, api_key in optional_fields.items():
+                value = pluginAction.props.get(field, "").strip()
+                if value:
+                    try:
+                        # Convert to appropriate type (float for most, int for humidity/rain_prob)
+                        if field in ["humidity", "rain_prob"]:
+                            data[api_key] = int(value)
+                        else:
+                            data[api_key] = float(value)
+                    except ValueError:
+                        self.logger.warning(f"Invalid value for {field}: {value}, skipping")
+
+            # Validate required temperature field
+            if "t" not in data:
+                self.logger.error("Current temperature is required for weather reporting")
+                return
+
+            # Make API call
+            response = self._make_api_call(DEVICE_REPORT_WEATHER_URL, request_method="post", data=data)
+            response_status = response.get("status")
+
+            if response_status == "OK":
+                self.logger.info(f"Weather data reported to Netro for {data['date']}: {data.get('t')}°F, condition={data['condition']}")
+            else:
+                self.logger.error(f"Error reporting weather: {response}")
+
+        except Exception as exc:
+            self.logger.error(f"Could not report weather: {exc}")
+            self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+
+    ########################################
+    def getZoneList(self, filter="", valuesDict=None, typeId="", targetId=0):
+        """Get list of available zones for the zone dropdown.
+
+        Returns:
+            List of tuples (zone_id, zone_name) for zone selection
+        """
+        try:
+            dev = indigo.devices[targetId]
+            zone_list = []
+
+            # Get zones from device properties (stored as JSON string)
+            if "zones" in dev.pluginProps:
+                zones_json = dev.pluginProps["zones"]
+                if zones_json:
+                    zones = json.loads(zones_json)
+                    for zone in zones:
+                        zone_id = zone.get("id", "")
+                        zone_name = zone.get("name", f"Zone {zone_id}")
+                        enabled = zone.get("enabled", True)
+                        # Only show enabled zones
+                        if zone_id and enabled:
+                            zone_list.append((zone_id, zone_name))
+
+            # If no zones found, return a helpful message
+            if not zone_list:
+                zone_list = [("", "No zones configured - update device first")]
+
+            return zone_list
+
+        except Exception as exc:
+            self.logger.debug(f"Error getting zone list: {exc}\n{traceback.format_exc(10)}")
+            return [("", "Error loading zones")]
 
     ########################################
     # Menu callbacks defined in MenuItems.xml

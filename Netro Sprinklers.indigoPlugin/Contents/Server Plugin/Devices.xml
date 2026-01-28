@@ -74,6 +74,26 @@
                 <TriggerLabel>Active Netro Schedule</TriggerLabel>
                 <ControlPageLabel>Active Netro Schedule</ControlPageLabel>
             </State>
+            <State id="nextScheduleTime">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Next Schedule Start Time</TriggerLabel>
+                <ControlPageLabel>Next Schedule Start Time</ControlPageLabel>
+            </State>
+            <State id="nextScheduleZone">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Next Schedule Zone</TriggerLabel>
+                <ControlPageLabel>Next Schedule Zone</ControlPageLabel>
+            </State>
+            <State id="nextScheduleSource">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Next Schedule Type</TriggerLabel>
+                <ControlPageLabel>Next Schedule Type</ControlPageLabel>
+            </State>
+            <State id="nextScheduleDuration">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Next Schedule Duration (minutes)</TriggerLabel>
+                <ControlPageLabel>Next Schedule Duration (minutes)</ControlPageLabel>
+            </State>
             <State id="address">
                 <ValueType>String</ValueType>
                 <TriggerLabel>MAC Address</TriggerLabel>
