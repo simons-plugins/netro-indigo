@@ -14,32 +14,28 @@
       "schedule_mode_type": "SMART",
       "zones": [
         {
-          "id": "zone-uuid-1",
           "ith": 1,
           "name": "Front Lawn",
           "enabled": true,
-          "smart": true
+          "smart": "SMART"
         },
         {
-          "id": "zone-uuid-2",
           "ith": 2,
           "name": "Back Lawn",
           "enabled": true,
-          "smart": true
+          "smart": "SMART"
         },
         {
-          "id": "zone-uuid-3",
           "ith": 3,
           "name": "Garden Beds",
           "enabled": true,
-          "smart": false
+          "smart": "MANUAL"
         },
         {
-          "id": "zone-uuid-4",
           "ith": 4,
           "name": "Side Yard",
           "enabled": false,
-          "smart": false
+          "smart": "MANUAL"
         }
       ]
     }

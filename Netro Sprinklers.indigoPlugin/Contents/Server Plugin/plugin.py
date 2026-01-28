@@ -523,7 +523,7 @@ class Plugin(indigo.PluginBase):
                             maxZoneDurations.append(str(max_duration))
                             # Store zone ID and name for dropdown lists
                             zones_data.append({
-                                "id": zone["id"],
+                                "id": zone["ith"],
                                 "name": zone["name"],
                                 "enabled": zone["enabled"]
                             })
