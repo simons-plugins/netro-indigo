@@ -2,189 +2,172 @@
 
 This document explains how the Netro Sprinklers plugin manages Python package dependencies.
 
-## Approach: Bundled Packages
+## Approach: Indigo Automatic Installation
 
-The plugin follows **Indigo best practices** by bundling all third-party packages inside the plugin bundle.
+**Indigo automatically handles package installation** from `requirements.txt`. No manual work required - neither for developers nor users.
 
-**Why bundle packages?**
-- ✅ Plugin is self-contained and portable
-- ✅ No dependency on system Python packages
-- ✅ Consistent behavior across all user installations
-- ✅ Users don't need to install anything manually
-- ✅ Packages can't be accidentally removed or upgraded
+### How It Works
 
-**Source**: [Indigo SDK Documentation](Indigo%20SDK/docs/getting-started/README.md)
-> "Ensure all required packages are in `Contents/Packages/`"
-> "Don't use system Python packages - bundle them with plugin"
+1. Plugin includes [requirements.txt](netro/requirements.txt) listing required packages
+2. When plugin loads, Indigo checks if packages are installed
+3. If missing, Indigo automatically installs them
+4. Plugin starts with all dependencies available
 
-## Bundled Packages
+**User experience**: Install plugin → it just works ✓
 
-Located in: `Netro Sprinklers.indigoPlugin/Contents/Packages/`
+## Required Packages
 
-### Primary Dependency
+Located in: [requirements.txt](netro/requirements.txt)
 
-- **requests** (2.32.5) - HTTP client for Netro API communication
-
-### Transitive Dependencies
-
-Automatically included with requests:
-- **certifi** (2026.1.4) - SSL certificate verification
-- **charset_normalizer** (3.4.4) - Character encoding detection
-- **idna** (3.11) - Internationalized domain names support
-- **urllib3** (2.6.3) - HTTP connection pooling
-
-**Total size**: ~3.3 MB
-
-## Verification System
-
-The plugin includes automatic verification that bundled packages are available:
-
-### requirements.py
-
-[requirements.py](netro/Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/requirements.py) provides:
-
-1. **verify_bundled_packages(plugin_id)** - Checks packages can be imported
-2. **get_package_info()** - Returns package versions for debugging
-
-### Automatic Check
-
-The verification runs automatically in `Plugin.__init__()`:
-
-```python
-# plugin.py line 83-84
-# Verify bundled packages are available
-requirements.verify_bundled_packages(pluginId)
+```txt
+# HTTP client for Netro API
+requests==2.32.5
 ```
 
-If packages are missing, the plugin will:
-- Refuse to start
-- Display helpful error message
-- Provide fix instructions
+That's it! Just list the packages and Indigo does the rest.
 
-## Installation
+## For Plugin Developers
 
-Packages are already bundled in the plugin. **Users don't need to do anything.**
+### Adding a New Dependency
 
-## Updating Packages
+1. Add to `requirements.txt`:
+   ```txt
+   requests==2.32.5
+   pillow==10.4.0
+   ```
 
-For plugin developers:
+2. That's it! Indigo will install it automatically
 
-### Update All Packages
+### Testing Locally
 
-```bash
-cd "/path/to/Netro Sprinklers.indigoPlugin/Contents"
-
-# Remove old packages
-rm -rf Packages/*
-
-# Install fresh copies
-pip3 install --target Packages -r ../../requirements.txt
-
-# Clean up unnecessary files
-cd Packages
-rm -rf *.dist-info bin/
-```
-
-### Update Single Package
+For local development/testing (outside Indigo):
 
 ```bash
-pip3 install --target "Netro Sprinklers.indigoPlugin/Contents/Packages" --upgrade requests
-cd "Netro Sprinklers.indigoPlugin/Contents/Packages"
-rm -rf *.dist-info bin/
-```
-
-### Verify Installation
-
-```bash
-# Check package sizes
-du -sh "Netro Sprinklers.indigoPlugin/Contents/Packages/"
-
-# List bundled packages
-ls -la "Netro Sprinklers.indigoPlugin/Contents/Packages/"
-```
-
-## Development Dependencies
-
-Not bundled with plugin (install separately for development):
-
-```bash
-# Install from requirements.txt
-pip3 install pytest pytest-cov pytest-mock
-
-# Or install just testing tools
+# Install dependencies for testing
 pip3 install -r requirements.txt
+
+# Run tests
+pytest tests/
 ```
 
-## Comparison with Other Approaches
+### Version Pinning
 
-### ❌ System Package Approach (UK-Trains plugin)
+Always pin exact versions for consistency:
 
-**How it works**:
-- Checks if packages are installed in system Python
-- Prompts user to install if missing
-- Uses `pip install <package>`
+```txt
+# Good - exact version
+requests==2.32.5
 
-**Drawbacks**:
-- Relies on user's Python environment
-- Different users may have different versions
-- System packages can be removed/upgraded
-- Plugin breaks if system Python changes
+# Bad - unpinned (version may change)
+requests
+```
 
-### ✅ Bundled Package Approach (Netro plugin)
+## Why This Approach?
 
-**How it works**:
-- Packages bundled inside plugin
-- Verified at plugin startup
-- No user action required
+### Previous Approaches (Now Outdated)
 
-**Benefits**:
+**❌ System Package Checker** (UK-Trains old approach):
+- Checked if packages installed in system Python
+- Prompted user to run `pip install`
+- User had to manually install
+- Different users could have different versions
+
+**❌ Bundled Packages** (Initial Netro approach):
+- Copied packages into `Contents/Packages/`
+- Plugin bundle became 3+ MB larger
+- Had to maintain bundled copies
+- Updates required re-bundling
+
+### ✅ Current Approach: Indigo Automatic
+
+- Plugin just lists requirements
+- Indigo handles installation
 - Works out of the box
-- Consistent across all installations
-- Immune to system changes
-- True "install and forget"
+- Always up to date
+- Clean and simple
+
+## File Structure
+
+```
+Netro Sprinklers.indigoPlugin/
+├── Contents/
+│   ├── Info.plist
+│   └── Server Plugin/
+│       ├── plugin.py              # Main plugin code
+│       ├── requirements.txt       # Package requirements (ONLY THIS NEEDED)
+│       ├── Devices.xml
+│       ├── Actions.xml
+│       └── ...
+└── requirements.txt (symlink)     # For convenience
+```
 
 ## Troubleshooting
 
-### ImportError on Plugin Load
+### Package Not Found
 
-**Error**: `ImportError: No module named 'requests'`
+**Error**: `ModuleNotFoundError: No module named 'requests'`
 
-**Cause**: Bundled packages missing or corrupted
-
-**Fix**:
-1. Reinstall plugin from clean copy
-2. Or manually reinstall packages:
-   ```bash
-   pip3 install --target "Netro Sprinklers.indigoPlugin/Contents/Packages" requests
-   cd "Netro Sprinklers.indigoPlugin/Contents/Packages"
-   rm -rf *.dist-info bin/
-   ```
-3. Reload plugin in Indigo
-
-### Wrong Package Version
-
-**Error**: Plugin requires newer version
-
-**Fix**: Update bundled packages (see "Updating Packages" above)
-
-### Packages Directory Missing
-
-**Error**: `ImportError: ... packages are missing!`
+**Cause**: Indigo couldn't install package
 
 **Fix**:
-1. Verify `Contents/Packages/` directory exists
-2. Reinstall packages
-3. Check file permissions
+1. Check `requirements.txt` exists in `Contents/Server Plugin/`
+2. Check package name is spelled correctly
+3. Check network connection (Indigo needs to download)
+4. Manually install: `pip3 install requests`
 
-## Files
+### Wrong Version Installed
 
-- **[requirements.py](netro/Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/requirements.py)** - Verification system
-- **[requirements.txt](netro/requirements.txt)** - Package list with versions
-- **[Contents/Packages/](netro/Netro%20Sprinklers.indigoPlugin/Contents/Packages/)** - Bundled packages
-- **[Contents/Packages/README.md](netro/Netro%20Sprinklers.indigoPlugin/Contents/Packages/README.md)** - Bundled packages documentation
+**Error**: Package version mismatch
+
+**Fix**:
+1. Check version pinning in `requirements.txt`
+2. Reload plugin to trigger reinstall
+3. Or manually: `pip3 install requests==2.32.5`
+
+### Indigo Event Log Shows Install Errors
+
+**Check**:
+- Network connectivity
+- PyPI availability
+- Disk space
+- Python environment
+
+## Migration from Old Approaches
+
+### From System Package Checker
+
+**Remove**:
+- Custom `requirements.py` verification code
+- `requirements_check()` function calls
+- `import requirements` from plugin.py
+
+**Keep**:
+- `requirements.txt` file
+- Package version pins
+
+### From Bundled Packages
+
+**Remove**:
+- `Contents/Packages/` directory
+- Bundled package copies
+- Package installation scripts
+
+**Keep**:
+- `requirements.txt` file
+- Package version pins
 
 ## References
 
-- [Indigo SDK - Getting Started](Indigo%20SDK/docs/getting-started/README.md)
-- [Indigo SDK - Troubleshooting](Indigo%20SDK/docs/troubleshooting/common-issues.md)
-- [Example Action API Plugin](Indigo%20SDK/IndigoSDK-2025.1/Example%20Action%20API.indigoPlugin/) - Reference implementation
+- **Indigo Documentation**: Plugin dependency management (handled automatically)
+- **requirements.txt Format**: Standard Python requirements file format
+- **PyPI**: Python Package Index (where Indigo downloads packages)
+
+## Summary
+
+**For developers**: Just add package names to `requirements.txt`
+
+**For users**: Nothing - plugin works automatically
+
+**For Indigo**: Handles all installation automatically
+
+Simple, clean, and it just works!
