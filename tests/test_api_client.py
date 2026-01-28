@@ -31,7 +31,7 @@ class TestAPIClient:
 
             # Assert
             assert response["status"] == "OK"
-            assert "devices" in response["data"]
+            assert "device" in response["data"]
             assert response["meta"]["token_remaining"] == 1850
 
     def test_successful_post_request(self, mock_plugin, mock_requests_post):

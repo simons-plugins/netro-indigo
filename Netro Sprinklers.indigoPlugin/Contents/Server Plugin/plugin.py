@@ -558,7 +558,7 @@ class Plugin(indigo.PluginBase):
                             if dev.onState:
                                 dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensorOn)
                             else:
-                                dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensorOn)
+                                dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensor)
                         else:
                             dev.updateStatesOnServer(self.key_val_list)
                             dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensor)
@@ -583,6 +583,11 @@ class Plugin(indigo.PluginBase):
         jsonData = self._make_api_call(url)
         jdata = jsonData['data']
         jmoistures = jdata['moistures']
+
+        # Guard against empty moistures list
+        if not jmoistures:
+            self.logger.debug("No moisture data available from API")
+            return []
 
         # Sort by ID to get most recent first
         jmoistures.sort(key=lambda x: x.get('id'), reverse=True)
@@ -618,6 +623,17 @@ class Plugin(indigo.PluginBase):
         jdata = jsonData['data']
         jmeta = jsonData['meta']
         sensorReadings = jdata['sensor_data']
+
+        # Guard against empty sensor readings list
+        if not sensorReadings:
+            self.logger.warning("No sensor data available from API")
+            return {
+                'sensorStatus': jsonData['status'],
+                'sensorMeta': jsonData['meta'],
+                'currentReadings': {},
+                'sensorKeyValuesList': []
+            }
+
         sensorReadings.sort(key=lambda x: x.get('id'), reverse=True)
         devStates=sensorReadings[0]
         self.logger.debug(devStates)
@@ -968,7 +984,23 @@ class Plugin(indigo.PluginBase):
                 self.serial_number = new_serial
                 self.logger.info("Serial number updated, will reconnect to Netro API")
 
-            # Note: Polling interval is handled by runConcurrentThread checking pluginPrefs
+            # Update polling interval
+            try:
+                new_polling_interval = int(valuesDict.get("pollingInterval", MINIMUM_POLLING_INTERVAL))
+                if new_polling_interval != self.pollingInterval:
+                    self.pollingInterval = new_polling_interval
+                    self.logger.info(f"Polling interval updated to {self.pollingInterval} minutes")
+            except (ValueError, TypeError):
+                self.logger.warning("Invalid polling interval value, keeping existing setting")
+
+            # Update max zone runtime
+            try:
+                new_max_runtime = int(valuesDict.get("maxZoneRunTime", NETRO_MAX_ZONE_DURATION))
+                if new_max_runtime != self.maxZoneRunTime:
+                    self.maxZoneRunTime = new_max_runtime
+                    self.logger.info(f"Max zone runtime updated to {self.maxZoneRunTime} seconds")
+            except (ValueError, TypeError):
+                self.logger.warning("Invalid max zone runtime value, keeping existing setting")
 
     ########################################
     # General device callbacks
@@ -1221,7 +1253,7 @@ class Plugin(indigo.PluginBase):
         if dev_dict:
             try:
                 data = {
-                    "key": self.serial_number,
+                    "key": dev.address,
                     "days": num_Days,
                 }
                 response = self._make_api_call(DEVICE_NO_WATER_URL, request_method="post", data=data)
@@ -1250,7 +1282,7 @@ class Plugin(indigo.PluginBase):
         try:
             # Set device status: 0 = standby (off), 1 = online (on)
             data = {
-                "key": self.serial_number,
+                "key": dev.address,
                 "status": 0 if pluginAction.props["mode"] else 1,
             }
             self._make_api_call(DEVICE_SET_STATUS_URL, request_method="post", data=data)

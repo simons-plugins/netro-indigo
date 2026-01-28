@@ -26,7 +26,7 @@ class NetroAPITester:
     def __init__(self, serial_number, timeout=5):
         self.serial_number = serial_number
         self.timeout = timeout
-        self.api_base = "http://api.netrohome.com/npa/v1/"
+        self.api_base = "https://api.netrohome.com/npa/v1/"
 
     def _make_request(self, endpoint, method="GET", data=None):
         """Make API request and return response."""
