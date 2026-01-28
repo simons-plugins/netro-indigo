@@ -93,29 +93,34 @@ class NetroAPITester:
 
         if response and response.get('status') == 'OK':
             data = response.get('data', {})
-            devices = data.get('devices', [])
 
-            print(f"\n✓ Success - Found {len(devices)} device(s)")
+            # API returns single 'device', not 'devices' array
+            device = data.get('device')
 
-            for i, device in enumerate(devices):
-                print(f"\nDevice {i+1}:")
+            if device:
+                print(f"\n✓ Success - Found device")
+
+                print(f"\nDevice:")
                 print(f"  Name: {device.get('name', 'N/A')}")
                 print(f"  Model: {device.get('model', 'N/A')}")
                 print(f"  Serial: {device.get('serial', 'N/A')}")
                 print(f"  Status: {device.get('status', 'N/A')}")
-                print(f"  Standby: {device.get('in_standby', 'N/A')}")
-                print(f"  Paused: {device.get('paused', 'N/A')}")
+                print(f"  Version: {device.get('version', 'N/A')}")
+                print(f"  Last Active: {device.get('last_active', 'N/A')}")
 
                 zones = device.get('zones', [])
                 print(f"  Zones: {len(zones)}")
                 for zone in zones:
                     enabled = "✓" if zone.get('enabled') else "✗"
-                    smart = "SMART" if zone.get('smart') else "MANUAL"
+                    smart = zone.get('smart', 'MANUAL')  # Can be "SMART" string or boolean
                     print(f"    {enabled} Zone {zone.get('ith')}: {zone.get('name')} [{smart}]")
 
-            return True
+                return True
+            else:
+                print(f"\n✗ No device found (controller may be offline)")
+                return False
         else:
-            print(f"\n✗ Failed to get device info")
+            print(f"\n✗ Failed to get device info (API error)")
             return False
 
     def test_schedules(self):
