@@ -599,9 +599,10 @@ class Plugin(indigo.PluginBase):
 
         # Build state updates for each zone
         current_moistures = []
-        for idx, moisture_data in enumerate(maxDateMoistures, start=1):
+        for moisture_data in maxDateMoistures:
+            zone = moisture_data['zone']
             state_dict = {
-                "key": f"zone_{idx}_moisture",
+                "key": f"zone_{zone}_moisture",
                 "value": str(moisture_data["moisture"])
             }
             current_moistures.append(state_dict)

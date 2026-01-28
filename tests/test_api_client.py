@@ -13,11 +13,8 @@ pytestmark = pytest.mark.api
 class TestAPIClient:
     """Test suite for API client methods."""
 
-    def test_successful_get_request(self, mock_plugin, mock_requests_get, load_fixture):
+    def test_successful_get_request(self, load_fixture):
         """Test successful GET request returns JSON data."""
-        # Arrange
-        mock_get = mock_requests_get("http://api.netrohome.com/npa/v1/info.json?key=test",
-                                      "info_response.json")
 
         # Mock the _make_api_call method behavior
         with patch('requests.get') as mock_get_method:
@@ -34,10 +31,8 @@ class TestAPIClient:
             assert "device" in response["data"]
             assert response["meta"]["token_remaining"] == 1850
 
-    def test_successful_post_request(self, mock_plugin, mock_requests_post):
+    def test_successful_post_request(self):
         """Test successful POST request returns success."""
-        # Arrange
-        mock_post = mock_requests_post("http://api.netrohome.com/npa/v1/water.json")
 
         # Act
         with patch('requests.post') as mock_post_method:
@@ -51,7 +46,7 @@ class TestAPIClient:
             # Assert
             assert response["status"] == "OK"
 
-    def test_http_429_rate_limit(self, mock_plugin):
+    def test_http_429_rate_limit(self):
         """Test that HTTP 429 triggers throttle delay."""
         # Arrange
         with patch('requests.get') as mock_get:
@@ -64,7 +59,7 @@ class TestAPIClient:
             with pytest.raises(requests.exceptions.HTTPError):
                 mock_response.raise_for_status()
 
-    def test_connection_error_handling(self, mock_plugin):
+    def test_connection_error_handling(self):
         """Test that connection errors are handled gracefully."""
         # Arrange
         with patch('requests.get') as mock_get:
@@ -74,7 +69,7 @@ class TestAPIClient:
             with pytest.raises(requests.exceptions.ConnectionError):
                 mock_get("http://api.netrohome.com/npa/v1/info.json")
 
-    def test_timeout_handling(self, mock_plugin):
+    def test_timeout_handling(self):
         """Test that timeout errors are handled."""
         # Arrange
         with patch('requests.get') as mock_get:
@@ -84,7 +79,7 @@ class TestAPIClient:
             with pytest.raises(requests.exceptions.Timeout):
                 mock_get("http://api.netrohome.com/npa/v1/info.json", timeout=5)
 
-    def test_invalid_json_response(self, mock_plugin):
+    def test_invalid_json_response(self):
         """Test handling of invalid JSON response."""
         # Arrange
         with patch('requests.get') as mock_get:
@@ -119,7 +114,7 @@ class TestAPIClient:
         # Assert
         assert is_throttled is False
 
-    def test_api_headers_include_timeout(self, mock_plugin):
+    def test_api_headers_include_timeout(self):
         """Test that API calls include timeout parameter."""
         # Arrange
         timeout_value = 5
@@ -136,7 +131,7 @@ class TestAPIClient:
             # Assert
             mock_get.assert_called_with("http://test.com", timeout=timeout_value)
 
-    def test_token_remaining_tracked(self, mock_plugin, load_fixture):
+    def test_token_remaining_tracked(self, load_fixture):
         """Test that token_remaining is extracted from responses."""
         # Arrange
         response = load_fixture("info_response.json")
@@ -148,7 +143,7 @@ class TestAPIClient:
         assert token_remaining == 1850
         assert isinstance(token_remaining, int)
 
-    def test_token_reset_time_tracked(self, mock_plugin, load_fixture):
+    def test_token_reset_time_tracked(self, load_fixture):
         """Test that token_reset is extracted from responses."""
         # Arrange
         response = load_fixture("info_response.json")

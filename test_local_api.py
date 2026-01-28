@@ -15,9 +15,48 @@ Usage:
 
 import argparse
 import json
+import re
 import sys
 from datetime import datetime
 import requests
+
+
+def sanitize_url(url):
+    """Sanitize URL by redacting API keys and serial numbers.
+
+    Args:
+        url: URL string potentially containing sensitive data
+
+    Returns:
+        Sanitized URL with sensitive values redacted
+    """
+    # Redact query parameters like key=, api_key=, serial=
+    url = re.sub(r'([?&])(key|api_key|serial)=([^&]+)', r'\1\2=REDACTED', url)
+    return url
+
+
+def sanitize_payload(data):
+    """Sanitize payload by redacting sensitive fields.
+
+    Args:
+        data: Dictionary potentially containing sensitive data
+
+    Returns:
+        Sanitized copy of data with sensitive values redacted
+    """
+    if not data:
+        return data
+
+    # Create a copy to avoid modifying original
+    sanitized = data.copy()
+
+    # Redact common sensitive fields
+    sensitive_fields = ['key', 'api_key', 'serial', 'token', 'password']
+    for field in sensitive_fields:
+        if field in sanitized:
+            sanitized[field] = 'REDACTED'
+
+    return sanitized
 
 
 class NetroAPITester:
@@ -33,9 +72,9 @@ class NetroAPITester:
         url = f"{self.api_base}{endpoint}"
 
         print(f"\n{'='*70}")
-        print(f"Request: {method} {url}")
+        print(f"Request: {method} {sanitize_url(url)}")
         if data:
-            print(f"Data: {json.dumps(data, indent=2)}")
+            print(f"Data: {json.dumps(sanitize_payload(data), indent=2)}")
 
         try:
             if method == "GET":
