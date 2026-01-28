@@ -1,16 +1,48 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
-####################
-# Copyright (c) 2014, Perceptive Automation, LLC. All rights reserved.
-# http://www.indigodomo.com
+"""Netro Smart Sprinkler Controller Plugin for Indigo.
 
-import indigo
-import requests
+This plugin integrates Netro smart irrigation controllers with Indigo home automation.
+It provides real-time monitoring and control of sprinkler zones, schedules, moisture
+levels, and weather integration through the Netro Public API (NPA).
+
+Features:
+    - Control individual zones remotely
+    - Monitor moisture levels per zone
+    - View current and upcoming watering schedules
+    - Report local weather to improve Netro's smart scheduling
+    - Set rain delays and standby modes
+    - Support for Whisperer soil moisture sensors
+    - Automatic rate limit handling (2000 API calls/day)
+
+Architecture:
+    - Uses Netro Public API v1 (http://api.netrohome.com/npa/v1/)
+    - Authentication via device serial number
+    - Polling interval: 3+ minutes (configurable)
+    - Automatic throttle management on HTTP 429 responses
+    - Real-time state updates via concurrent polling thread
+
+Requirements:
+    - Netro controller serial number
+    - Active internet connection
+    - Python 3.10+ with requests library (auto-installed by Indigo)
+
+API Documentation:
+    See NETRO_API.md for complete API endpoint documentation
+    See API_NOTES.md for known quirks and limitations
+
+Copyright (c) 2014, Perceptive Automation, LLC. All rights reserved.
+http://www.indigodomo.com
+"""
+
 import json
 import copy
 import traceback
 from operator import itemgetter
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta
+
+import indigo
+import requests
 from dateutil import tz
 
 # API Configuration
@@ -54,10 +86,24 @@ ALL_COMM_ERROR_EVENTS = {
 
 
 class ThrottleDelayError(Exception):
+    """Raised when API calls are throttled due to rate limit violations.
+
+    The Netro API allows 2000 calls per day. When the limit is exceeded,
+    the API returns HTTP 429. This exception is raised to prevent further
+    API calls until the throttle period expires (61 minutes).
+    """
     pass
 
 
 def convert_timestamp(timestamp):
+    """Convert Unix timestamp (milliseconds) to local timezone datetime.
+
+    Args:
+        timestamp: Unix timestamp in milliseconds
+
+    Returns:
+        datetime: Timestamp converted to local timezone
+    """
     from_zone = tz.tzutc()
     to_zone = tz.tzlocal()
     time_utc = datetime.utcfromtimestamp(timestamp / 1000)
@@ -66,6 +112,15 @@ def convert_timestamp(timestamp):
 
 
 def get_key_from_dict(a_key, a_dict):
+    """Safely get value from dictionary with graceful error handling.
+
+    Args:
+        a_key: Dictionary key to retrieve
+        a_dict: Dictionary to search
+
+    Returns:
+        Value if key exists, otherwise "unavailable from API" or "unknown error"
+    """
     try:
         return a_dict[a_key]
     except KeyError:
@@ -76,6 +131,23 @@ def get_key_from_dict(a_key, a_dict):
 
 ################################################################################
 class Plugin(indigo.PluginBase):
+    """Main plugin class for Netro Sprinkler Controller integration.
+
+    This class manages communication with the Netro API, device state updates,
+    and user actions. It inherits from indigo.PluginBase and implements the
+    standard Indigo plugin lifecycle methods.
+
+    Attributes:
+        serial_number: Netro controller serial number for API authentication
+        pollingInterval: Minutes between API polls (default 3, minimum 3)
+        timeout: API request timeout in seconds (default 5)
+        maxZoneRunTime: Maximum allowed zone runtime in seconds (default 3600)
+        throttle_next_call: Datetime when throttle period expires (None if not throttled)
+        person: Dict containing Netro user and device data from API
+        netro_devices: List of Netro devices from API response
+        triggerDict: Dict of active Indigo triggers for event handling
+    """
+
     ########################################
     def __init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs):
         super(Plugin, self).__init__(pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
@@ -99,13 +171,22 @@ class Plugin(indigo.PluginBase):
         }
 
         if not self.serial_number:
-            self.logger.warn("You must specify your Netro device serial number in the plugin's config before the plugin can be used.")
+            self.logger.warn(
+                "You must specify your Netro device serial number in the "
+                "plugin's config before the plugin can be used."
+            )
 
         self.triggerDict = {}
 
         # Initialize throttle and weather update tracking
         self.throttle_next_call = None
         self._next_weather_update = datetime.now()
+
+        # Initialize data structures populated by API calls
+        self.person = {}
+        self.netro_devices = []
+        self.serialNo = None
+        self.key_val_list = []
 
 
     ########################################
@@ -199,6 +280,14 @@ class Plugin(indigo.PluginBase):
             raise exc
     ########################################
     def _get_device_dict(self, dev_id):
+        """Get device dictionary from cached person data by device ID.
+
+        Args:
+            dev_id: Device ID (Netro serial number)
+
+        Returns:
+            Dict of device data if found, None otherwise
+        """
         dev_list = [dev_dict for dev_dict in self.person["devices"] if dev_dict["id"] == dev_id]
         if len(dev_list):
             return dev_list[0]
@@ -209,6 +298,15 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def _get_zone_dict(self, dev_id, zoneNumber):
+        """Get zone dictionary from device by zone number.
+
+        Args:
+            dev_id: Device ID (Netro serial number)
+            zoneNumber: Zone index number (1-based)
+
+        Returns:
+            Dict of zone data if found, None otherwise
+        """
         dev_dict = self._get_device_dict(dev_id)
         if dev_dict:
             zone_list = [zone_dict for zone_dict in dev_dict["zones"] if zone_dict["ith"] == zoneNumber]
@@ -218,6 +316,21 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def _update_from_netro(self):
+        """Update all Indigo devices from Netro API data.
+
+        This method is called periodically by the concurrent thread to poll
+        the Netro API and update device states in Indigo. It handles:
+        - Sprinkler controller status and configuration
+        - Current and upcoming schedules
+        - Moisture levels per zone
+        - Whisperer sensor readings
+        - Token count warnings
+
+        The method processes all enabled devices of type 'sprinkler' and
+        'Whisperer', making API calls as needed to fetch current data.
+
+        Exceptions are caught and logged without interrupting the polling cycle.
+        """
         self.logger.debug("_update_from_netro")
         try:
             for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled]:
@@ -510,16 +623,35 @@ class Plugin(indigo.PluginBase):
     # startup, concurrent thread, and shutdown methods
     ########################################
     def startup(self):
+        """Called when plugin is first enabled.
 
+        Logs startup message. Main initialization happens in __init__().
+        """
         self.logger.info("Netro Sprinklers Started")
 
     ########################################
     def shutdown(self):
+        """Called when plugin is disabled or Indigo quits.
+
+        Logs shutdown message and performs cleanup.
+        """
         self.logger.info("Netro Sprinklers Stopped")
         pass
 
     ########################################
     def runConcurrentThread(self):
+        """Background thread that polls Netro API periodically.
+
+        This thread runs continuously while the plugin is enabled, calling
+        _update_from_netro() every pollingInterval minutes. Uses self.sleep()
+        to allow clean shutdown when plugin is disabled.
+
+        The polling interval is configurable but must be at least 3 minutes
+        to avoid hitting Netro's API rate limit (2000 calls/day).
+
+        Exceptions during updates are silently caught to prevent the thread
+        from exiting - errors are logged within _update_from_netro().
+        """
         self.logger.debug("Starting concurrent thread")
         while True:
             try:
@@ -537,6 +669,17 @@ class Plugin(indigo.PluginBase):
     # Dialog list callbacks
     ########################################
     def availableControllers(self, dev_filter="", valuesDict=None, typeId="", targetId=0):
+        """Get list of available Netro controllers for dropdown menus.
+
+        Args:
+            dev_filter: Device filter (unused)
+            valuesDict: Current dialog values
+            typeId: Device type ID
+            targetId: Target device ID
+
+        Returns:
+            List of tuples (controller_id, controller_name)
+        """
         self.logger.debug(f"availableControllers {self.unused_devices}")
         controller_list = [(dev_id, dev_dict['name']) for dev_id, dev_dict in self.unused_devices.items()]
         dev = indigo.devices.get(targetId, None)
@@ -546,8 +689,18 @@ class Plugin(indigo.PluginBase):
         return controller_list
 
     ########################################
-    ########################################
     def sprinklerList(self, dev_filter="", valuesDict=None, typeId="", targetId=0):
+        """Get list of all sprinkler devices for dropdown menus.
+
+        Args:
+            dev_filter: Device filter (unused)
+            valuesDict: Current dialog values
+            typeId: Device type ID
+            targetId: Target device ID
+
+        Returns:
+            List of tuples (device_id, device_name) for all plugin devices
+        """
         self.logger.threaddebug(f"sprinklerList")
         return [(s.id, s.name) for s in indigo.devices.iter(filter="self")]
 
@@ -683,6 +836,16 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def validateEventConfigUi(self, valuesDict, typeId, devId):
+        """Validate event/trigger configuration before saving.
+
+        Args:
+            valuesDict: Event configuration values from UI
+            typeId: Event type ID
+            devId: Device ID
+
+        Returns:
+            Tuple of (is_valid, valuesDict, errorsDict)
+        """
         self.logger.threaddebug(f"validateEventConfigUi")
         errorsDict = indigo.Dict()
         if typeId == "sprinklerError":
@@ -779,11 +942,31 @@ class Plugin(indigo.PluginBase):
     # General device callbacks
     ########################################
     def didDeviceCommPropertyChange(self, origDev, newDev):
+        """Check if device communication properties have changed.
+
+        Called when device is edited to determine if communication needs
+        to be restarted.
+
+        Args:
+            origDev: Original device before edits
+            newDev: Updated device after edits
+
+        Returns:
+            True if device ID changed (requires reconnection), False otherwise
+        """
         self.logger.threaddebug(f"didDeviceCommPropertyChange")
         return True if origDev.states["id"] != newDev.states["id"] else False
 
     ########################################
     def deviceStartComm(self, dev):
+        """Called when device communication should start.
+
+        Triggers an immediate update from the Netro API to populate the
+        device's initial state.
+
+        Args:
+            dev: Device starting communication
+        """
         # Get the full device info and update the newly created device
         # Update all the states here
         self._update_from_netro()
@@ -791,14 +974,27 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def deviceStopComm(self, dev):
+        """Called when device communication should stop.
+
+        Args:
+            dev: Device stopping communication
+        """
         self.logger.debug("Stopping device")
 
     ########################################
     # Event callbacks
     ########################################
-    #  All things that could trigger an event call this method which will do the dispatch
-    ########################################
     def _fireTrigger(self, event, dev_id=None):
+        """Fire Indigo triggers based on plugin events.
+
+        Dispatches events to registered triggers based on trigger type and
+        configuration. Handles operational errors, communication errors, and
+        other plugin events.
+
+        Args:
+            event: Event identifier string (e.g., "startZoneFailed", "rateLimitExceeded")
+            dev_id: Device ID associated with event (None for non-device events)
+        """
         try:
             for triggerId, trigger in self.triggerDict.items():
                 if trigger.pluginTypeId == "sprinklerError":
@@ -828,6 +1024,13 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def triggerStartProcessing(self, trigger):
+        """Called when a trigger is enabled.
+
+        Adds trigger to internal tracking dict for event dispatch.
+
+        Args:
+            trigger: Indigo trigger object
+        """
         super(Plugin, self).triggerStartProcessing(trigger)
         self.logger.debug(f"Start processing trigger {str(trigger.id)}")
         if trigger.id not in self.triggerDict:
@@ -836,6 +1039,13 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def triggerStopProcessing(self, trigger):
+        """Called when a trigger is disabled.
+
+        Removes trigger from internal tracking dict.
+
+        Args:
+            trigger: Indigo trigger object
+        """
         super(Plugin, self).triggerStopProcessing(trigger)
         self.logger.debug("Stop processing trigger " + str(trigger.id))
         try:
@@ -849,6 +1059,23 @@ class Plugin(indigo.PluginBase):
     # Sprinkler Control Action callback
     ########################################
     def actionControlSprinkler(self, action, dev):
+        """Handle Indigo sprinkler device actions.
+
+        Processes standard Indigo sprinkler actions:
+        - Zone On: Start a specific zone
+        - All Zones Off: Stop all running zones
+
+        Also checks for throttle state before making API calls and fires
+        appropriate triggers on success/failure.
+
+        Args:
+            action: Indigo action object with sprinklerAction type
+            dev: Sprinkler controller device
+
+        Note:
+            Advanced schedule actions (RunNewSchedule, PauseSchedule, etc.)
+            are not currently supported due to Netro API limitations.
+        """
         # Check if throttle period has expired
         if self.throttle_next_call and datetime.now() < self.throttle_next_call:
             self.logger.error(f"API calls have violated rate limit - next connection attempt at {self.throttle_next_call:%H:%M:%S}")
@@ -919,6 +1146,14 @@ class Plugin(indigo.PluginBase):
     # General Action callback
     ########################################
     def actionControlUniversal(self, action, dev):
+        """Handle universal device actions.
+
+        Processes standard Indigo device actions like status requests.
+
+        Args:
+            action: Indigo action object with deviceAction type
+            dev: Device to perform action on
+        """
         # STATUS REQUEST #
         if action.deviceAction == indigo.kUniversalAction.RequestStatus:
             self._next_weather_update = datetime.now()
@@ -930,6 +1165,16 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def setNoWater(self, pluginAction, dev):
+        """Set rain delay (no watering) for specified number of days.
+
+        Tells Netro to skip automatic watering for the configured number
+        of days. Useful for manual rain delays or when performing lawn
+        maintenance.
+
+        Args:
+            pluginAction: Action parameters containing numDaysNoWater
+            dev: Sprinkler controller device
+        """
         num_Days = pluginAction.props["numDaysNoWater"]
         dev_dict = self._get_device_dict(dev.states["id"])
 
@@ -953,6 +1198,15 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def setStandbyMode(self, pluginAction, dev):
+        """Set controller standby mode on/off.
+
+        When in standby mode, the controller won't water automatically.
+        Useful for winterization or extended absences.
+
+        Args:
+            pluginAction: Action parameters containing mode (True=standby, False=online)
+            dev: Sprinkler controller device
+        """
         try:
             # Set device status: 0 = standby (off), 1 = online (on)
             data = {
@@ -1133,6 +1387,11 @@ class Plugin(indigo.PluginBase):
     # Menu callbacks defined in MenuItems.xml
     ########################################
     def toggleDebugging(self):
+        """Toggle debug logging on/off via plugin menu.
+
+        Switches between normal and debug logging levels and saves
+        the preference so it persists across plugin restarts.
+        """
         if self.debug:
             self.logger.info("Turning off debug logging")
             self.pluginPrefs["showDebugInfo"] = False
@@ -1144,11 +1403,26 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def updateAllStatus(self):
+        """Force immediate update of all devices via plugin menu.
+
+        Triggers an immediate API poll instead of waiting for the
+        next scheduled update from the concurrent thread.
+        """
         self._next_weather_update = datetime.now()
         self._update_from_netro()
 
     ########################################
     def pickController(self, dev_filter=None, valuesDict=None, typeId=0):
+        """Get sorted list of controllers for menu selection.
+
+        Args:
+            dev_filter: Device filter (unused)
+            valuesDict: Current dialog values
+            typeId: Device type ID
+
+        Returns:
+            Sorted list of tuples (device_id, device_name)
+        """
         self.logger.threaddebug(f"pickController")
         retList = []
         for dev in indigo.devices.iter("self"):
@@ -1156,7 +1430,18 @@ class Plugin(indigo.PluginBase):
         retList.sort(key=lambda tup: tup[1])
         return retList
 
-    # doesn't do anything, just needed to force other menus to dynamically refresh
+    ########################################
     def configMenuChanged(self, valuesDict):
+        """Handle configuration menu changes.
+
+        Called when menu selections change to trigger dynamic UI updates.
+        Returns valuesDict unchanged to force other fields to refresh.
+
+        Args:
+            valuesDict: Current dialog values
+
+        Returns:
+            valuesDict unchanged
+        """
         self.logger.threaddebug(f"configMenuChanged")
         return valuesDict
