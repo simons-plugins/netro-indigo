@@ -49,9 +49,11 @@ from dateutil import tz
 NETRO_API_VERSION = "1"
 NETRO_MAX_ZONE_DURATION = 10800
 DEFAULT_API_CALL_TIMEOUT = 5  # number of seconds after which we time out any network calls
-MINIMUM_POLLING_INTERVAL = 3  # number of minutes between each poll, default is 3 (changed 2/27/2018 to help avoid throttling)
+# number of minutes between each poll, default is 3 (changed 2/27/2018 to help avoid throttling)
+MINIMUM_POLLING_INTERVAL = 3
 DEFAULT_WEATHER_UPDATE_INTERVAL = 10  # number of minutes between each forecast update, default is 10
-THROTTLE_LIMIT_TIMER = 61  # number of minutes to wait if we've received a throttle error before doing any API calls
+# number of minutes to wait if we've received a throttle error before doing any API calls
+THROTTLE_LIMIT_TIMER = 61
 FORECAST_UPDATE_INTERVAL = 60  # minutes between forecast updates
 
 # API Base URL
@@ -172,8 +174,8 @@ class Plugin(indigo.PluginBase):
 
         if not self.serial_number:
             self.logger.warn(
-                "You must specify your Netro device serial number in the "
-                "plugin's config before the plugin can be used."
+                "You must specify your Netro device serial number in the plugin's config "
+                "before the plugin can be used."
             )
 
         self.triggerDict = {}
@@ -254,7 +256,8 @@ class Plugin(indigo.PluginBase):
         except requests.exceptions.ReadTimeout as exc:
             if not self._displayed_connection_error:
                 self.logger.error(
-                    "Unable to contact device - the controller may be offline. Will continue to retry silently.")
+                    "Unable to contact device - the controller may be offline. "
+                    "Will continue to retry silently.")
                 self._displayed_connection_error = True
             raise exc
         except requests.exceptions.Timeout as exc:
@@ -264,7 +267,7 @@ class Plugin(indigo.PluginBase):
             raise exc
         except requests.exceptions.HTTPError as exc:
             if exc.response.status_code == 429:
-                # We've hit the throttle limit - we need to back off on all requests for some period of time
+                # We've hit the throttle limit - back off on all requests for some period
                 self.throttle_next_call = datetime.now() + timedelta(minutes=THROTTLE_LIMIT_TIMER)
                 self._fireTrigger("rateLimitExceeded")
             raise exc
@@ -274,7 +277,8 @@ class Plugin(indigo.PluginBase):
             raise exc
         except Exception as exc:
             self.logger.error(
-                f"Connection to Netro API server failed with exception: {exc.__class__.__name__}. Check the log file for full details.")
+                f"Connection to Netro API server failed with exception: {exc.__class__.__name__}. "
+                f"Check the log file for full details.")
             self.logger.debug(
                 f"Connection to Netro API server failed with exception:\n{traceback.format_exc(10)}")
             raise exc
@@ -334,211 +338,230 @@ class Plugin(indigo.PluginBase):
         self.logger.debug("_update_from_netro")
         try:
             for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled]:
-            
-                    # Update defined Netro controllers
-                    if dev.deviceTypeId == "sprinkler":
+                # Update defined Netro controllers
+                if dev.deviceTypeId == "sprinkler":
+                    try:
+                        # Get device info using serial number from device address
+                        reply_dict = self._make_api_call(
+                            f"{DEVICE_INFO_URL}?key={dev.address}")
+
+                        reply_dict_data = reply_dict["data"]
+                        reply_dict_device = reply_dict_data["device"]
+                        reply_dict_meta = reply_dict["meta"]
+
+                        # Create a dict of devices containing only single device
+                        # Insert Netro serial number into dict as "id"
+                        netroSerial = reply_dict_device["serial"]
+                        reply_dict_device_serial = {"id": netroSerial}
+
+                        # Insert on key based on "status"
+                        if reply_dict_device["status"] == "ONLINE":
+                            reply_dict_device_on = {"on": "true"}
+                        else:
+                            reply_dict_device_on = {"on": "false"}
+
+                        reply_dict_device.update(reply_dict_device_serial)
+                        reply_dict_device.update(reply_dict_meta)
+                        reply_dict_device.update(reply_dict_device_on)
+                        ls_reply_dict_devices = []
+                        ls_reply_dict_devices.append(reply_dict_device)
+
+                        self.person = {"id": netroSerial, "devices": ls_reply_dict_devices}
+                        self.netro_devices = self.person["devices"]
+                        self.logger.debug(self.netro_devices)
+
+                        # Build update list for device states
+                        update_list = [
+                            {"key": "id", "value": reply_dict_device["id"]},
+                            {"key": "api_version", "value": reply_dict_device["version"]},
+                            {"key": "address",
+                             "value": get_key_from_dict("macAddress", reply_dict_device)},
+                            {"key": "model", "value": get_key_from_dict("model", reply_dict_device)},
+                            {"key": "paused", "value": get_key_from_dict("paused", reply_dict_device)},
+                            {"key": "scheduleModeType",
+                             "value": get_key_from_dict("scheduleModeType", reply_dict_device)},
+                            {"key": "status",
+                             "value": get_key_from_dict("status", reply_dict_device)}
+                        ]
+
+                        # "status" is ONLINE or OFFLINE - if the latter it's unplugged or
+                        # otherwise can't communicate with the cloud. Note: it often takes
+                        # a REALLY long time for the API to return OFFLINE, sometimes never.
+                        if dev.states["status"] == "OFFLINE":
+                            dev.setErrorStateOnServer('unavailable')
+                        else:
+                            dev.setErrorStateOnServer('')
+
+                        update_list.append(
+                            {"key": "token_remaining",
+                             'value': reply_dict_device["token_remaining"]})
+                        update_list.append({"key": "time", 'value': reply_dict_device["time"]})
+                        update_list.append(
+                            {"key": "last_active", 'value': reply_dict_device["last_active"]})
+                        update_list.append(
+                            {"key": "token_reset", 'value': reply_dict_device["token_reset"]})
+                        update_list.append({"key": "name", "value": reply_dict_device["name"]})
+
+                        # Warn if API tokens are running low
+                        tokens_remaining = reply_dict_device.get("token_remaining", 2000)
+                        if tokens_remaining < 100:
+                            self.logger.warning(
+                                f"API rate limit warning: Only {tokens_remaining} calls remaining today. "
+                                f"Resets at {reply_dict_device.get('token_reset', 'unknown')}. "
+                                f"Consider increasing polling interval to avoid hitting limit.")
+                        elif tokens_remaining < 200:
+                            self.logger.info(f"API tokens remaining: {tokens_remaining} of 2000 today")
+
+                        activeScheduleName = None
+
+                        # Get the current schedule for the device - it will tell us if it's running or not
                         try:
-                            # Get device info using serial number from device address
-                            reply_dict = self._make_api_call(
-                                f"{DEVICE_INFO_URL}?key={dev.address}")
+                            schedule_dict = self._make_api_call(
+                                f"{DEVICE_SCHEDULES_URL}?key={netroSerial}")
+                            # Loop all possible schedules to find active and next
+                            all_schedules_data = schedule_dict["data"]
+                            all_schedules = all_schedules_data["schedules"]
 
-                            reply_dict_data = reply_dict["data"]
-                            reply_dict_device = reply_dict_data["device"]
-                            reply_dict_meta = reply_dict["meta"]
+                            current_schedule_dict = None
+                            next_schedule_dict = None
+                            earliest_start_time = None
 
-                            # Create a dict of devices containing only single device
-                            # Insert Netro serial number into dict as "id"
-                            netroSerial = reply_dict_device["serial"]
-                            reply_dict_device_serial = {"id": netroSerial}
-
-                            # Insert on key based on "status"
-                            if reply_dict_device["status"] == "ONLINE":
-                                reply_dict_device_on = {"on": "true"}
-                            else:
-                                reply_dict_device_on = {"on": "false"}
-
-                            reply_dict_device.update(reply_dict_device_serial)
-                            reply_dict_device.update(reply_dict_meta)
-                            reply_dict_device.update(reply_dict_device_on)
-                            ls_reply_dict_devices = []
-                            ls_reply_dict_devices.append(reply_dict_device)
-
-                            self.person = {"id": netroSerial, "devices": ls_reply_dict_devices}
-                            self.netro_devices = self.person["devices"]
-                            self.logger.debug(self.netro_devices)
-
-                            # Build update list for device states
-                            update_list = [{"key": "id", "value": reply_dict_device["id"]},
-                                       {"key": "api_version", "value": reply_dict_device["version"]},
-                                       {"key": "address", "value": get_key_from_dict("macAddress", reply_dict_device)},
-                                       {"key": "model", "value": get_key_from_dict("model", reply_dict_device)},
-                                       {"key": "paused", "value": get_key_from_dict("paused", reply_dict_device)},
-                                       {"key": "scheduleModeType",
-                                        "value": get_key_from_dict("scheduleModeType", reply_dict_device)},
-                                           {"key": "status", "value": get_key_from_dict("status", reply_dict_device)}]
-
-                            # "status" is ONLINE or OFFLINE - if the latter it's unplugged or otherwise can't communicate with the cloud
-                            # note: it often takes a REALLY long time for the API to return OFFLINE, and sometimes it never does.
-                            if dev.states["status"] == "OFFLINE":
-                                dev.setErrorStateOnServer('unavailable')
-                            else:
-                                dev.setErrorStateOnServer('')
-
-                            update_list.append({"key": "token_remaining", 'value': reply_dict_device["token_remaining"]})
-                            update_list.append({"key": "time", 'value': reply_dict_device["time"]})
-                            update_list.append({"key": "last_active", 'value': reply_dict_device["last_active"]})
-                            update_list.append({"key": "token_reset", 'value': reply_dict_device["token_reset"]})
-                            update_list.append({"key": "name", "value": reply_dict_device["name"]})
-
-                            # Warn if API tokens are running low
-                            tokens_remaining = reply_dict_device.get("token_remaining", 2000)
-                            if tokens_remaining < 100:
-                                self.logger.warning(f"API rate limit warning: Only {tokens_remaining} calls remaining today. "
-                                                  f"Resets at {reply_dict_device.get('token_reset', 'unknown')}. "
-                                                  f"Consider increasing polling interval to avoid hitting limit.")
-                            elif tokens_remaining < 200:
-                                self.logger.info(f"API tokens remaining: {tokens_remaining} of 2000 today")
-
-                            activeScheduleName = None
-
-                            # Get the current schedule for the device - it will tell us if it's running or not
-                            try:
-                                schedule_dict = self._make_api_call(
-                                    f"{DEVICE_SCHEDULES_URL}?key={netroSerial}")
-                                # Loop all possible schedules to find active and next
-                                all_schedules_data = schedule_dict["data"]
-                                all_schedules = all_schedules_data["schedules"]
-
-                                current_schedule_dict = None
-                                next_schedule_dict = None
-                                earliest_start_time = None
-
-                                for sch_dict in all_schedules:
-                                    # Find currently executing schedule
-                                    if sch_dict["status"] == "EXECUTING":
-                                        current_schedule_dict = sch_dict
-                                    # Find next valid (upcoming) schedule with earliest start time
-                                    elif sch_dict["status"] == "VALID":
-                                        # Handle start_time as either string or number
-                                        start_time_raw = sch_dict.get("start_time", 0)
-                                        try:
-                                            start_time = float(start_time_raw) if isinstance(start_time_raw, str) else start_time_raw
-                                        except (ValueError, TypeError):
-                                            start_time = 0
-
-                                        if earliest_start_time is None or start_time < earliest_start_time:
-                                            earliest_start_time = start_time
-                                            next_schedule_dict = sch_dict
-
-                                # Update current/active schedule states
-                                if current_schedule_dict:
-                                    # Something is running - use the source field to show schedule type
-                                    update_list.append(
-                                        {"key": "activeZone", "value": current_schedule_dict["zone"]})
-                                    # Display schedule source (AUTOMATIC, MANUAL, SMART, FIX)
-                                    update_list.append(
-                                        {"key": "activeSchedule", "value": current_schedule_dict["source"].title()})
-                                    activeScheduleName = current_schedule_dict["source"].title()
-                                else:
-                                    update_list.append({"key": "activeSchedule", "value": "No active schedule"})
-                                    # Show no zones active
-                                    update_list.append({"key": "activeZone", "value": 0})
-
-                                # Update next schedule states
-                                if next_schedule_dict:
-                                    # Convert timestamp to readable format
+                            for sch_dict in all_schedules:
+                                # Find currently executing schedule
+                                if sch_dict["status"] == "EXECUTING":
+                                    current_schedule_dict = sch_dict
+                                # Find next valid (upcoming) schedule with earliest start time
+                                elif sch_dict["status"] == "VALID":
                                     # Handle start_time as either string or number
-                                    start_time_raw = next_schedule_dict.get("start_time", 0)
+                                    start_time_raw = sch_dict.get("start_time", 0)
                                     try:
-                                        start_time_ms = float(start_time_raw) if isinstance(start_time_raw, str) else start_time_raw
-                                        start_time_dt = datetime.fromtimestamp(start_time_ms / 1000.0)
-                                        start_time_str = start_time_dt.strftime("%Y-%m-%d %H:%M:%S")
-                                    except (ValueError, TypeError, OSError):
-                                        start_time_str = "Invalid timestamp"
+                                        start_time = (float(start_time_raw) if isinstance(start_time_raw, str)
+                                                      else start_time_raw)
+                                    except (ValueError, TypeError):
+                                        start_time = 0
 
-                                    update_list.append(
-                                        {"key": "nextScheduleTime", "value": start_time_str})
-                                    update_list.append(
-                                        {"key": "nextScheduleZone", "value": next_schedule_dict.get("zone_name", f"Zone {next_schedule_dict['zone']}")})
-                                    update_list.append(
-                                        {"key": "nextScheduleSource", "value": next_schedule_dict["source"].title()})
-                                    # Duration is in seconds, convert to minutes (defensive coding)
-                                    duration_sec = next_schedule_dict.get("duration") or 0
-                                    duration_min = int(duration_sec / 60)
-                                    update_list.append(
-                                        {"key": "nextScheduleDuration", "value": duration_min})
-                                else:
-                                    # No upcoming schedules
-                                    update_list.append({"key": "nextScheduleTime", "value": "No upcoming schedule"})
-                                    update_list.append({"key": "nextScheduleZone", "value": "None"})
-                                    update_list.append({"key": "nextScheduleSource", "value": "None"})
-                                    update_list.append({"key": "nextScheduleDuration", "value": 0})
+                                    if earliest_start_time is None or start_time < earliest_start_time:
+                                        earliest_start_time = start_time
+                                        next_schedule_dict = sch_dict
 
-                            except Exception as exc:
-                                update_list.append({"key": "activeSchedule", "value": "Error getting current schedule"})
-                                self.logger.debug("API error: \n{}".format(traceback.format_exc(10)))
-                                self._fireTrigger("getScheduleCall")
+                            # Update current/active schedule states
+                            if current_schedule_dict:
+                                # Something is running - use the source field to show schedule type
+                                update_list.append(
+                                    {"key": "activeZone", "value": current_schedule_dict["zone"]})
+                                # Display schedule source (AUTOMATIC, MANUAL, SMART, FIX)
+                                update_list.append(
+                                    {"key": "activeSchedule",
+                                     "value": current_schedule_dict["source"].title()})
+                                activeScheduleName = current_schedule_dict["source"].title()
+                            else:
+                                update_list.append(
+                                    {"key": "activeSchedule", "value": "No active schedule"})
+                                # Show no zones active
+                                update_list.append({"key": "activeZone", "value": 0})
 
-                            # Send the state updates to the server
-                            if len(update_list):
-                                dev.updateStatesOnServer(update_list)
+                            # Update next schedule states
+                            if next_schedule_dict:
+                                # Convert timestamp to readable format
+                                # Handle start_time as either string or number
+                                start_time_raw = next_schedule_dict.get("start_time", 0)
+                                try:
+                                    start_time_ms = (float(start_time_raw) if isinstance(start_time_raw, str)
+                                                     else start_time_raw)
+                                    start_time_dt = datetime.fromtimestamp(start_time_ms / 1000.0)
+                                    start_time_str = start_time_dt.strftime("%Y-%m-%d %H:%M:%S")
+                                except (ValueError, TypeError, OSError):
+                                    start_time_str = "Invalid timestamp"
 
-                            # Update zone information as necessary - these are properties, not states.
-                            zoneNames = ""
-                            maxZoneDurations = []
-                            zones_data = []  # Store zone data for getZoneList()
-                            dev_dict = ls_reply_dict_devices[0]
-                            for zone in sorted(dev_dict["zones"], key=itemgetter('ith')):
-                                zoneNames += ", {}".format(zone["name"]) if len(zoneNames) else zone["name"]
-                                # Set max duration to plugin max for enabled zones, 0 for disabled zones
-                                max_duration = self.maxZoneRunTime if zone["enabled"] else 0
-                                maxZoneDurations.append(str(max_duration))
-                                # Store zone ID and name for dropdown lists
-                                zones_data.append({
-                                    "id": zone["id"],
-                                    "name": zone["name"],
-                                    "enabled": zone["enabled"]
-                                })
-                            props = copy.deepcopy(dev.pluginProps)
-                            props["NumZones"] = len(dev_dict["zones"])
-                            props["ZoneNames"] = zoneNames
-                            props["MaxZoneDurations"] = ", ".join(maxZoneDurations)
-                            props["zones"] = json.dumps(zones_data)  # Store as JSON string
-                            if activeScheduleName:
-                                props["ScheduledZoneDurations"] = activeScheduleName
-                            dev.replacePluginPropsOnServer(props)
-
-                            # Update Moisture levels per Zone
-                            update_moisture = self.callMoisturesAPI(netroSerial)
-                            dev.updateStatesOnServer(update_moisture)
+                                update_list.append(
+                                    {"key": "nextScheduleTime", "value": start_time_str})
+                                update_list.append(
+                                    {"key": "nextScheduleZone",
+                                     "value": next_schedule_dict.get("zone_name",
+                                                                      f"Zone {next_schedule_dict['zone']}")})
+                                update_list.append(
+                                    {"key": "nextScheduleSource",
+                                     "value": next_schedule_dict["source"].title()})
+                                # Duration is in seconds, convert to minutes (defensive coding)
+                                duration_sec = next_schedule_dict.get("duration") or 0
+                                duration_min = int(duration_sec / 60)
+                                update_list.append(
+                                    {"key": "nextScheduleDuration", "value": duration_min})
+                            else:
+                                # No upcoming schedules
+                                update_list.append(
+                                    {"key": "nextScheduleTime", "value": "No upcoming schedule"})
+                                update_list.append({"key": "nextScheduleZone", "value": "None"})
+                                update_list.append({"key": "nextScheduleSource", "value": "None"})
+                                update_list.append({"key": "nextScheduleDuration", "value": 0})
 
                         except Exception as exc:
-                            self.logger.error("Error getting user data from Netro via API.")
-                            self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
-                            self._fireTrigger("personInfoCall")
+                            update_list.append(
+                                {"key": "activeSchedule", "value": "Error getting current schedule"})
+                            self.logger.debug("API error: \n{}".format(traceback.format_exc(10)))
+                            self._fireTrigger("getScheduleCall")
 
-                    #Update Whisperer Plant Sensors
-                    if dev.deviceTypeId == "Whisperer":
-                        self.logger.debug(u"Device ID: " + dev.address)
-                        self.serialNo = str(dev.address)
-                        if dev.sensorValue is not None:
-                            sensorValuesLatest = self.callSensorAPI(self.serialNo)
-                            self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
-                            if dev.onState is not None:
-                                self.key_val_list.append({'key': 'onOffState', 'value': not dev.onState})
-                                dev.updateStatesOnServer(self.key_val_list)
-                                if dev.onState:
-                                    dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensorOn)
-                                else:
-                                    dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensorOn)
+                        # Send the state updates to the server
+                        if len(update_list):
+                            dev.updateStatesOnServer(update_list)
+
+                        # Update zone information as necessary - these are properties, not states.
+                        zoneNames = ""
+                        maxZoneDurations = []
+                        zones_data = []  # Store zone data for getZoneList()
+                        dev_dict = ls_reply_dict_devices[0]
+                        for zone in sorted(dev_dict["zones"], key=itemgetter('ith')):
+                            zoneNames += (", {}".format(zone["name"]) if len(zoneNames)
+                                          else zone["name"])
+                            # Set max duration to plugin max for enabled zones, 0 for disabled zones
+                            max_duration = self.maxZoneRunTime if zone["enabled"] else 0
+                            maxZoneDurations.append(str(max_duration))
+                            # Store zone ID and name for dropdown lists
+                            zones_data.append({
+                                "id": zone["id"],
+                                "name": zone["name"],
+                                "enabled": zone["enabled"]
+                            })
+                        props = copy.deepcopy(dev.pluginProps)
+                        props["NumZones"] = len(dev_dict["zones"])
+                        props["ZoneNames"] = zoneNames
+                        props["MaxZoneDurations"] = ", ".join(maxZoneDurations)
+                        props["zones"] = json.dumps(zones_data)  # Store as JSON string
+                        if activeScheduleName:
+                            props["ScheduledZoneDurations"] = activeScheduleName
+                        dev.replacePluginPropsOnServer(props)
+
+                        # Update Moisture levels per Zone
+                        update_moisture = self.callMoisturesAPI(netroSerial)
+                        dev.updateStatesOnServer(update_moisture)
+
+                    except Exception as exc:
+                        self.logger.error("Error getting user data from Netro via API.")
+                        self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+                        self._fireTrigger("personInfoCall")
+
+                # Update Whisperer Plant Sensors
+                if dev.deviceTypeId == "Whisperer":
+                    self.logger.debug(u"Device ID: " + dev.address)
+                    self.serialNo = str(dev.address)
+                    if dev.sensorValue is not None:
+                        sensorValuesLatest = self.callSensorAPI(self.serialNo)
+                        self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
+                        if dev.onState is not None:
+                            self.key_val_list.append({'key': 'onOffState', 'value': not dev.onState})
+                            dev.updateStatesOnServer(self.key_val_list)
+                            if dev.onState:
+                                dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensorOn)
                             else:
-                                dev.updateStatesOnServer(self.key_val_list)
-                                dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensor)
-                        elif dev.onState is not None:
-                            dev.updateStateOnServer("onOffState", not dev.onState)
-                            dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
+                                dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensorOn)
                         else:
-                            dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
+                            dev.updateStatesOnServer(self.key_val_list)
+                            dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensor)
+                    elif dev.onState is not None:
+                        dev.updateStateOnServer("onOffState", not dev.onState)
+                        dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
+                    else:
+                        dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
         except Exception as exc:
             self.logger.error("Unknown error:\n{}".format(traceback.format_exc(10)))
 
@@ -1090,27 +1113,30 @@ class Plugin(indigo.PluginBase):
 
         # ZONE ON #
         if action.sprinklerAction == indigo.kSprinklerAction.ZoneOn:
-                zone_dict = self._get_zone_dict(dev.states["id"], action.zoneIndex)
-                self.logger.debug(f"zone_dict: {zone_dict}")
-                if zone_dict:
-                    zoneName = zone_dict["name"]
-                    data = {
-                        "id": zone_dict["id"],
-                        "duration": zone_dict["maxRuntime"] if zone_dict["maxRuntime"] <= self.maxZoneRunTime else self.maxZoneRunTime,
-                    }
-                    try:
-                        self._make_api_call(ZONE_START_URL, request_method="put", data=data)
-                        self.logger.info(f'sent "{dev.name} - {zoneName}" on')
-                        dev.updateStateOnServer("activeZone", action.zoneIndex)
-                    except (Exception,):
-                        # Else log failure but do NOT update state on Indigo Server. Also, fire any triggers the user has
-                        # on zone start failures.
-                        self.logger.error(f'send "{dev.name} - {zoneName}" on failed')
-                        self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
-                        self._fireTrigger("startZoneFailed", dev.id)
-                else:
-                    self.logger.error(f"Zone number {action.zoneIndex} doesn't exist in this controller and can't be enabled.")
+            zone_dict = self._get_zone_dict(dev.states["id"], action.zoneIndex)
+            self.logger.debug(f"zone_dict: {zone_dict}")
+            if zone_dict:
+                zoneName = zone_dict["name"]
+                data = {
+                    "id": zone_dict["id"],
+                    "duration": (zone_dict["maxRuntime"] if zone_dict["maxRuntime"] <= self.maxZoneRunTime
+                                 else self.maxZoneRunTime),
+                }
+                try:
+                    self._make_api_call(ZONE_START_URL, request_method="put", data=data)
+                    self.logger.info(f'sent "{dev.name} - {zoneName}" on')
+                    dev.updateStateOnServer("activeZone", action.zoneIndex)
+                except (Exception,):
+                    # Else log failure but do NOT update state on Indigo Server.
+                    # Also, fire any triggers the user has on zone start failures.
+                    self.logger.error(f'send "{dev.name} - {zoneName}" on failed')
+                    self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                     self._fireTrigger("startZoneFailed", dev.id)
+            else:
+                self.logger.error(
+                    f"Zone number {action.zoneIndex} doesn't exist in this controller "
+                    f"and can't be enabled.")
+                self._fireTrigger("startZoneFailed", dev.id)
 
         # ALL ZONES OFF #
         elif action.sprinklerAction == indigo.kSprinklerAction.AllZonesOff:
@@ -1179,22 +1205,22 @@ class Plugin(indigo.PluginBase):
         dev_dict = self._get_device_dict(dev.states["id"])
 
         if dev_dict:
-                try:
-                    data = {
-                        "key": self.serial_number,
-                        "days": num_Days,
-                    }
-                    response = self._make_api_call(DEVICE_NO_WATER_URL, request_method="post", data=data)
-                    response_status= response["status"]
-                    self.logger.debug(response)
-                    if response_status == "OK":
-                        self.logger.info(f"Stop watering for  '{num_Days}'  day(s)")
-                    else:
-                        self.logger.info(f"Error setting rain delay")
-                    return
-                except Exception as exc:
-                    self.logger.debug("API error: \n{}".format(traceback.format_exc(10)))
-                    self._fireTrigger("setNoWater", dev.id)
+            try:
+                data = {
+                    "key": self.serial_number,
+                    "days": num_Days,
+                }
+                response = self._make_api_call(DEVICE_NO_WATER_URL, request_method="post", data=data)
+                response_status = response["status"]
+                self.logger.debug(response)
+                if response_status == "OK":
+                    self.logger.info(f"Stop watering for  '{num_Days}'  day(s)")
+                else:
+                    self.logger.info(f"Error setting rain delay")
+                return
+            except Exception as exc:
+                self.logger.debug("API error: \n{}".format(traceback.format_exc(10)))
+                self._fireTrigger("setNoWater", dev.id)
 
     ########################################
     def setStandbyMode(self, pluginAction, dev):
@@ -1214,7 +1240,8 @@ class Plugin(indigo.PluginBase):
                 "status": 0 if pluginAction.props["mode"] else 1,
             }
             self._make_api_call(DEVICE_SET_STATUS_URL, request_method="post", data=data)
-            self.logger.info(f"Standby mode for controller '{dev.name}' turned {'on' if pluginAction.props['mode'] else 'off'}")
+            mode_status = 'on' if pluginAction.props['mode'] else 'off'
+            self.logger.info(f"Standby mode for controller '{dev.name}' turned {mode_status}")
         except Exception as exc:
             self.logger.error("Could not set standby mode - check your controller.")
             self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
@@ -1275,7 +1302,9 @@ class Plugin(indigo.PluginBase):
 
             if response_status == "OK":
                 if start_time:
-                    self.logger.info(f"Zone '{zone_id}' scheduled to start at timestamp {start_time} for {duration} minutes")
+                    self.logger.info(
+                        f"Zone '{zone_id}' scheduled to start at timestamp {start_time} "
+                        f"for {duration} minutes")
                 elif delay > 0:
                     self.logger.info(f"Zone '{zone_id}' will start in {delay} minutes for {duration} minutes")
                 else:
@@ -1341,7 +1370,9 @@ class Plugin(indigo.PluginBase):
             response_status = response.get("status")
 
             if response_status == "OK":
-                self.logger.info(f"Weather data reported to Netro for {data['date']}: {data.get('t')}°F, condition={data['condition']}")
+                self.logger.info(
+                    f"Weather data reported to Netro for {data['date']}: "
+                    f"{data.get('t')}°F, condition={data['condition']}")
             else:
                 self.logger.error(f"Error reporting weather: {response}")
 
