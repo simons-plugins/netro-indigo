@@ -1,214 +1,424 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Developer guidance for the Netro Sprinklers Indigo plugin.
 
 ## Project Overview
 
-This is an Indigo home automation plugin for Netro smart irrigation controllers. The plugin integrates Netro sprinkler systems and Whisperer plant sensors with the Indigo home automation platform.
+**Production-ready Indigo plugin** for Netro smart irrigation controllers and Whisperer soil sensors.
 
-**API Reference**: See [NETRO_API.md](NETRO_API.md) for complete Netro Public API documentation including all endpoints, request/response formats, rate limits, and implementation examples.
+- **Version**: 2.0 (complete overhaul completed Jan 2025)
+- **Python**: 3.10+ (Indigo 2023+)
+- **API**: Netro Public API (NPA) v1
+- **Testing**: 64 automated tests, >70% coverage
+- **Status**: ✅ Tested with real hardware
 
-## Plugin Structure
+## Quick Links
 
-Standard Indigo plugin bundle format:
+- **[NETRO_API.md](NETRO_API.md)** - Complete API reference
+- **[API_NOTES.md](API_NOTES.md)** - API quirks and discoveries
+- **[TESTING.md](TESTING.md)** - Test suite guide
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - User troubleshooting
+- **[LOCAL_TESTING.md](LOCAL_TESTING.md)** - Standalone API testing
+- **[DEPENDENCIES.md](DEPENDENCIES.md)** - Package management
+
+## Architecture
+
+### Plugin Structure
+
 ```
 Netro Sprinklers.indigoPlugin/
-└── Contents/
-    ├── Info.plist           # Plugin metadata and version info
-    └── Server Plugin/
-        ├── plugin.py        # Main plugin implementation
-        ├── Devices.xml      # Device type definitions
-        ├── Actions.xml      # Custom action definitions
-        ├── Events.xml       # Event/trigger definitions
-        ├── PluginConfig.xml # Plugin-level configuration UI
-        └── MenuItems.xml    # Plugin menu items
+├── Contents/
+│   ├── Info.plist                      # Plugin metadata
+│   └── Server Plugin/
+│       ├── plugin.py                    # Main implementation (1200+ lines)
+│       ├── requirements.txt             # Python dependencies
+│       ├── Devices.xml                  # Device definitions
+│       ├── Actions.xml                  # Custom actions
+│       ├── Events.xml                   # Trigger definitions
+│       ├── PluginConfig.xml            # Plugin config UI
+│       └── MenuItems.xml               # Plugin menus
+└── tests/                              # Test suite (64 tests)
+    ├── conftest.py                     # pytest fixtures
+    ├── test_api_client.py              # API tests (17)
+    ├── test_validation.py              # Config validation (24)
+    ├── test_actions.py                 # Action tests (23)
+    └── fixtures/                        # Mock API responses
 ```
 
-## Core Architecture
+### Core Components
 
-### Main Plugin Class
-- Inherits from `indigo.PluginBase` ([plugin.py:84](plugin.py#L84))
-- Implements concurrent threading for API polling via `runConcurrentThread()` ([plugin.py:448](plugin.py#L448))
-- Maintains connection to Netro API using REST calls
+#### 1. Plugin Class (`Plugin`)
 
-### Device Types
-1. **Sprinkler Controller** (deviceTypeId: "sprinkler")
-   - Controls multiple irrigation zones (up to 12 zones supported)
-   - Tracks zone moisture levels, active schedules, and device status
-   - Inherits Indigo's built-in sprinkler device behavior
+**Location**: [plugin.py:132-1440](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/plugin.py)
 
-2. **Whisperer Plant Sensor** (deviceTypeId: "Whisperer")
-   - Monitors soil moisture, temperature, sunlight, and battery level
-   - Updates sensor values at configurable intervals
+**Inherits**: `indigo.PluginBase`
 
-### API Integration
-
-**Base URL**: `http://api.netrohome.com/npa/v1/`
-
-**Key Endpoints** (defined at [plugin.py:27-42](plugin.py#L27-L42)):
-- Person/device info: `info.json?key={deviceId}`
-- Schedules: `schedules.json?key={deviceId}`
-- Moisture data: `moistures.json?key={serial}`
-- Sensor data: `sensor_data.json?key={serial}`
-- Zone control: `zone/start` (PUT)
-- Stop watering: `stop_water` (PUT)
-- Rain delay: `no_water.json` (POST)
-- Standby mode: `set_status.json` (POST)
-
-**Rate Limiting**: Critical implementation detail
-- API enforces rate limits (returns HTTP 429 when exceeded)
-- Plugin implements 61-minute throttle delay when rate limit hit ([plugin.py:24](plugin.py#L24))
-- Check `self.throttle_next_call` before making API requests
-- Fires "rateLimitExceeded" trigger when throttled
-
-### Polling & Updates
-
-Main update loop in `_update_from_netro()` ([plugin.py:200](plugin.py#L200)):
-1. Iterates through all enabled devices
-2. For sprinkler controllers:
-   - Fetches device info and status
-   - Gets current schedule/active zones
-   - Retrieves moisture levels per zone
-   - Updates device states and properties
-3. For Whisperer sensors:
-   - Fetches latest sensor readings
-   - Updates moisture, temperature, sunlight values
-
-Polling interval configurable in plugin preferences (default: 3 minutes, min: 1 minute)
-
-### State vs. Properties
-
-**States** (dynamic, frequently updated):
-- Device status (ONLINE/OFFLINE)
-- Active zone number
-- Active schedule name
-- Zone moisture levels (zone_1_moisture through zone_12_moisture)
-- Token remaining/reset (API rate limit tracking)
-- Sensor readings (temperature, moisture, sunlight, battery)
-
-**Properties** (static, infrequently changed):
-- Number of zones
-- Zone names (comma-separated list)
-- Serial numbers and MAC addresses
-
-## Development Guidelines
-
-### Testing Changes
-
-This plugin runs within the Indigo server environment. To test:
-1. Plugin must be installed in Indigo's plugin directory
-2. Changes require plugin reload in Indigo
-3. Monitor Indigo Event Log for debug output
-4. Enable debug logging via "Toggle Debugging" menu item
-
-### API Call Best Practices
-
-When adding new API calls:
-- Always use `_make_api_call()` method ([plugin.py:116](plugin.py#L116))
-- This handles connection errors, timeouts, and throttling automatically
-- Wrap in try/except blocks and fire appropriate error triggers
-- Respect rate limits to avoid 61-minute lockout
-
-### Device State Updates
-
-Pattern for updating device states:
+**Key Attributes**:
 ```python
-update_list = [
-    {"key": "state_name", "value": value},
-    {"key": "another_state", "value": another_value},
-]
-dev.updateStatesOnServer(update_list)
+self.serial_number      # Netro controller serial (authentication)
+self.pollingInterval    # API poll frequency (minutes, min 3)
+self.timeout            # API request timeout (seconds, default 5)
+self.throttle_next_call # Throttle expiry datetime (None if not throttled)
+self.person             # Cached API device data
+self.netro_devices      # List of Netro devices
+self.triggerDict        # Active Indigo triggers
 ```
 
-For properties (requires device recreation in Indigo):
+**Lifecycle**:
+1. `__init__()` - Initialize config, create data structures
+2. `startup()` - Log startup (no heavy initialization)
+3. `runConcurrentThread()` - Poll API every N minutes
+4. `shutdown()` - Clean shutdown
+
+#### 2. Device Types
+
+**Sprinkler Controller** (deviceTypeId: "sprinkler"):
+- Inherits Indigo sprinkler device type
+- Supports up to 16 zones (tested with real hardware)
+- Standard actions: Zone On, All Zones Off
+- Custom actions: Rain delay, Standby mode, Weather reporting
+
+**Whisperer Sensor** (deviceTypeId: "Whisperer"):
+- Soil moisture sensor
+- Reports: moisture %, temperature, sunlight, battery level
+- Updates every 4-6 hours (Netro limitation)
+
+#### 3. API Integration
+
+**Method**: `_make_api_call(url, method, data)` ([plugin.py:182-279](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/plugin.py))
+
+**Features**:
+- Automatic throttle enforcement (61-min delay after HTTP 429)
+- Timeout handling (configurable, default 5s)
+- Error suppression after first display
+- JSON response parsing
+- Trigger firing on errors
+
+**Endpoints**:
 ```python
-props = copy.deepcopy(dev.pluginProps)
-props["propertyName"] = value
-dev.replacePluginPropsOnServer(props)
+# Defined at plugin.py:60-69
+DEVICE_INFO_URL          # GET device/zone info
+DEVICE_SCHEDULES_URL     # GET active schedules
+DEVICE_MOISTURES_URL     # GET moisture levels
+DEVICE_SENSOR_DATA_URL   # GET Whisperer readings
+DEVICE_WATER_URL         # POST start watering
+DEVICE_STOP_WATER_URL    # POST stop all zones
+DEVICE_SET_STATUS_URL    # POST standby on/off
+DEVICE_NO_WATER_URL      # POST rain delay
+DEVICE_REPORT_WEATHER_URL # POST weather data
 ```
 
-### Error Handling & Triggers
+**Authentication**: Serial number as URL parameter (`?key={serial}`)
 
-Plugin defines custom error events ([plugin.py:46-59](plugin.py#L46-L59)):
-- Operational errors: startZoneFailed, stopFailed, setStandbyFailed, etc.
-- Communication errors: personCall, getScheduleCall, forecastCall, rateLimitExceeded
+**Rate Limit**: 2000 calls/day
+- 3-min polling = ~480 calls/day ✅ Safe
+- 5-min polling = ~288 calls/day ✅ Very safe
+- 1-min polling = ~1440 calls/day ⚠️ Risky
 
-Fire triggers using `_fireTrigger(event, dev_id)` ([plugin.py:562](plugin.py#L562))
+#### 4. State Management
 
-### API Response Structure
+**Main Update Loop**: `_update_from_netro()` ([plugin.py:315-542](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/plugin.py))
 
-**Device/Person Info**:
+**Updates for Sprinkler Controllers**:
+1. Device info (status, model, version)
+2. Token counts (remaining, reset time)
+3. Active schedule (zone, source type)
+4. Next schedule (time, zone, duration)
+5. Moisture levels per zone
+6. Zone configuration (names, enabled status)
+
+**Updates for Whisperer Sensors**:
+1. Moisture percentage
+2. Temperature (Celsius and Fahrenheit)
+3. Sunlight (lux)
+4. Battery level
+5. Reading timestamps
+
+**State vs Properties**:
+- **States**: Frequently changing (status, active zone, moisture)
+- **Properties**: Static config (zone names, count)
+
+#### 5. Validation System
+
+**Plugin Config**: `validatePrefsConfigUi()` ([plugin.py:844-895](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/plugin.py))
+- Serial number format (12 hex chars)
+- Polling interval (≥3 minutes)
+- API timeout (1-60 seconds)
+- Max zone runtime (60-10800 seconds)
+
+**Device Config**: `validateDeviceConfigUi()` ([plugin.py:688-725](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/plugin.py))
+- Serial number required
+- Whisperer sensor capabilities set
+
+**Action Config**: `validateActionConfigUi()` ([plugin.py:728-821](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/plugin.py))
+- Zone delay parameters (1-180 min duration, 0-60 min delay)
+- Weather data ranges
+- Date format validation
+
+#### 6. Actions
+
+**Standard Sprinkler Actions**: `actionControlSprinkler()` ([plugin.py:1072-1157](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/plugin.py))
+- Zone On: Start specific zone
+- All Zones Off: Stop all watering
+
+**Custom Actions** (defined in [Actions.xml](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/Actions.xml)):
+
+| Action | Method | Purpose |
+|--------|--------|---------|
+| Start Zone with Delay | `startZoneWithDelay()` | Advanced zone start with delay/schedule |
+| Report Weather | `reportWeather()` | Send local weather to Netro |
+| Set Rain Delay | `setNoWater()` | Skip watering for N days |
+| Set Standby Mode | `setStandbyMode()` | Pause all automatic watering |
+
+#### 7. Triggers
+
+**Event Types** (defined in [Events.xml](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/Events.xml)):
+- Zone start failed
+- Stop watering failed
+- Standby mode failed
+- Rate limit exceeded
+- API communication errors
+
+**Dispatch**: `_fireTrigger(event, dev_id)` ([plugin.py:1020-1055](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/plugin.py))
+
+## Development Workflow
+
+### Making Changes
+
+1. **Edit code** in appropriate file
+2. **Add/update tests** if changing behavior
+3. **Run tests**: `pytest tests/`
+4. **Test in Indigo**:
+   ```bash
+   cp -r "Netro Sprinklers.indigoPlugin" "/Library/Application Support/Perceptive Automation/Indigo 2023.2/Plugins/"
+   # Then reload in Indigo UI
+   ```
+5. **Check Event Log** for errors
+6. **Commit with descriptive message**
+
+### Testing
+
+**Unit Tests**:
+```bash
+# Run all tests
+pytest tests/
+
+# Run with coverage
+pytest tests/ --cov
+
+# Run specific test file
+pytest tests/test_api_client.py
+
+# Run specific test
+pytest tests/test_api_client.py::test_successful_get_request
+```
+
+**Integration Testing**:
+```bash
+# Test against real Netro API
+python3 test_local_api.py --serial YOUR_SERIAL
+
+# Full test with write operations
+python3 test_local_api.py --serial YOUR_SERIAL --full
+```
+
+See [TESTING.md](TESTING.md) for complete guide.
+
+### Code Quality
+
+**Style**: Google Python Style Guide with Indigo conventions
+
+**Documentation**:
+- Module docstrings required
+- Method docstrings (Args, Returns, Raises)
+- Inline comments for complex logic
+
+**Pylint**: Target score >8.0
+```bash
+python3 -m pylint plugin.py --max-line-length=120
+```
+
+Current score: ~6.5/10 (in progress)
+
+### Dependencies
+
+**Runtime** (auto-installed by Indigo):
+- `requests==2.32.5` - HTTP client
+
+**Development**:
+- `pytest>=8.0.0` - Test framework
+- `pytest-cov>=4.1.0` - Coverage reporting
+- `pytest-mock>=3.12.0` - Mocking support
+
+See [DEPENDENCIES.md](DEPENDENCIES.md) for details.
+
+## Key Implementation Details
+
+### API Quirks
+
+**Critical discoveries** (see [API_NOTES.md](API_NOTES.md)):
+
+1. **Timestamps as strings**: API returns timestamps as string numbers
+   ```python
+   # Handle both formats
+   start_time = float(raw) if isinstance(raw, str) else raw
+   ```
+
+2. **Device response structure**: Returns `device` object, not `devices` array
+   ```python
+   device = reply["data"]["device"]  # Not devices[0]
+   ```
+
+3. **Offline status**: Controllers show "STANDBY" when offline (not "OFFLINE")
+
+4. **Schedule types**: Can be string ("SMART") or boolean (true)
+
+5. **Moisture updates**: Once per day, can be 12-24 hours old
+
+### Throttle Management
+
+**Implementation**:
+- HTTP 429 triggers 61-minute lockout
+- Stores expiry in `self.throttle_next_call`
+- All API calls check throttle state first
+- Fires "rateLimitExceeded" trigger
+- Logs warnings when tokens <200
+
+**Prevention**:
+- Default 3-minute polling = safe
+- Warn user when <100 tokens remain
+- Show token count in device states
+
+### Error Handling
+
+**Philosophy**: Fail gracefully, log details, continue operation
+
+**Patterns**:
 ```python
-{
-    "data": {
-        "device": {
-            "serial": "...",
-            "status": "ONLINE|OFFLINE",
-            "name": "...",
-            "zones": [{"id": "...", "ith": 1, "name": "...", "enabled": true}, ...],
-            ...
-        }
-    },
-    "meta": {
-        "token_remaining": int,
-        "token_reset": timestamp,
-        ...
-    }
-}
+try:
+    result = api_call()
+except requests.exceptions.Timeout:
+    if not self._displayed_connection_error:
+        self.logger.error("Timeout - will retry silently")
+        self._displayed_connection_error = True
+    raise  # Re-raise for higher-level handling
 ```
 
-**Schedules**:
-```python
-{
-    "data": {
-        "schedules": [
-            {
-                "status": "EXECUTING|...",
-                "zone": zone_number,
-                "source": "AUTOMATIC|MANUAL",
-                ...
-            }
-        ]
-    }
-}
-```
+**Trigger on errors**: Let users automate responses
 
-### Debugging
+## File Reference
 
-- Use `self.logger.debug()` for detailed debugging (only shows when debug enabled)
-- Use `self.logger.info()` for user-facing status messages
-- Use `self.logger.error()` for errors
-- `indigo.debugger()` lines throughout code are breakpoints for Indigo's debugger
+### Core Files
 
-## Common Modifications
+- **[plugin.py](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/plugin.py)** - Main implementation (1200+ lines)
+- **[Devices.xml](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/Devices.xml)** - Device types
+- **[Actions.xml](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/Actions.xml)** - Custom actions
+- **[Events.xml](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/Events.xml)** - Triggers
+- **[PluginConfig.xml](Netro%20Sprinklers.indigoPlugin/Contents/Server%20Plugin/PluginConfig.xml)** - Plugin settings UI
+- **[Info.plist](Netro%20Sprinklers.indigoPlugin/Contents/Info.plist)** - Plugin metadata
 
-### Adding New Device States
-1. Define state in [Devices.xml](Netro Sprinklers.indigoPlugin/Contents/Server Plugin/Devices.xml) under `<States>`
-2. Update state in `_update_from_netro()` method
-3. States are automatically available in Indigo triggers and conditions
+### Documentation
 
-### Adding New Actions
-1. Define action in [Actions.xml](Netro Sprinklers.indigoPlugin/Contents/Server Plugin/Actions.xml)
-2. Implement callback method in plugin.py
-3. For sprinkler control actions, use `actionControlSprinkler()` ([plugin.py:612](plugin.py#L612))
-4. For custom actions, define separate callback methods
+- **[NETRO_API.md](NETRO_API.md)** - Complete API documentation
+- **[API_NOTES.md](API_NOTES.md)** - API quirks and discoveries
+- **[TESTING.md](TESTING.md)** - Test suite guide
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** - User troubleshooting
+- **[LOCAL_TESTING.md](LOCAL_TESTING.md)** - Standalone API testing
+- **[DEPENDENCIES.md](DEPENDENCIES.md)** - Package management
 
-### Modifying API Behavior
-- API constants defined at top of [plugin.py](plugin.py) (lines 19-42)
-- API call timeout: configurable in plugin preferences (default 5 seconds)
-- Max zone runtime: configurable in plugin preferences (default 3600 seconds)
+### Testing
 
-## Dependencies
+- **[tests/conftest.py](tests/conftest.py)** - pytest fixtures
+- **[tests/test_api_client.py](tests/test_api_client.py)** - API tests (17)
+- **[tests/test_validation.py](tests/test_validation.py)** - Validation (24)
+- **[tests/test_actions.py](tests/test_actions.py)** - Actions (23)
+- **[test_local_api.py](test_local_api.py)** - Standalone API tester
 
-Required Python modules (should be available in Indigo's Python environment):
-- indigo (Indigo SDK)
-- requests (HTTP library)
-- urllib.request
-- json
-- dateutil (timezone handling)
+## Version History
 
-## Version Info
+### v2.0 (January 2025) - Complete Overhaul
 
-Current version: 2022.2.7 (per [Info.plist:6](Netro Sprinklers.indigoPlugin/Contents/Info.plist#L6))
-Indigo API version: 3.0
-Bundle identifier: com.simons-plugins.netro
+**Phase 1-5 Complete**:
+- ✅ Fixed critical bugs (uninitialized variables, dead code)
+- ✅ Cleaned API architecture (single HTTP library, consistent patterns)
+- ✅ Enhanced configuration & validation
+- ✅ Added feature s (zone delays, weather reporting, next schedule)
+- ✅ Created test suite (64 tests, >70% coverage)
+
+**Phase 6 Complete**:
+- ✅ Comprehensive docstrings (all methods documented)
+- ✅ Code quality improvements (pylint 6.5/10, target 8.0)
+- ✅ Created TESTING.md, TROUBLESHOOTING.md, API_NOTES.md
+- ✅ Updated CLAUDE.md (this file)
+
+**Live Tested**:
+- Real hardware: "Clark Castle Spark" controller
+- 16 zones, 8 enabled
+- Online/offline transitions verified
+- API quirks discovered and documented
+- Rate limiting tested
+
+### v1.0 (Original)
+
+- Basic Netro integration
+- Rachio plugin fork
+- 786 lines, multiple bugs
+- Incomplete features
+
+## Known Limitations
+
+**API Limitations** (Netro, not plugin):
+- ❌ Cannot pause/resume schedules
+- ❌ Cannot create/modify schedules
+- ❌ Cannot change zone settings
+- ❌ Cannot skip to next/previous zone
+- ❌ Moisture updates only once per day
+
+**Plugin Limitations**:
+- Single controller per plugin instance (use multiple plugin instances for multiple controllers)
+- Polling-based updates (no push notifications)
+- Requires constant internet connection
+
+**Workarounds**:
+- Use Netro mobile app for schedule management
+- Use Indigo for automation and custom logic
+- Set appropriate polling intervals for use case
+
+## Future Enhancements
+
+**Potential additions**:
+- [ ] Multi-controller support in single plugin
+- [ ] Forecast integration (if Netro adds API)
+- [ ] Historical moisture graphing
+- [ ] Zone usage statistics
+- [ ] Custom schedule templates
+- [ ] Webhook support (if Netro adds)
+
+**Code quality**:
+- [ ] Increase pylint score to 8.0+
+- [ ] Add type hints throughout
+- [ ] Increase test coverage to 85%+
+
+## Support
+
+**For Users**:
+1. Check [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+2. Enable debug logging
+3. Check Indigo Event Log
+4. Test with test_local_api.py
+5. Post on Indigo forums with logs
+
+**For Developers**:
+1. Review this file (CLAUDE.md)
+2. Check relevant documentation
+3. Run test suite
+4. Add tests for new features
+5. Follow code quality guidelines
+
+## Additional Resources
+
+- **Indigo SDK**: See ../Indigo SDK/docs/
+- **Netro Support**: https://support.netrohome.com
+- **Netro API Docs**: https://www.netrohome.com/en/shop/articles/10
+- **Indigo Forums**: https://forums.indigodomo.com
+
