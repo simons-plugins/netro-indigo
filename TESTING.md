@@ -2,6 +2,11 @@
 
 This document explains how to run and add tests for the Netro Indigo plugin.
 
+## Testing Options
+
+1. **Unit Tests** (this document) - Fast mock-based tests with pytest
+2. **Local API Testing** (see [LOCAL_TESTING.md](LOCAL_TESTING.md)) - Test real API with your hardware
+
 ## Overview
 
 The test suite provides comprehensive coverage of:
