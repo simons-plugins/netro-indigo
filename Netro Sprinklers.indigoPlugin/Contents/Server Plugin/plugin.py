@@ -276,6 +276,16 @@ class Plugin(indigo.PluginBase):
                             update_list.append({"key": "last_active", 'value': reply_dict_device["last_active"]})
                             update_list.append({"key": "token_reset", 'value': reply_dict_device["token_reset"]})
                             update_list.append({"key": "name", "value": reply_dict_device["name"]})
+
+                            # Warn if API tokens are running low
+                            tokens_remaining = reply_dict_device.get("token_remaining", 2000)
+                            if tokens_remaining < 100:
+                                self.logger.warning(f"API rate limit warning: Only {tokens_remaining} calls remaining today. "
+                                                  f"Resets at {reply_dict_device.get('token_reset', 'unknown')}. "
+                                                  f"Consider increasing polling interval to avoid hitting limit.")
+                            elif tokens_remaining < 200:
+                                self.logger.info(f"API tokens remaining: {tokens_remaining} of 2000 today")
+
                             activeScheduleName = None
 
                             # Get the current schedule for the device - it will tell us if it's running or not
@@ -345,8 +355,7 @@ class Plugin(indigo.PluginBase):
                         self.serialNo = str(dev.address)
                         if dev.sensorValue is not None:
                             sensorValuesLatest = self.callSensorAPI(self.serialNo)
-                            self.refreshDelay = int(dev.ownerProps["refresh"]) * 60
-                                            self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
+                            self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
                             if dev.onState is not None:
                                 self.key_val_list.append({'key': 'onOffState', 'value': not dev.onState})
                                 dev.updateStatesOnServer(self.key_val_list)
@@ -491,12 +500,43 @@ class Plugin(indigo.PluginBase):
     # Validation callbacks
     ########################################
     def validateDeviceConfigUi(self, valuesDict, typeId, devId):
+        """Validate device configuration before saving.
+
+        Args:
+            valuesDict: Device configuration values from UI
+            typeId: Device type ID
+            devId: Device ID
+
+        Returns:
+            Tuple of (is_valid, valuesDict, errorsDict)
+        """
         self.logger.threaddebug(f"validateDeviceConfigUi")
+        errorsDict = indigo.Dict()
+
+        # Validate controller serial number (required)
+        if typeId == "sprinkler":
+            serial = valuesDict.get("address", "").strip()
+            if not serial:
+                errorsDict["address"] = "Serial number is required for Netro controller"
+            elif len(serial) < 8:
+                errorsDict["address"] = "Serial number appears too short (should be 12 hex characters)"
+
+        # Validate Whisperer sensor serial number and set capabilities
         if typeId == "Whisperer":
+            serial = valuesDict.get("address", "").strip()
+            if not serial:
+                errorsDict["address"] = "Serial number is required for Whisperer sensor"
+            elif len(serial) < 8:
+                errorsDict["address"] = "Serial number appears too short"
+
+            # Set sensor capabilities
             valuesDict["SupportsBatteryLevel"] = True
             valuesDict["NumTemperatureInputs"] = 1
             valuesDict["NumHumidityInputs"] = 1
             valuesDict["SupportsTemperatureReporting"] = True
+
+        if len(errorsDict):
+            return False, valuesDict, errorsDict
         return True, valuesDict
 
     ########################################
@@ -520,16 +560,86 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def validatePrefsConfigUi(self, valuesDict):
+        """Validate plugin configuration before saving.
+
+        Args:
+            valuesDict: Configuration values from UI
+
+        Returns:
+            Tuple of (is_valid, valuesDict, errorsDict)
+        """
         self.logger.threaddebug(f"validatePrefsConfigUi")
         errorsDict = indigo.Dict()
+
+        # Validate serial number (required)
+        serial = valuesDict.get("accessToken", "").strip()
+        if not serial:
+            errorsDict["accessToken"] = "Serial number is required"
+        elif len(serial) < 8:
+            errorsDict["accessToken"] = "Serial number appears too short (should be 12 hex characters)"
+
+        # Validate polling interval (minimum 3 minutes to avoid rate limits)
         try:
-            if int(valuesDict['pollingInterval']) < 1:
-                raise Exception()
-        except (Exception,):
-            errorsDict["pollingInterval"] = "Must be a number greater than or equal to 1 (minutes)."
+            polling = int(valuesDict.get("pollingInterval", 3))
+            if polling < 3:
+                errorsDict["pollingInterval"] = "Polling interval must be at least 3 minutes to avoid API rate limits"
+            elif polling > 1440:
+                errorsDict["pollingInterval"] = "Polling interval cannot exceed 1440 minutes (24 hours)"
+        except (ValueError, TypeError):
+            errorsDict["pollingInterval"] = "Polling interval must be a valid number"
+
+        # Validate API timeout (1-60 seconds)
+        try:
+            timeout = int(valuesDict.get("apiTimeout", 5))
+            if timeout < 1:
+                errorsDict["apiTimeout"] = "Timeout must be at least 1 second"
+            elif timeout > 60:
+                errorsDict["apiTimeout"] = "Timeout cannot exceed 60 seconds"
+        except (ValueError, TypeError):
+            errorsDict["apiTimeout"] = "Timeout must be a valid number"
+
+        # Validate max zone runtime (60-10800 seconds = 1 minute to 3 hours)
+        try:
+            max_runtime = int(valuesDict.get("maxZoneRunTime", 3600))
+            if max_runtime < 60:
+                errorsDict["maxZoneRunTime"] = "Max runtime must be at least 60 seconds (1 minute)"
+            elif max_runtime > 10800:
+                errorsDict["maxZoneRunTime"] = "Max runtime cannot exceed 10800 seconds (3 hours)"
+        except (ValueError, TypeError):
+            errorsDict["maxZoneRunTime"] = "Max runtime must be a valid number"
+
         if len(errorsDict):
             return False, valuesDict, errorsDict
         return True, valuesDict
+
+    ########################################
+    def closedPrefsConfigUi(self, valuesDict, userCancelled):
+        """Called when user closes the plugin config dialog.
+
+        Apply configuration changes without requiring plugin restart.
+
+        Args:
+            valuesDict: Configuration values from UI
+            userCancelled: True if user cancelled, False if they saved
+        """
+        if not userCancelled:
+            self.logger.threaddebug("closedPrefsConfigUi: Applying configuration changes")
+
+            # Update timeout
+            self.timeout = int(valuesDict.get("apiTimeout", 5))
+
+            # Update debug logging
+            self.debug = valuesDict.get("showDebugInfo", False)
+            if self.debug:
+                self.logger.debug("Debug logging enabled")
+
+            # Update serial number if changed
+            new_serial = valuesDict.get("accessToken", "").strip()
+            if new_serial and new_serial != self.serial_number:
+                self.serial_number = new_serial
+                self.logger.info(f"Serial number updated, will reconnect to Netro API")
+
+            # Note: Polling interval is handled by runConcurrentThread checking pluginPrefs
 
     ########################################
     # General device callbacks

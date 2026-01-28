@@ -1,16 +1,52 @@
 <?xml version="1.0"?>
 <PluginConfig>
     <Field id="topLabel" type="label">
-        <Label>To use the Netro Plugin, you need to enter your controller serial number, which is found in the Netro  app </Label>
+        <Label>To use the Netro Plugin, you need to enter your Netro device serial number. You can find this in the Netro mobile app under Settings.</Label>
     </Field>
-    <Field id="apiCallTimeout" type="textfield" defaultValue="5">
-        <Label>API call timeout:</Label>
+
+    <!-- Serial Number (required) -->
+    <Field id="accessToken" type="textfield">
+        <Label>Device Serial Number:</Label>
     </Field>
-	<Field id="apiCallTimeoutLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
-		<Label>Number of seconds to wait for the API to reply before continuing. You probably don't need to adjust this unless instructed by support.</Label>
-	</Field>
+    <Field id="serialLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+        <Label>Enter your Netro controller serial number (found in Netro app Settings). This is used for API authentication.</Label>
+    </Field>
+
+    <Field id="sep1" type="separator"/>
+
+    <!-- Polling Interval -->
+    <Field id="pollingInterval" type="textfield" defaultValue="3">
+        <Label>Polling Interval (minutes):</Label>
+    </Field>
+    <Field id="pollingLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+        <Label>How often to check device status (minimum 3 minutes to avoid API rate limits). Netro allows 2000 API calls per day (~1 per minute).</Label>
+    </Field>
+
+    <Field id="sep2" type="separator"/>
+
+    <!-- API Timeout -->
+    <Field id="apiTimeout" type="textfield" defaultValue="5">
+        <Label>API Call Timeout (seconds):</Label>
+    </Field>
+    <Field id="timeoutLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+        <Label>Number of seconds to wait for API responses. Default is 5 seconds.</Label>
+    </Field>
+
     <Field id="sep3" type="separator"/>
+
+    <!-- Max Zone Runtime -->
     <Field id="maxZoneRunTime" type="textfield" defaultValue="3600">
-        <Label>Max Run Time per Zone</Label>
+        <Label>Max Zone Runtime (seconds):</Label>
     </Field>
- </PluginConfig>
+    <Field id="maxZoneLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+        <Label>Maximum runtime per zone in seconds. Default is 3600 (1 hour). Valid range: 60-10800 seconds.</Label>
+    </Field>
+
+    <Field id="sep4" type="separator"/>
+
+    <!-- Debug Logging -->
+    <Field id="showDebugInfo" type="checkbox" defaultValue="false">
+        <Label>Enable debug logging:</Label>
+        <Description>Show detailed API calls in Event Log</Description>
+    </Field>
+</PluginConfig>
