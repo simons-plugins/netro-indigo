@@ -39,7 +39,7 @@ import json
 import copy
 import traceback
 from operator import itemgetter
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 import indigo
 import requests
@@ -152,7 +152,7 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     def __init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs):
-        super(Plugin, self).__init__(pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
+        super().__init__(pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
         # Used to control when to show connection errors (vs just repeated retries)
         self._displayed_connection_error = False
         self.pluginId = pluginId
@@ -724,7 +724,7 @@ class Plugin(indigo.PluginBase):
         Returns:
             List of tuples (device_id, device_name) for all plugin devices
         """
-        self.logger.threaddebug(f"sprinklerList")
+        self.logger.threaddebug("sprinklerList")
         return [(s.id, s.name) for s in indigo.devices.iter(filter="self")]
 
     ########################################
@@ -741,7 +741,7 @@ class Plugin(indigo.PluginBase):
         Returns:
             Tuple of (is_valid, valuesDict, errorsDict)
         """
-        self.logger.threaddebug(f"validateDeviceConfigUi")
+        self.logger.threaddebug("validateDeviceConfigUi")
         errorsDict = indigo.Dict()
 
         # Validate controller serial number (required)
@@ -847,7 +847,6 @@ class Plugin(indigo.PluginBase):
             # Validate date format if provided
             date_str = valuesDict.get("date", "").strip()
             if date_str:
-                from datetime import datetime
                 try:
                     datetime.strptime(date_str, "%Y-%m-%d")
                 except ValueError:
@@ -869,7 +868,7 @@ class Plugin(indigo.PluginBase):
         Returns:
             Tuple of (is_valid, valuesDict, errorsDict)
         """
-        self.logger.threaddebug(f"validateEventConfigUi")
+        self.logger.threaddebug("validateEventConfigUi")
         errorsDict = indigo.Dict()
         if typeId == "sprinklerError":
             if valuesDict["serial"] == "":
@@ -888,7 +887,7 @@ class Plugin(indigo.PluginBase):
         Returns:
             Tuple of (is_valid, valuesDict, errorsDict)
         """
-        self.logger.threaddebug(f"validatePrefsConfigUi")
+        self.logger.threaddebug("validatePrefsConfigUi")
         errorsDict = indigo.Dict()
 
         # Validate serial number (required)
@@ -957,7 +956,7 @@ class Plugin(indigo.PluginBase):
             new_serial = valuesDict.get("accessToken", "").strip()
             if new_serial and new_serial != self.serial_number:
                 self.serial_number = new_serial
-                self.logger.info(f"Serial number updated, will reconnect to Netro API")
+                self.logger.info("Serial number updated, will reconnect to Netro API")
 
             # Note: Polling interval is handled by runConcurrentThread checking pluginPrefs
 
@@ -977,8 +976,8 @@ class Plugin(indigo.PluginBase):
         Returns:
             True if device ID changed (requires reconnection), False otherwise
         """
-        self.logger.threaddebug(f"didDeviceCommPropertyChange")
-        return True if origDev.states["id"] != newDev.states["id"] else False
+        self.logger.threaddebug("didDeviceCommPropertyChange")
+        return origDev.states["id"] != newDev.states["id"]
 
     ########################################
     def deviceStartComm(self, dev):
@@ -1054,7 +1053,7 @@ class Plugin(indigo.PluginBase):
         Args:
             trigger: Indigo trigger object
         """
-        super(Plugin, self).triggerStartProcessing(trigger)
+        super().triggerStartProcessing(trigger)
         self.logger.debug(f"Start processing trigger {str(trigger.id)}")
         if trigger.id not in self.triggerDict:
             self.triggerDict[trigger.id] = trigger
@@ -1069,7 +1068,7 @@ class Plugin(indigo.PluginBase):
         Args:
             trigger: Indigo trigger object
         """
-        super(Plugin, self).triggerStopProcessing(trigger)
+        super().triggerStopProcessing(trigger)
         self.logger.debug("Stop processing trigger " + str(trigger.id))
         try:
             del self.triggerDict[trigger.id]
@@ -1216,7 +1215,7 @@ class Plugin(indigo.PluginBase):
                 if response_status == "OK":
                     self.logger.info(f"Stop watering for  '{num_Days}'  day(s)")
                 else:
-                    self.logger.info(f"Error setting rain delay")
+                    self.logger.info("Error setting rain delay")
                 return
             except Exception as exc:
                 self.logger.debug("API error: \n{}".format(traceback.format_exc(10)))
@@ -1327,8 +1326,6 @@ class Plugin(indigo.PluginBase):
             dev: Sprinkler controller device
         """
         try:
-            from datetime import date
-
             # Build weather data payload (use device's serial number, not plugin prefs)
             data = {
                 "key": dev.address,
@@ -1454,7 +1451,7 @@ class Plugin(indigo.PluginBase):
         Returns:
             Sorted list of tuples (device_id, device_name)
         """
-        self.logger.threaddebug(f"pickController")
+        self.logger.threaddebug("pickController")
         retList = []
         for dev in indigo.devices.iter("self"):
             retList.append((dev.id, dev.name))
@@ -1474,5 +1471,5 @@ class Plugin(indigo.PluginBase):
         Returns:
             valuesDict unchanged
         """
-        self.logger.threaddebug(f"configMenuChanged")
+        self.logger.threaddebug("configMenuChanged")
         return valuesDict
