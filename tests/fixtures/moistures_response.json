@@ -1,0 +1,30 @@
+{
+  "status": "OK",
+  "data": {
+    "moistures": [
+      {
+        "zone": 1,
+        "moisture": 75,
+        "date": "2021-01-01"
+      },
+      {
+        "zone": 2,
+        "moisture": 68,
+        "date": "2021-01-01"
+      },
+      {
+        "zone": 3,
+        "moisture": 82,
+        "date": "2021-01-01"
+      }
+    ]
+  },
+  "meta": {
+    "time": 1609459200000,
+    "tid": "transaction-12347",
+    "version": 1,
+    "token_remaining": 1848,
+    "token_reset": 1609545600,
+    "last_active": 1609459100000
+  }
+}

@@ -1,0 +1,7 @@
+# Python Dependencies for Netro Sprinklers Plugin
+#
+# Indigo automatically installs packages listed here when the plugin loads.
+# No manual installation required - Indigo handles everything.
+
+# HTTP client for Netro API
+requests==2.32.5

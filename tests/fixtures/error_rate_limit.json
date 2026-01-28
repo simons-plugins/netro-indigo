@@ -1,0 +1,17 @@
+{
+  "status": "ERROR",
+  "errors": [
+    {
+      "code": 3,
+      "message": "Rate limit exceeded"
+    }
+  ],
+  "meta": {
+    "time": 1609459200000,
+    "tid": "transaction-error-1",
+    "version": 1,
+    "token_remaining": 0,
+    "token_reset": 1609545600,
+    "last_active": 1609459100000
+  }
+}

@@ -9,22 +9,21 @@
     <Device type="sprinkler" id="sprinkler">
         <Name>Netro Sprinkler Controller</Name>
         <ConfigUI>
-            <!-- The ConfigUI here is just an example of the type of device
-            specific UI that might be needed. Here you might specify a text
-            field for an IP address, a serial port popup, or other device
-            specific options.
-            -->
-            <Field id="address" type="textfield" defaultValue="a4cf12b8d5e2">
-                <Label>Serial Number:</Label>
+            <Field id="addressLabel" type="label">
+                <Label>Enter the serial number for this Netro controller. If you have multiple controllers, create a separate device for each one.</Label>
             </Field>
-            <Field id="refresh" type="textfield" defaultValue="2">
-                <Label>Refresh Interval (mins):</Label>
+            <Field id="address" type="textfield">
+                <Label>Controller Serial Number:</Label>
             </Field>
+            <Field id="addressHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+                <Label>Found in the Netro mobile app under Settings (e.g., a4cf12b8d5e2).</Label>
+            </Field>
+            <Field id="sep1" type="separator"/>
             <Field type="menu" id="units" defaultValue="US">
-                <Label>Weather units in:</Label>
+                <Label>Display units:</Label>
                 <List>
-                    <Option value="US">US</Option>
-                    <Option value="METRIC">Metric</Option>
+                    <Option value="US">US (°F, inches)</Option>
+                    <Option value="METRIC">Metric (°C, mm)</Option>
                 </List>
             </Field>
             <Field type="checkbox" id="PumpControlOn" defaultValue="false" hidden="true">
@@ -74,6 +73,26 @@
                 <ValueType>String</ValueType>
                 <TriggerLabel>Active Netro Schedule</TriggerLabel>
                 <ControlPageLabel>Active Netro Schedule</ControlPageLabel>
+            </State>
+            <State id="nextScheduleTime">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Next Schedule Start Time</TriggerLabel>
+                <ControlPageLabel>Next Schedule Start Time</ControlPageLabel>
+            </State>
+            <State id="nextScheduleZone">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Next Schedule Zone</TriggerLabel>
+                <ControlPageLabel>Next Schedule Zone</ControlPageLabel>
+            </State>
+            <State id="nextScheduleSource">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Next Schedule Type</TriggerLabel>
+                <ControlPageLabel>Next Schedule Type</ControlPageLabel>
+            </State>
+            <State id="nextScheduleDuration">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Next Schedule Duration (minutes)</TriggerLabel>
+                <ControlPageLabel>Next Schedule Duration (minutes)</ControlPageLabel>
             </State>
             <State id="address">
                 <ValueType>String</ValueType>
@@ -180,12 +199,16 @@
     <Device type="sensor" subType="kSensorDeviceSubType.Humidity, ui=Plant Moisture Sensor"  id="Whisperer">
         <Name>Whisperer Plant Sensor</Name>
         <ConfigUI>
-            <Field id="address" type="textfield" defaultValue="98cdac4896c4">
-                <Label>Serial Number:</Label>
+            <Field id="addressLabel" type="label">
+                <Label>Enter the serial number for this Whisperer soil sensor.</Label>
             </Field>
-            <Field id="refresh" type="textfield" defaultValue="60">
-                <Label>Refresh Interval (mins):</Label>
+            <Field id="address" type="textfield">
+                <Label>Sensor Serial Number:</Label>
             </Field>
+            <Field id="addressHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+                <Label>Found in the Netro mobile app under Settings.</Label>
+            </Field>
+            <Field id="sep1" type="separator"/>
             <Field id="SupportsOnState" type="checkbox" defaultValue="false">
                 <Label>Show ON/OFF state:</Label>
             </Field>

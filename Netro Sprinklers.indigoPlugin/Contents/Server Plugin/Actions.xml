@@ -9,52 +9,18 @@
      backlightBrightness state added to Devices.xml.
 -->
 <Actions>
-    <Action id="runSchedule" deviceFilter="self" uiPath="DeviceActions">
-        <Name>Run Rachio Schedule</Name>
-        <CallbackMethod>runRachioSchedule</CallbackMethod>
-        <ConfigUI>
-            <Field type="label" id="schedule_label">
-                <Label>Select the Rachio schedule to run from the list below. Note, not all Rachio schedules can be run dynamically so only some may show in the list.</Label>
-            </Field>
-            <Field type="menu" id="scheduleId">
-                <Label>Schedule:</Label>
-                <List class="self" method="availableSchedules"/>
-            </Field>
-        </ConfigUI>
-    </Action>
-    <Action id="setSeasonalAdjustment" deviceFilter="self" uiPath="DeviceActions">
-        <Name>Set Seasonal Adjustment</Name>
-        <CallbackMethod>setSeasonalAdjustment</CallbackMethod>
-        <ConfigUI>
-            <Field type="menu" id="scheduleId">
-                <Label>Schedule:</Label>
-                <List class="self" method="availableSchedules"/>
-            </Field>
-            <Field type="textfield" id="adjustment">
-                <Label>Adjustment percentage:</Label>
-            </Field>
-            <Field type="label" id="adj_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
-                <Label>Adjustment value is an integer range from -100 (-100%) to 100 (100%). For example, 50 increases by 50%, -33 reduces by 33%.</Label>
-            </Field>
-        </ConfigUI>
-    </Action>
     <Action id="setStandbyMode" deviceFilter="self" uiPath="DeviceActions">
         <Name>Set Standby Mode</Name>
         <CallbackMethod>setStandbyMode</CallbackMethod>
         <ConfigUI>
             <Field type="label" id="standby_label">
-                <Label>Enabling standby mode will turn off all automated functions in the Rachio - so none of it's schedules will automatically run, etc.</Label>
+                <Label>Enabling standby mode will turn off all automated functions in the Netro controller - so none of its schedules will automatically run, etc.</Label>
             </Field>
             <Field type="checkbox" id="mode">
                 <Label>Standby mode:</Label>
                 <Description>Enabled</Description>
             </Field>
         </ConfigUI>
-    </Action>
-
-    <Action id="webhook" uiPath="hidden">
-        <Name>Reflector Webhooks</Name>
-        <CallbackMethod>reflector_handler</CallbackMethod>
     </Action>
 
     <Action id="setNoWater" deviceFilter="self" uiPath="DeviceActions">
@@ -65,7 +31,104 @@
                 <Label>Number of days:</Label>
             </Field>
             <Field type="label" id="adj_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
-                <Label>Number of days to stop watering for. Today is 1, defualt is 1</Label>
+                <Label>Number of days to stop watering for. Today is 1, default is 1</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
+
+    <Action id="startZoneWithDelay" deviceFilter="self" uiPath="DeviceActions">
+        <Name>Start Zone with Delay</Name>
+        <CallbackMethod>startZoneWithDelay</CallbackMethod>
+        <ConfigUI>
+            <Field type="label" id="delay_info_label">
+                <Label>Start a zone with optional delay or scheduled start time. Allows more control than standard zone start action.</Label>
+            </Field>
+            <Field type="menu" id="zone">
+                <Label>Zone:</Label>
+                <List class="self" method="getZoneList" dynamicReload="true"/>
+            </Field>
+            <Field type="textfield" id="duration" defaultValue="15">
+                <Label>Duration (minutes):</Label>
+            </Field>
+            <Field type="label" id="duration_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
+                <Label>Watering duration in minutes (1-180). Default: 15</Label>
+            </Field>
+            <Field type="textfield" id="delay" defaultValue="0">
+                <Label>Delay (minutes):</Label>
+            </Field>
+            <Field type="label" id="delay_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
+                <Label>Minutes to wait before starting (0-60). Leave 0 for immediate start.</Label>
+            </Field>
+            <Field type="textfield" id="start_time" defaultValue="">
+                <Label>Scheduled Start Time (optional):</Label>
+            </Field>
+            <Field type="label" id="start_time_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
+                <Label>Unix timestamp for scheduled start (leave blank for immediate/delayed start).</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
+
+    <Action id="reportWeather" deviceFilter="self" uiPath="DeviceActions">
+        <Name>Report Local Weather to Netro</Name>
+        <CallbackMethod>reportWeather</CallbackMethod>
+        <ConfigUI>
+            <Field type="label" id="weather_info_label">
+                <Label>Report local weather data to help Netro optimize watering schedules. All values are in US units (Fahrenheit, inches, mph, inHg).</Label>
+            </Field>
+            <Field type="menu" id="condition" defaultValue="0">
+                <Label>Weather Condition:</Label>
+                <List>
+                    <Option value="0">Clear</Option>
+                    <Option value="1">Cloudy</Option>
+                    <Option value="2">Rain</Option>
+                    <Option value="3">Snow</Option>
+                    <Option value="4">Wind</Option>
+                </List>
+            </Field>
+            <Field type="textfield" id="temperature" defaultValue="">
+                <Label>Current Temperature (°F):</Label>
+            </Field>
+            <Field type="textfield" id="t_max" defaultValue="">
+                <Label>Max Temperature (°F):</Label>
+            </Field>
+            <Field type="textfield" id="t_min" defaultValue="">
+                <Label>Min Temperature (°F):</Label>
+            </Field>
+            <Field type="textfield" id="humidity" defaultValue="">
+                <Label>Humidity (%):</Label>
+            </Field>
+            <Field type="label" id="humidity_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
+                <Label>Humidity percentage (0-100)</Label>
+            </Field>
+            <Field type="textfield" id="rain" defaultValue="0">
+                <Label>Rainfall (inches):</Label>
+            </Field>
+            <Field type="label" id="rain_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
+                <Label>Rainfall amount in inches. Default: 0</Label>
+            </Field>
+            <Field type="textfield" id="rain_prob" defaultValue="">
+                <Label>Rain Probability (%):</Label>
+            </Field>
+            <Field type="label" id="rain_prob_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
+                <Label>Probability of rain (0-100). Optional.</Label>
+            </Field>
+            <Field type="textfield" id="wind_speed" defaultValue="">
+                <Label>Wind Speed (mph):</Label>
+            </Field>
+            <Field type="label" id="wind_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
+                <Label>Wind speed in miles per hour. Optional.</Label>
+            </Field>
+            <Field type="textfield" id="pressure" defaultValue="">
+                <Label>Pressure (inHg):</Label>
+            </Field>
+            <Field type="label" id="pressure_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
+                <Label>Atmospheric pressure in inches of mercury. Optional.</Label>
+            </Field>
+            <Field type="textfield" id="date" defaultValue="">
+                <Label>Date (YYYY-MM-DD):</Label>
+            </Field>
+            <Field type="label" id="date_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
+                <Label>Date for this weather data. Leave blank for today.</Label>
             </Field>
         </ConfigUI>
     </Action>

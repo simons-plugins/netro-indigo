@@ -11,10 +11,8 @@
 				<Label>Errors to monitor for:</Label>
 				<List>
 					<Option value="all">All Operational Errors</Option>
-					<Option value="startStartZoneFailed">Zone Change Failed (start or stop)</Option>
+					<Option value="startZoneFailed">Zone Change Failed (start or stop)</Option>
 					<Option value="stopFailed">Stop Sprinkler Failed</Option>
-					<Option value="startRachioScheduleFailed">Start Rachio Schedule Failed</Option>
-					<Option value="setSeasonalAdjustmentFailed">Set Seasonal Adjustment Failed</Option>
 					<Option value="setStandbyFailed">Set Standby Mode Failed</Option>
 				</List>
 			</Field>
