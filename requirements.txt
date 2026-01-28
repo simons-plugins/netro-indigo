@@ -1,0 +1,17 @@
+# Python Dependencies for Netro Sprinklers Plugin
+#
+# These packages are bundled in:
+#   Netro Sprinklers.indigoPlugin/Contents/Packages/
+#
+# To update bundled packages:
+#   pip3 install --target "Netro Sprinklers.indigoPlugin/Contents/Packages" -r requirements.txt
+#   cd "Netro Sprinklers.indigoPlugin/Contents/Packages" && rm -rf *.dist-info bin
+
+# HTTP client for Netro API
+requests==2.32.5
+
+# Development/Testing dependencies (NOT bundled with plugin)
+# Install with: pip3 install -r requirements.txt
+pytest>=8.0.0
+pytest-cov>=4.1.0
+pytest-mock>=3.12.0

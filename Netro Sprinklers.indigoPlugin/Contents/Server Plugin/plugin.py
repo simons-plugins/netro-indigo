@@ -13,6 +13,9 @@ from operator import itemgetter
 from datetime import datetime, timedelta, time
 from dateutil import tz
 
+# Local imports
+import requirements
+
 # API Configuration
 NETRO_API_VERSION = "1"
 NETRO_MAX_ZONE_DURATION = 10800
@@ -79,6 +82,10 @@ class Plugin(indigo.PluginBase):
     ########################################
     def __init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs):
         super(Plugin, self).__init__(pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
+
+        # Verify bundled packages are available
+        requirements.verify_bundled_packages(pluginId)
+
         # Used to control when to show connection errors (vs just repeated retries)
         self._displayed_connection_error = False
         self.pluginId = pluginId
