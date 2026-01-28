@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 # -*- coding: utf-8 -*-
+# pylint: disable=too-many-lines
 """Netro Smart Sprinkler Controller Plugin for Indigo.
 
 This plugin integrates Netro smart irrigation controllers with Indigo home automation.
@@ -132,6 +133,7 @@ def get_key_from_dict(a_key, a_dict):
 
 
 ################################################################################
+# pylint: disable=too-many-public-methods,too-many-instance-attributes
 class Plugin(indigo.PluginBase):
     """Main plugin class for Netro Sprinkler Controller integration.
 
@@ -151,6 +153,7 @@ class Plugin(indigo.PluginBase):
     """
 
     ########################################
+    # pylint: disable=invalid-name
     def __init__(self, pluginId, pluginDisplayName, pluginVersion, pluginPrefs):
         super().__init__(pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
         # Used to control when to show connection errors (vs just repeated retries)
@@ -195,6 +198,7 @@ class Plugin(indigo.PluginBase):
     # Internal helper methods
     ########################################
 
+    # pylint: disable=too-many-branches,too-many-statements
     def _make_api_call(self, url, request_method="get", data=None):
         """Make an API call to Netro API with proper error handling.
 
@@ -319,6 +323,7 @@ class Plugin(indigo.PluginBase):
         return None
 
     ########################################
+    # pylint: disable=too-many-branches,too-many-statements,too-many-locals,too-many-nested-blocks
     def _update_from_netro(self):
         """Update all Indigo devices from Netro API data.
 
@@ -691,6 +696,7 @@ class Plugin(indigo.PluginBase):
     ########################################
     # Dialog list callbacks
     ########################################
+    # pylint: disable=unused-argument
     def availableControllers(self, dev_filter="", valuesDict=None, typeId="", targetId=0):
         """Get list of available Netro controllers for dropdown menus.
 
@@ -712,6 +718,7 @@ class Plugin(indigo.PluginBase):
         return controller_list
 
     ########################################
+    # pylint: disable=unused-argument
     def sprinklerList(self, dev_filter="", valuesDict=None, typeId="", targetId=0):
         """Get list of all sprinkler devices for dropdown menus.
 
@@ -730,6 +737,7 @@ class Plugin(indigo.PluginBase):
     ########################################
     # Validation callbacks
     ########################################
+    # pylint: disable=unused-argument
     def validateDeviceConfigUi(self, valuesDict, typeId, devId):
         """Validate device configuration before saving.
 
@@ -771,6 +779,7 @@ class Plugin(indigo.PluginBase):
         return True, valuesDict
 
     ########################################
+    # pylint: disable=unused-argument,too-many-branches
     def validateActionConfigUi(self, valuesDict, typeId, devId):
         """Validate action configuration before saving.
 
@@ -857,6 +866,7 @@ class Plugin(indigo.PluginBase):
         return True, valuesDict
 
     ########################################
+    # pylint: disable=unused-argument
     def validateEventConfigUi(self, valuesDict, typeId, devId):
         """Validate event/trigger configuration before saving.
 
@@ -980,6 +990,7 @@ class Plugin(indigo.PluginBase):
         return origDev.states["id"] != newDev.states["id"]
 
     ########################################
+    # pylint: disable=unused-argument
     def deviceStartComm(self, dev):
         """Called when device communication should start.
 
@@ -995,6 +1006,7 @@ class Plugin(indigo.PluginBase):
 
 
     ########################################
+    # pylint: disable=unused-argument
     def deviceStopComm(self, dev):
         """Called when device communication should stop.
 
@@ -1100,7 +1112,9 @@ class Plugin(indigo.PluginBase):
         """
         # Check if throttle period has expired
         if self.throttle_next_call and datetime.now() < self.throttle_next_call:
-            self.logger.error(f"API calls have violated rate limit - next connection attempt at {self.throttle_next_call:%H:%M:%S}")
+            self.logger.error(
+                f"API calls have violated rate limit - next connection attempt at "
+                f"{self.throttle_next_call:%H:%M:%S}")
             if action.sprinklerAction == indigo.kSprinklerAction.ZoneOn:
                 self._fireTrigger("startZoneFailed", dev.id)
             elif action.sprinklerAction == indigo.kSprinklerAction.AllZonesOff:
@@ -1170,6 +1184,7 @@ class Plugin(indigo.PluginBase):
     ########################################
     # General Action callback
     ########################################
+    # pylint: disable=unused-argument
     def actionControlUniversal(self, action, dev):
         """Handle universal device actions.
 
@@ -1378,6 +1393,7 @@ class Plugin(indigo.PluginBase):
             self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
 
     ########################################
+    # pylint: disable=unused-argument
     def getZoneList(self, filter="", valuesDict=None, typeId="", targetId=0):
         """Get list of available zones for the zone dropdown.
 
@@ -1440,6 +1456,7 @@ class Plugin(indigo.PluginBase):
         self._update_from_netro()
 
     ########################################
+    # pylint: disable=unused-argument
     def pickController(self, dev_filter=None, valuesDict=None, typeId=0):
         """Get sorted list of controllers for menu selection.
 
