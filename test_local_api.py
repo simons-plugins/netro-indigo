@@ -145,10 +145,18 @@ class NetroAPITester:
             if valid:
                 print(f"\nUpcoming Schedules:")
                 for sched in valid[:3]:  # Show first 3
-                    start_time = datetime.fromtimestamp(sched.get('start_time', 0) / 1000.0)
+                    # Handle start_time as either string or number
+                    start_time_raw = sched.get('start_time', 0)
+                    try:
+                        start_time_ms = float(start_time_raw) if isinstance(start_time_raw, str) else start_time_raw
+                        start_time = datetime.fromtimestamp(start_time_ms / 1000.0)
+                        start_time_str = start_time.strftime('%Y-%m-%d %H:%M:%S')
+                    except (ValueError, TypeError):
+                        start_time_str = str(start_time_raw)
+
                     print(f"  Zone {sched.get('zone')}: {sched.get('zone_name')}")
                     print(f"    Source: {sched.get('source')}")
-                    print(f"    Start: {start_time.strftime('%Y-%m-%d %H:%M:%S')}")
+                    print(f"    Start: {start_time_str}")
                     print(f"    Duration: {sched.get('duration')}s")
 
             return True

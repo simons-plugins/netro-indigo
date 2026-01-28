@@ -306,7 +306,13 @@ class Plugin(indigo.PluginBase):
                                         current_schedule_dict = sch_dict
                                     # Find next valid (upcoming) schedule with earliest start time
                                     elif sch_dict["status"] == "VALID":
-                                        start_time = sch_dict.get("start_time", 0)
+                                        # Handle start_time as either string or number
+                                        start_time_raw = sch_dict.get("start_time", 0)
+                                        try:
+                                            start_time = float(start_time_raw) if isinstance(start_time_raw, str) else start_time_raw
+                                        except (ValueError, TypeError):
+                                            start_time = 0
+
                                         if earliest_start_time is None or start_time < earliest_start_time:
                                             earliest_start_time = start_time
                                             next_schedule_dict = sch_dict
@@ -328,9 +334,14 @@ class Plugin(indigo.PluginBase):
                                 # Update next schedule states
                                 if next_schedule_dict:
                                     # Convert timestamp to readable format
-                                    start_time_ms = next_schedule_dict.get("start_time", 0)
-                                    start_time_dt = datetime.fromtimestamp(start_time_ms / 1000.0)
-                                    start_time_str = start_time_dt.strftime("%Y-%m-%d %H:%M:%S")
+                                    # Handle start_time as either string or number
+                                    start_time_raw = next_schedule_dict.get("start_time", 0)
+                                    try:
+                                        start_time_ms = float(start_time_raw) if isinstance(start_time_raw, str) else start_time_raw
+                                        start_time_dt = datetime.fromtimestamp(start_time_ms / 1000.0)
+                                        start_time_str = start_time_dt.strftime("%Y-%m-%d %H:%M:%S")
+                                    except (ValueError, TypeError, OSError):
+                                        start_time_str = "Invalid timestamp"
 
                                     update_list.append(
                                         {"key": "nextScheduleTime", "value": start_time_str})
