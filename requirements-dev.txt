@@ -1,0 +1,13 @@
+# Development and Testing Dependencies for Netro Plugin
+
+# Testing framework
+pytest>=7.4.0
+pytest-cov>=4.1.0
+pytest-mock>=3.11.1
+
+# HTTP mocking
+responses>=0.23.0
+
+# Code quality
+pylint>=2.17.0
+black>=23.7.0

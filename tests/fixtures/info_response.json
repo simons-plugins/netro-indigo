@@ -1,0 +1,57 @@
+{
+  "status": "OK",
+  "data": {
+    "devices": [
+      {
+        "id": "device-uuid-12345",
+        "name": "Front Yard Controller",
+        "serial": "a4cf12b8d5e2",
+        "status": "ONLINE",
+        "model": "Sprite",
+        "address": "00:11:22:33:44:55",
+        "version": "1.2.3",
+        "in_standby": false,
+        "paused": false,
+        "schedule_mode_type": "SMART",
+        "zones": [
+          {
+            "id": "zone-uuid-1",
+            "ith": 1,
+            "name": "Front Lawn",
+            "enabled": true,
+            "smart": true
+          },
+          {
+            "id": "zone-uuid-2",
+            "ith": 2,
+            "name": "Back Lawn",
+            "enabled": true,
+            "smart": true
+          },
+          {
+            "id": "zone-uuid-3",
+            "ith": 3,
+            "name": "Garden Beds",
+            "enabled": true,
+            "smart": false
+          },
+          {
+            "id": "zone-uuid-4",
+            "ith": 4,
+            "name": "Side Yard",
+            "enabled": false,
+            "smart": false
+          }
+        ]
+      }
+    ]
+  },
+  "meta": {
+    "time": 1609459200000,
+    "tid": "transaction-12345",
+    "version": 1,
+    "token_remaining": 1850,
+    "token_reset": 1609545600,
+    "last_active": 1609459100000
+  }
+}
