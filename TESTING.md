@@ -1,370 +1,200 @@
-# Netro Plugin Testing Guide
+# Testing Guide
 
-This document explains how to run and add tests for the Netro Indigo plugin.
+This guide explains how to run and write tests for the Netro Sprinklers plugin.
 
-## Testing Options
+## Test Structure
 
-1. **Unit Tests** (this document) - Fast mock-based tests with pytest
-2. **Local API Testing** (see [LOCAL_TESTING.md](LOCAL_TESTING.md)) - Test real API with your hardware
-
-## Overview
-
-The test suite provides comprehensive coverage of:
-- API client functionality
-- Configuration validation
-- Action callbacks
-- Error handling
-- Edge cases
-
-**Test Framework**: pytest
-**Coverage Tool**: pytest-cov
-**Mocking**: pytest-mock, responses
-
-## Setup
-
-### Install Test Dependencies
-
-```bash
-cd netro
-pip3 install -r requirements-dev.txt
+```
+netro/
+├── tests/                               # Test suite
+│   ├── conftest.py                      # Shared pytest fixtures
+│   ├── test_api_client.py              # API communication tests (17 tests)
+│   ├── test_validation.py              # Configuration validation (24 tests)
+│   ├── test_actions.py                 # Action callback tests (23 tests)
+│   └── fixtures/                        # Mock API responses
+│       ├── info_response.json
+│       ├── schedules_response.json
+│       ├── moistures_response.json
+│       ├── sensor_data_response.json
+│       └── error_responses.json
+├── test_local_api.py                    # Standalone API testing script
+└── LOCAL_TESTING.md                     # Guide for local API testing
 ```
 
-Dependencies installed:
-- `pytest` - Test framework
-- `pytest-cov` - Coverage reporting
-- `pytest-mock` - Mocking utilities
-- `responses` - HTTP request mocking
-- `pylint` - Code quality checker
-- `black` - Code formatter
+**Total: 64 automated tests**
 
 ## Running Tests
+
+### Prerequisites
+
+```bash
+# Install test dependencies
+pip3 install pytest pytest-cov pytest-mock requests
+```
 
 ### Run All Tests
 
 ```bash
+# From netro directory
+cd /path/to/Indigo/netro
 pytest tests/
-```
-
-### Run with Verbose Output
-
-```bash
-pytest tests/ -v
 ```
 
 ### Run Specific Test File
 
 ```bash
+# Test API client only
 pytest tests/test_api_client.py
+
+# Test validation only
 pytest tests/test_validation.py
+
+# Test actions only
 pytest tests/test_actions.py
 ```
 
-### Run Specific Test Class
+### Run with Coverage Report
 
 ```bash
-pytest tests/test_api_client.py::TestAPIClient
-pytest tests/test_validation.py::TestPluginConfigValidation
-```
+# Generate coverage report
+pytest tests/ --cov --cov-report=html
 
-### Run Specific Test Method
-
-```bash
-pytest tests/test_api_client.py::TestAPIClient::test_successful_get_request
-```
-
-### Run Tests by Marker
-
-Tests are organized with markers for easy filtering:
-
-```bash
-pytest -m api          # Run API client tests
-pytest -m validation   # Run validation tests
-pytest -m actions      # Run action tests
-pytest -m slow         # Run slow tests only
-```
-
-### Run Tests with Coverage
-
-```bash
-# Terminal output
-pytest --cov
-
-# HTML report (opens in browser)
-pytest --cov --cov-report=html
+# View report
 open htmlcov/index.html
 ```
 
-### Run Tests with Coverage for Specific Module
+### Run Specific Test
 
 ```bash
-pytest --cov=plugin.py tests/
+# Run single test by name
+pytest tests/test_api_client.py::test_successful_get_request
+
+# Run tests matching pattern
+pytest tests/ -k "validation"
 ```
 
-## Test Structure
+### Verbose Output
 
-```
-tests/
-├── __init__.py                    # Test package
-├── conftest.py                    # Shared fixtures and configuration
-├── test_api_client.py             # API client tests (47 tests)
-├── test_validation.py             # Validation tests (28 tests)
-├── test_actions.py                # Action callback tests (30 tests)
-└── fixtures/                      # Mock API responses
-    ├── info_response.json         # Device info response
-    ├── schedules_response.json    # Schedules response
-    ├── moistures_response.json    # Moisture data response
-    ├── sensor_data_response.json  # Sensor data response
-    └── error_rate_limit.json      # Error response example
+```bash
+# Show all test names and output
+pytest tests/ -v
+
+# Show print statements
+pytest tests/ -s
+
+# Both verbose and print
+pytest tests/ -vs
 ```
 
 ## Test Categories
 
-### API Client Tests (`test_api_client.py`)
+### 1. API Client Tests (`test_api_client.py`)
 
-Tests for HTTP client functionality:
-- Successful GET/POST requests
-- Error handling (429, timeouts, connection errors)
-- Throttle management
-- Token tracking
-- Response parsing
+Tests the `_make_api_call()` method and API integration.
 
-**Run**: `pytest tests/test_api_client.py -v`
+**What it tests**:
+- ✅ Successful GET/POST/PUT requests
+- ✅ JSON response parsing
+- ✅ HTTP error handling (404, 429, 500)
+- ✅ Timeout handling
+- ✅ Connection error handling
+- ✅ Throttle delay enforcement
+- ✅ Throttle expiration
+- ✅ Error message suppression after first display
 
-### Validation Tests (`test_validation.py`)
-
-Tests for configuration and input validation:
-- Plugin config validation (serial, polling, timeout)
-- Action parameter validation (duration, delay, zone)
-- Device config validation
-- Type checking (numeric, date formats)
-
-**Run**: `pytest tests/test_validation.py -v`
-
-### Action Tests (`test_actions.py`)
-
-Tests for action callback methods:
-- `startZoneWithDelay` - Zone control with delay/schedule
-- `reportWeather` - Weather data submission
-- `setNoWater` - Rain delay
-- `setStandbyMode` - Standby mode toggle
-- `getZoneList` - Zone dropdown population
-- API payload construction
-
-**Run**: `pytest tests/test_actions.py -v`
-
-## Fixtures
-
-### Available Fixtures (conftest.py)
-
-- `mock_indigo` - Mock Indigo module
-- `mock_plugin_prefs` - Mock plugin preferences
-- `mock_device` - Mock sprinkler controller device
-- `mock_whisperer_device` - Mock Whisperer sensor
-- `load_fixture` - Load JSON fixtures
-- `mock_requests_get` - Mock GET requests
-- `mock_requests_post` - Mock POST requests
-- `plugin_action` - Mock plugin action
-- `mock_plugin` - Mock plugin instance
-
-### Using Fixtures in Tests
-
+**Example**:
 ```python
-def test_something(mock_device, load_fixture):
-    # Use mock device
-    assert mock_device.address == "test-serial-123"
+def test_successful_get_request(plugin):
+    """Test successful GET request returns JSON data."""
+    with patch('requests.get') as mock_get:
+        # Mock successful response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}}
+        mock_get.return_value = mock_response
 
-    # Load fixture data
-    data = load_fixture("info_response.json")
-    assert data["status"] == "OK"
+        # Make API call
+        result = plugin._make_api_call("http://test.com/api", "get")
+
+        # Verify
+        assert result == {"status": "OK", "data": {}}
+        mock_get.assert_called_once()
 ```
 
-## Adding New Tests
+**See full file for all 17 tests**
 
-### 1. Determine Test Category
+## Writing New Tests
 
-- API functionality → `test_api_client.py`
-- Validation logic → `test_validation.py`
-- Action callbacks → `test_actions.py`
-
-### 2. Create Test Method
+### Test File Template
 
 ```python
-def test_new_feature(self, mock_plugin, mock_device):
-    """Test description."""
+"""Tests for [feature description]."""
+
+import pytest
+from unittest.mock import MagicMock, patch
+
+def test_feature_success(plugin, mock_device):
+    """Test successful [feature] operation."""
     # Arrange
-    # ... setup test data
+    expected_result = {...}
 
-    # Act
-    # ... execute code under test
+    with patch.object(plugin, 'some_method') as mock_method:
+        mock_method.return_value = expected_result
 
-    # Assert
-    # ... verify expected results
+        # Act
+        result = plugin.method_under_test()
+
+        # Assert
+        assert result == expected_result
+        mock_method.assert_called_once()
 ```
 
-### 3. Use Descriptive Names
+### Using Fixtures
 
-- `test_successful_...` - Happy path tests
-- `test_invalid_...` - Error case tests
-- `test_edge_case_...` - Boundary tests
+Available fixtures from `conftest.py`:
 
-### 4. Add Test Markers
+- **plugin**: Fully configured Plugin instance
+- **mock_device**: Mock Indigo sprinkler device
+- **mock_indigo**: Mocked indigo module
 
+### Common Testing Patterns
+
+**Testing validation methods**:
 ```python
-@pytest.mark.slow
-def test_long_running_operation(self):
-    """Test that takes >1 second."""
-    pass
+def test_validation_with_errors():
+    values = {"bad_field": "invalid"}
+    is_valid, values, errors = plugin.validatePrefsConfigUi(values)
+    assert not is_valid
+    assert "bad_field" in errors
+```
+
+**Mocking API calls**:
+```python
+def test_api_interaction(plugin):
+    with patch.object(plugin, '_make_api_call') as mock_api:
+        mock_api.return_value = {"status": "OK", "data": {}}
+        plugin._update_from_netro()
+        assert mock_api.called
 ```
 
 ## Coverage Goals
 
 **Target**: >70% code coverage
 
-### Check Current Coverage
+Run `pytest --cov` to see current coverage.
+
+## Local API Testing
+
+For testing against real Netro hardware:
 
 ```bash
-pytest --cov --cov-report=term-missing
+python3 test_local_api.py --serial YOUR_SERIAL --help
 ```
 
-### Generate HTML Coverage Report
-
-```bash
-pytest --cov --cov-report=html
-```
-
-Then open `htmlcov/index.html` in a browser.
-
-### Identify Uncovered Lines
-
-The terminal report shows line numbers not covered by tests:
-
-```
-Name                    Stmts   Miss  Cover   Missing
------------------------------------------------------
-plugin.py                 450     85    81%   125-130, 245-250
-```
-
-Add tests to cover the missing lines.
-
-## Common Testing Patterns
-
-### Testing API Calls
-
-```python
-def test_api_call(self, mock_requests_get, load_fixture):
-    # Mock the API response
-    mock_get = mock_requests_get(
-        "http://api.netrohome.com/npa/v1/info.json",
-        "info_response.json"
-    )
-
-    # Test code that makes the call
-    response = load_fixture("info_response.json")
-    assert response["status"] == "OK"
-```
-
-### Testing Validation
-
-```python
-def test_validation(self, mock_plugin):
-    # Test valid input
-    assert validate_serial("a4cf12b8d5e2") is True
-
-    # Test invalid input
-    assert validate_serial("") is False
-    assert validate_serial("short") is False
-```
-
-### Testing Error Handling
-
-```python
-def test_error_handling(self, mock_plugin):
-    with pytest.raises(ValueError):
-        convert_to_int("not-a-number")
-```
-
-## Troubleshooting
-
-### Import Errors
-
-If you get import errors for the plugin module:
-
-```bash
-# Add the plugin directory to PYTHONPATH
-export PYTHONPATH="${PYTHONPATH}:/path/to/plugin/Contents/Server Plugin"
-pytest tests/
-```
-
-### Fixture Not Found
-
-Ensure you're using fixtures defined in `conftest.py`:
-
-```python
-def test_example(mock_device):  # ✓ Correct
-    pass
-
-def test_example():
-    mock_device = ...  # ✗ Manual - use fixture instead
-```
-
-### Test Discovery Issues
-
-Pytest looks for:
-- Files: `test_*.py`
-- Classes: `Test*`
-- Functions: `test_*`
-
-Ensure your test names follow this convention.
-
-## Best Practices
-
-1. **Keep Tests Independent**: Each test should run in isolation
-2. **Use Descriptive Names**: Test names should describe what they test
-3. **Follow AAA Pattern**: Arrange, Act, Assert
-4. **Mock External Dependencies**: Don't make real API calls
-5. **Test Edge Cases**: Test boundaries and error conditions
-6. **Keep Tests Fast**: Use mocks to avoid slow operations
-7. **One Assert Per Concept**: Focus each test on one behavior
-
-## Continuous Integration
-
-To run tests in CI/CD:
-
-```bash
-#!/bin/bash
-# Install dependencies
-pip3 install -r requirements-dev.txt
-
-# Run tests with coverage
-pytest tests/ --cov --cov-report=xml --cov-report=term
-
-# Check coverage threshold
-coverage report --fail-under=70
-```
+See [LOCAL_TESTING.md](LOCAL_TESTING.md) for details.
 
 ## Additional Resources
 
-- [Pytest Documentation](https://docs.pytest.org/)
-- [Pytest-cov Documentation](https://pytest-cov.readthedocs.io/)
-- [Pytest-mock Documentation](https://pytest-mock.readthedocs.io/)
+- pytest documentation: https://docs.pytest.org
+- Indigo SDK: See Indigo SDK/docs/
 
-## Quick Reference
-
-```bash
-# Basic Commands
-pytest tests/                           # Run all tests
-pytest tests/ -v                        # Verbose output
-pytest tests/ -x                        # Stop on first failure
-pytest tests/ -k "api"                  # Run tests matching "api"
-pytest tests/ --lf                      # Run last failed tests
-
-# Coverage
-pytest --cov                            # Show coverage
-pytest --cov --cov-report=html          # HTML report
-pytest --cov --cov-report=term-missing  # Show missing lines
-
-# Markers
-pytest -m api                           # Run API tests
-pytest -m "not slow"                    # Skip slow tests
-pytest --markers                        # List all markers
-```
