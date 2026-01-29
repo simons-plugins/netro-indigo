@@ -46,3 +46,8 @@ htmlcov/
 # Test artifacts
 test_results/
 *.log
+
+docs/
+requirements-dev.txt
+
+tests/
