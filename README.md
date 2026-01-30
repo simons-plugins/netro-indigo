@@ -70,35 +70,15 @@ Create automations based on sprinkler events:
 - Set rain delay failed
 - Set standby failed
 
-## Installation
+## Setup
 
 1. Download the latest release from [GitHub Releases](https://github.com/simons-plugins/netro-indigo/releases)
 2. Double-click the `.indigoPlugin` file to install
-3. Configure the plugin with your Netro controller serial number
-4. Create a new "Netro Smart Sprinkler" device in Indigo
+3. Create a new device: **Devices > New > Type: Netro Smart Sprinkler**
+4. Enter your controller serial number (12 hex characters, found on the physical device or in the Netro mobile app under Settings > Device Info)
+5. The plugin will automatically discover zones and configuration
 
-## Configuration
-
-### Plugin Configuration
-
-1. Go to **Indigo > Plugins > Netro Smart Sprinklers > Configure**
-2. Enter your Netro controller serial number (12 hex characters)
-3. Set polling interval (minimum 3 minutes, default 3)
-4. Configure API timeout (default 5 seconds)
-5. Set maximum zone runtime (default 3600 seconds)
-
-### Device Configuration
-
-1. Create a new device: **Devices > New > Type: Netro Smart Sprinkler**
-2. Enter the controller serial number (found on the physical device)
-3. The plugin will automatically discover zones and configuration
-
-### Finding Your Serial Number
-
-Your Netro controller serial number is:
-- Printed on the physical device (12 hex characters)
-- Available in the Netro mobile app (Settings > Device Info)
-- Format example: `0cb8152f9f78`
+For multiple controllers, create a separate device for each one with its own serial number.
 
 ## Usage
 
@@ -146,42 +126,7 @@ The Netro API allows 2000 calls per day. The plugin manages this automatically:
 
 If you approach the daily limit, increase the polling interval in the plugin configuration.
 
-## Troubleshooting
-
-### Plugin Won't Load
-
-1. Check the Indigo Event Log for errors
-2. Verify the serial number format (12 hex characters)
-3. Ensure your Netro controller is online
-
-### API Rate Limiting
-
-**Symptom**: "API calls have violated rate limit" appears in logs
-
-**Solution**:
-- Increase the polling interval in plugin configuration
-- Check the `token_remaining` state for current usage
-- The limit resets daily at midnight UTC
-
-### Controller Shows Offline
-
-Possible causes:
-- Controller is unplugged or has no internet connection
-- Network issues between the controller and Netro cloud
-- Netro API is temporarily unavailable
-
-Note: The Netro API can be slow to report offline status (30+ minutes delay).
-
 ## Support
 
 - **Issues**: [GitHub Issues](https://github.com/simons-plugins/netro-indigo/issues)
 - **Forum**: [Indigo Plugin Forum](https://forums.indigodomo.com)
-
-## License
-
-Copyright (c) 2014-2026, Perceptive Automation, LLC. All rights reserved.
-
-## Related Links
-
-- [Netro Official Website](https://netrohome.com)
-- [Indigo Home Automation](https://www.indigodomo.com)
