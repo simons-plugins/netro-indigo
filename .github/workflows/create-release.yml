@@ -38,8 +38,8 @@ jobs:
         if: steps.check_tag.outputs.exists == 'false'
         run: |
           VERSION="${{ steps.get_version.outputs.version }}"
-          zip -r "Netro-Sprinklers-${VERSION}.zip" "Netro Sprinklers.indigoPlugin"
-          echo "Created Netro-Sprinklers-${VERSION}.zip"
+          zip -r "Netro Sprinklers.indigoPlugin.zip" "Netro Sprinklers.indigoPlugin"
+          echo "Created Netro Sprinklers.indigoPlugin.zip"
 
       - name: Create Release
         if: steps.check_tag.outputs.exists == 'false'
@@ -48,6 +48,6 @@ jobs:
           tag_name: ${{ steps.get_version.outputs.version }}
           name: Release ${{ steps.get_version.outputs.version }}
           generate_release_notes: true
-          files: Netro-Sprinklers-${{ steps.get_version.outputs.version }}.zip
+          files: Netro Sprinklers.indigoPlugin.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
