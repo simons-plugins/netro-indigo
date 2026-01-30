@@ -34,6 +34,13 @@ jobs:
             echo "Tag ${VERSION} does not exist, will create release"
           fi
 
+      - name: Create plugin bundle zip
+        if: steps.check_tag.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          zip -r "Netro-Sprinklers-${VERSION}.zip" "Netro Sprinklers.indigoPlugin"
+          echo "Created Netro-Sprinklers-${VERSION}.zip"
+
       - name: Create Release
         if: steps.check_tag.outputs.exists == 'false'
         uses: softprops/action-gh-release@v1
@@ -41,5 +48,6 @@ jobs:
           tag_name: ${{ steps.get_version.outputs.version }}
           name: Release ${{ steps.get_version.outputs.version }}
           generate_release_notes: true
+          files: Netro-Sprinklers-${{ steps.get_version.outputs.version }}.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
