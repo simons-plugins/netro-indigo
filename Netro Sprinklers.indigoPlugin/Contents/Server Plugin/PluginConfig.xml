@@ -1,25 +1,17 @@
 <?xml version="1.0"?>
 <PluginConfig>
     <Field id="topLabel" type="label">
-        <Label>To use the Netro Plugin, you need to enter your Netro device serial number. You can find this in the Netro mobile app under Settings.</Label>
-    </Field>
-
-    <!-- Serial Number (required) -->
-    <Field id="accessToken" type="textfield">
-        <Label>Device Serial Number:</Label>
-    </Field>
-    <Field id="serialLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
-        <Label>Enter your Netro controller serial number (found in Netro app Settings). This is used for API authentication.</Label>
+        <Label>Configure your Netro devices by creating separate device instances for each controller or sensor. Each device will have its own serial number configured in the device settings. Note: Netro's 2000 calls/day limit is shared across all your devices.</Label>
     </Field>
 
     <Field id="sep1" type="separator"/>
 
     <!-- Polling Interval -->
-    <Field id="pollingInterval" type="textfield" defaultValue="3">
+    <Field id="pollingInterval" type="textfield" defaultValue="5">
         <Label>Polling Interval (minutes):</Label>
     </Field>
     <Field id="pollingLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
-        <Label>How often to check device status (minimum 3 minutes to avoid API rate limits). Netro allows 2000 API calls per day (~1 per minute).</Label>
+        <Label>How often to check device status. Each sprinkler poll uses 3 API calls, sensors use 1 call. Netro limits: 2000 calls/day (shared across all devices). Single sprinkler: 5+ min recommended. Multiple devices: 7-10 min recommended.</Label>
     </Field>
 
     <Field id="sep2" type="separator"/>

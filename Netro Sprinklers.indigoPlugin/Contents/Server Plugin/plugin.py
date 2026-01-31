@@ -165,8 +165,7 @@ class Plugin(indigo.PluginBase):
 
         self.unused_devices = {}
         # Netro API uses serial number for authentication (not bearer tokens)
-        self.serial_number = pluginPrefs.get("accessToken", None)
-        self.person_id = pluginPrefs.get("personId", None)
+        # Serial numbers are configured per-device, not at plugin level
         self.maxZoneRunTime = int(pluginPrefs.get("maxZoneRunTime", NETRO_MAX_ZONE_DURATION))
 
         # HTTP headers for JSON requests
@@ -174,12 +173,6 @@ class Plugin(indigo.PluginBase):
             "Content-Type": "application/json",
             "Accept": "application/json"
         }
-
-        if not self.serial_number:
-            self.logger.warn(
-                "You must specify your Netro device serial number in the plugin's config "
-                "before the plugin can be used."
-            )
 
         self.triggerDict = {}
 
@@ -216,12 +209,12 @@ class Plugin(indigo.PluginBase):
         # Check if we're in a throttle period
         if self.throttle_next_call and datetime.now() < self.throttle_next_call:
             raise ThrottleDelayError(
-                f"API calls throttled until {self.throttle_next_call:%H:%M:%S}"
+                f"api calls throttled until {self.throttle_next_call:%H:%M:%S}"
             )
         elif self.throttle_next_call:
             # Throttle period has expired, reset it
             self.throttle_next_call = None
-            self.logger.info("API rate limit throttle period has expired - resuming normal operation")
+            self.logger.info("api rate limit throttle period has expired - resuming normal operation")
 
         try:
             self.logger.debug(f"API call: {request_method.upper()} {url}")
@@ -270,10 +263,59 @@ class Plugin(indigo.PluginBase):
                 self._displayed_connection_error = True
             raise exc
         except requests.exceptions.HTTPError as exc:
-            if exc.response.status_code == 429:
-                # We've hit the throttle limit - back off on all requests for some period
-                self.throttle_next_call = datetime.now() + timedelta(minutes=THROTTLE_LIMIT_TIMER)
-                self._fireTrigger("rateLimitExceeded")
+            # Check for Netro-specific rate limit error (error code 3)
+            # Netro returns HTTP 400 with JSON error response, not HTTP 429
+            try:
+                error_data = exc.response.json()
+                if error_data.get("status") == "ERROR":
+                    errors = error_data.get("errors", [])
+                    meta = error_data.get("meta", {})
+
+                    # Check for rate limit error (code 3)
+                    for error in errors:
+                        if error.get("code") == 3:
+                            # Extract reset time from meta
+                            token_reset = meta.get("token_reset", "")
+                            token_remaining = meta.get("token_remaining", 0)
+
+                            # Parse reset time (format: "2026-02-01T00:00:00")
+                            try:
+                                reset_dt = datetime.strptime(token_reset, "%Y-%m-%dT%H:%M:%S")
+                                self.throttle_next_call = reset_dt
+                                error_msg = (
+                                    f"netro api rate limit exceeded - {token_remaining} tokens remaining, "
+                                    f"calls will resume after {reset_dt.strftime('%Y-%m-%d %H:%M:%S')}, "
+                                    f"consider increasing polling interval in plugin preferences"
+                                )
+                            except (ValueError, TypeError):
+                                # Fallback to fixed delay if we can't parse reset time
+                                self.throttle_next_call = datetime.now() + timedelta(minutes=THROTTLE_LIMIT_TIMER)
+                                error_msg = (
+                                    f"netro api rate limit exceeded, "
+                                    f"will retry in {THROTTLE_LIMIT_TIMER} minutes, "
+                                    f"consider increasing polling interval"
+                                )
+
+                            self.logger.error(error_msg)
+                            self._fireTrigger("rateLimitExceeded")
+                            raise ThrottleDelayError(error_msg)
+                        elif error.get("code") == 1:
+                            # Invalid key error
+                            self.logger.error(
+                                f"invalid netro serial number: {error.get('message')}, "
+                                f"verify the serial number in your device configuration"
+                            )
+            except (ValueError, AttributeError):
+                # If we can't parse JSON, check for HTTP 429 as fallback
+                if exc.response.status_code == 429:
+                    self.throttle_next_call = datetime.now() + timedelta(minutes=THROTTLE_LIMIT_TIMER)
+                    error_msg = (
+                        f"api rate limit exceeded (http 429), "
+                        f"will retry in {THROTTLE_LIMIT_TIMER} minutes"
+                    )
+                    self.logger.error(error_msg)
+                    self._fireTrigger("rateLimitExceeded")
+                    raise ThrottleDelayError(error_msg)
             raise exc
         except ThrottleDelayError as exc:
             self.logger.error(str(exc))
@@ -409,13 +451,35 @@ class Plugin(indigo.PluginBase):
 
                         # Warn if API tokens are running low
                         tokens_remaining = reply_dict_device.get("token_remaining", 2000)
-                        if tokens_remaining < 100:
-                            self.logger.warning(
-                                f"API rate limit warning: Only {tokens_remaining} calls remaining today. "
-                                f"Resets at {reply_dict_device.get('token_reset', 'unknown')}. "
-                                f"Consider increasing polling interval to avoid hitting limit.")
+                        token_reset = reply_dict_device.get('token_reset', 'unknown')
+
+                        # Calculate calls per polling cycle (info + schedules + moistures = 3)
+                        calls_per_cycle = 3
+                        cycles_remaining = tokens_remaining // calls_per_cycle
+                        hours_remaining = (cycles_remaining * self.pollingInterval) / 60
+
+                        if tokens_remaining <= 0:
+                            self.logger.error(
+                                f"api rate limit exceeded - no tokens remaining until {token_reset}, "
+                                f"increase polling interval to prevent this tomorrow"
+                            )
+                        elif tokens_remaining < 50:
+                            self.logger.error(
+                                f"low api tokens: {tokens_remaining} of 2000 remaining "
+                                f"(~{hours_remaining:.1f} hours), resets at {token_reset}, "
+                                f"recommend increasing polling interval"
+                            )
                         elif tokens_remaining < 200:
-                            self.logger.info(f"API tokens remaining: {tokens_remaining} of 2000 today")
+                            self.logger.warning(
+                                f"api tokens low: {tokens_remaining} of 2000 remaining "
+                                f"(~{hours_remaining:.1f} hours), resets at {token_reset}, "
+                                f"consider increasing polling interval"
+                            )
+                        elif tokens_remaining < 500:
+                            self.logger.info(
+                                f"api tokens: {tokens_remaining} of 2000 remaining today "
+                                f"(~{hours_remaining:.1f} hours at current rate)"
+                            )
 
                         activeScheduleName = None
 
@@ -540,6 +604,27 @@ class Plugin(indigo.PluginBase):
                         update_moisture = self.callMoisturesAPI(netroSerial)
                         dev.updateStatesOnServer(update_moisture)
 
+                    except ThrottleDelayError:
+                        # Already logged detailed error in _make_api_call, just skip this device
+                        pass
+                    except requests.exceptions.HTTPError as exc:
+                        # Check if we already logged a detailed error for this
+                        if hasattr(exc, 'response') and exc.response is not None:
+                            try:
+                                error_data = exc.response.json()
+                                if error_data.get("status") == "ERROR":
+                                    # Already logged specific error in _make_api_call
+                                    pass
+                                else:
+                                    self.logger.error("Error getting user data from Netro via API.")
+                                    self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+                            except (ValueError, AttributeError):
+                                self.logger.error("Error getting user data from Netro via API.")
+                                self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+                        else:
+                            self.logger.error("Error getting user data from Netro via API.")
+                            self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+                        self._fireTrigger("personInfoCall")
                     except Exception as exc:
                         self.logger.error("Error getting user data from Netro via API.")
                         self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
@@ -917,13 +1002,6 @@ class Plugin(indigo.PluginBase):
         self.logger.threaddebug("validatePrefsConfigUi")
         errorsDict = indigo.Dict()
 
-        # Validate serial number (required)
-        serial = valuesDict.get("accessToken", "").strip()
-        if not serial:
-            errorsDict["accessToken"] = "Serial number is required"
-        elif len(serial) < 8:
-            errorsDict["accessToken"] = "Serial number appears too short (should be 12 hex characters)"
-
         # Validate polling interval (minimum 3 minutes to avoid rate limits)
         try:
             polling = int(valuesDict.get("pollingInterval", 3))
@@ -978,12 +1056,6 @@ class Plugin(indigo.PluginBase):
             self.debug = valuesDict.get("showDebugInfo", False)
             if self.debug:
                 self.logger.debug("Debug logging enabled")
-
-            # Update serial number if changed
-            new_serial = valuesDict.get("accessToken", "").strip()
-            if new_serial and new_serial != self.serial_number:
-                self.serial_number = new_serial
-                self.logger.info("Serial number updated, will reconnect to Netro API")
 
             # Update polling interval
             try:
