@@ -453,14 +453,27 @@ class Plugin(indigo.PluginBase):
                             {"key": "token_reset", 'value': reply_dict_device["token_reset"]})
                         update_list.append({"key": "name", "value": reply_dict_device["name"]})
 
-                        # Warn if API tokens are running low
-                        tokens_remaining = reply_dict_device.get("token_remaining", 2000)
-                        token_reset = reply_dict_device.get('token_reset', 'unknown')
+                        # Warn if API tokens are running low - parse defensively
+                        try:
+                            tokens_remaining = int(reply_dict_device.get("token_remaining", 2000))
+                        except (ValueError, TypeError):
+                            tokens_remaining = 2000
+                            self.logger.debug("invalid token_remaining value from api, using default 2000")
+
+                        try:
+                            token_reset = str(reply_dict_device.get('token_reset', 'unknown'))
+                        except (ValueError, TypeError):
+                            token_reset = 'unknown'
 
                         # Calculate calls per polling cycle (info + schedules + moistures = 3)
                         calls_per_cycle = 3
-                        cycles_remaining = tokens_remaining // calls_per_cycle
-                        hours_remaining = (cycles_remaining * self.pollingInterval) / 60
+                        try:
+                            cycles_remaining = tokens_remaining // calls_per_cycle
+                            hours_remaining = (cycles_remaining * self.pollingInterval) / 60
+                        except (ZeroDivisionError, TypeError):
+                            cycles_remaining = 0
+                            hours_remaining = 0.0
+                            self.logger.debug("error calculating token cycle estimates, using defaults")
 
                         if tokens_remaining <= 0:
                             self.logger.error(
@@ -613,20 +626,33 @@ class Plugin(indigo.PluginBase):
                         pass
                     except requests.exceptions.HTTPError as exc:
                         # Check if we already logged a detailed error for this
+                        # Only skip logging for recognized error codes (1 = invalid key, 3 = rate limit)
                         if hasattr(exc, 'response') and exc.response is not None:
                             try:
                                 error_data = exc.response.json()
                                 if error_data.get("status") == "ERROR":
-                                    # Already logged specific error in _make_api_call
-                                    pass
+                                    # Check if this is a recognized error code
+                                    errors = error_data.get("errors", [])
+                                    recognized_codes = {1, 3}  # invalid key, rate limit
+                                    is_recognized = any(
+                                        error.get("code") in recognized_codes
+                                        for error in errors
+                                    )
+                                    if is_recognized:
+                                        # Already logged specific error in _make_api_call
+                                        pass
+                                    else:
+                                        # Unrecognized error code - log it
+                                        self.logger.error("error getting user data from netro api")
+                                        self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                                 else:
-                                    self.logger.error("Error getting user data from Netro via API.")
+                                    self.logger.error("error getting user data from netro api")
                                     self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                             except (ValueError, AttributeError):
-                                self.logger.error("Error getting user data from Netro via API.")
+                                self.logger.error("error getting user data from netro api")
                                 self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                         else:
-                            self.logger.error("Error getting user data from Netro via API.")
+                            self.logger.error("error getting user data from netro api")
                             self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                         self._fireTrigger("personInfoCall")
                     except Exception as exc:
