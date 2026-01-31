@@ -282,8 +282,13 @@ class Plugin(indigo.PluginBase):
                             try:
                                 reset_dt = datetime.strptime(token_reset, "%Y-%m-%dT%H:%M:%S")
                                 self.throttle_next_call = reset_dt
+                                # Format token message based on positive/negative
+                                if token_remaining >= 0:
+                                    token_msg = f"{token_remaining} tokens remaining"
+                                else:
+                                    token_msg = f"{abs(token_remaining)} tokens over limit"
                                 error_msg = (
-                                    f"netro api rate limit exceeded - {token_remaining} tokens remaining, "
+                                    f"netro api rate limit exceeded ({token_msg}), "
                                     f"calls will resume after {reset_dt.strftime('%Y-%m-%d %H:%M:%S')}, "
                                     f"consider increasing polling interval in plugin preferences"
                                 )
@@ -296,7 +301,7 @@ class Plugin(indigo.PluginBase):
                                     f"consider increasing polling interval"
                                 )
 
-                            self.logger.error(error_msg)
+                            self.logger.warning(error_msg)
                             self._fireTrigger("rateLimitExceeded")
                             raise ThrottleDelayError(error_msg)
                         elif error.get("code") == 1:
@@ -313,14 +318,13 @@ class Plugin(indigo.PluginBase):
                         f"api rate limit exceeded (http 429), "
                         f"will retry in {THROTTLE_LIMIT_TIMER} minutes"
                     )
-                    self.logger.error(error_msg)
+                    self.logger.warning(error_msg)
                     self._fireTrigger("rateLimitExceeded")
                     raise ThrottleDelayError(error_msg)
             raise exc
-        except ThrottleDelayError as exc:
-            self.logger.error(str(exc))
-            self.logger.debug(f"{str(exc)}:\n{traceback.format_exc(10)}")
-            raise exc
+        except ThrottleDelayError:
+            # Already logged when raised, just re-raise to propagate
+            raise
         except Exception as exc:
             self.logger.error(
                 f"Connection to Netro API server failed with exception: {exc.__class__.__name__}. "
@@ -632,28 +636,36 @@ class Plugin(indigo.PluginBase):
 
                 # Update Whisperer Plant Sensors
                 if dev.deviceTypeId == "Whisperer":
-                    self.logger.debug(u"Device ID: " + dev.address)
-                    self.serialNo = str(dev.address)
-                    if dev.sensorValue is not None:
-                        sensorValuesLatest = self.callSensorAPI(self.serialNo)
-                        self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
-                        if dev.onState is not None:
-                            self.key_val_list.append({'key': 'onOffState', 'value': not dev.onState})
-                            dev.updateStatesOnServer(self.key_val_list)
-                            if dev.onState:
-                                dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensorOn)
+                    try:
+                        self.logger.debug(u"Device ID: " + dev.address)
+                        self.serialNo = str(dev.address)
+                        if dev.sensorValue is not None:
+                            sensorValuesLatest = self.callSensorAPI(self.serialNo)
+                            self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
+                            if dev.onState is not None:
+                                self.key_val_list.append({'key': 'onOffState', 'value': not dev.onState})
+                                dev.updateStatesOnServer(self.key_val_list)
+                                if dev.onState:
+                                    dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensorOn)
+                                else:
+                                    dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensor)
                             else:
+                                dev.updateStatesOnServer(self.key_val_list)
                                 dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensor)
+                        elif dev.onState is not None:
+                            dev.updateStateOnServer("onOffState", not dev.onState)
+                            dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
                         else:
-                            dev.updateStatesOnServer(self.key_val_list)
-                            dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensor)
-                    elif dev.onState is not None:
-                        dev.updateStateOnServer("onOffState", not dev.onState)
-                        dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
-                    else:
-                        dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
+                            dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
+                    except ThrottleDelayError:
+                        # Already logged detailed warning in _make_api_call, just skip this device
+                        pass
+                    except Exception as exc:
+                        self.logger.error(f"error getting sensor data from netro api for device \"{dev.name}\"")
+                        self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
         except Exception as exc:
-            self.logger.error("Unknown error:\n{}".format(traceback.format_exc(10)))
+            self.logger.error(f"unexpected error updating netro devices: {exc.__class__.__name__}")
+            self.logger.debug(f"traceback:\n{traceback.format_exc(10)}")
 
     def callMoisturesAPI(self, serial):
         """Fetch moisture levels from Netro API for all zones.
