@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-01)
 
 **Core value:** Maintain reliable, maintainable Indigo plugin for Netro smart irrigation control with clean, testable code
-**Current focus:** Phase 4 - Validators (COMPLETE)
+**Current focus:** Phase 3 - API Client (In Progress)
 
 ## Current Position
 
-Phase: 4 of 6 (Validators)
-Plan: 2 of 2 in current phase
+Phase: 3 of 6 (API Client)
+Plan: 1 of 1 in current phase
 Status: Phase complete
-Last activity: 2026-02-01 - Completed 04-02-PLAN.md (Plugin Integration)
+Last activity: 2026-02-01 - Completed 03-01-PLAN.md (API Client)
 
-Progress: [███████░░░] 41%
+Progress: [████████░░] 50%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 7
+- Total plans completed: 8
 - Average duration: 3 min
-- Total execution time: 0.35 hours
+- Total execution time: 0.40 hours
 
 **By Phase:**
 
@@ -29,10 +29,11 @@ Progress: [███████░░░] 41%
 |-------|-------|-------|----------|
 | 01-foundation | 3 | 8 min | 2.7 min |
 | 02-base-modules | 2 | 7 min | 3.5 min |
+| 03-api-client | 1 | 3 min | 3.0 min |
 | 04-validators | 2 | 6 min | 3.0 min |
 
 **Recent Trend:**
-- Last 5 plans: 02-01 (3 min), 02-02 (4 min), 04-01 (3 min), 04-02 (3 min)
+- Last 5 plans: 02-02 (4 min), 04-01 (3 min), 04-02 (3 min), 03-01 (3 min)
 - Trend: Stable (fast execution)
 
 *Updated after each plan completion*
@@ -62,6 +63,9 @@ Recent decisions affecting current work:
 - (02-01): Use frozenset for immutable event sets
 - (02-02): Remove unused imports from plugin.py (convert_timestamp)
 - (02-02): Update .gitignore to allow tests/ directory
+- (03-01): Use callback injection for logger and prefs to avoid circular imports
+- (03-01): Re-export TOKEN_PAUSE_THRESHOLD and TOKEN_WARNING_THRESHOLD from api_client
+- (03-01): Accept too-many-branches warning in make_request method
 - (04-01): Use 3-tuple ValidationResult for Indigo callback compatibility
 - (04-01): Pure validation functions with no Indigo dependencies
 - (04-01): Use dataclass for prefs field specs to reduce arguments
@@ -75,10 +79,10 @@ None yet.
 
 ### Blockers/Concerns
 
-None - Phase 4 complete. Note: Phase 3 (API Client) was skipped, needs planning before Phase 5 (Device Handlers).
+None - Phase 3 complete. Ready for Phase 5 (Device Handlers) or integration plan.
 
 ## Session Continuity
 
-Last session: 2026-02-01 22:27 UTC
-Stopped at: Completed 04-02-PLAN.md (Plugin Integration) - Phase 4 complete
+Last session: 2026-02-01 23:14 UTC
+Stopped at: Completed 03-01-PLAN.md (API Client) - Phase 3 complete
 Resume file: None
