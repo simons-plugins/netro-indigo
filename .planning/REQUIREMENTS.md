@@ -116,9 +116,9 @@ Which phases cover which requirements. Updated during roadmap creation.
 | QUAL-08 | Phase 1 | Complete |
 | QUAL-09 | Phase 1 | Complete |
 | QUAL-10 | Phase 1 | Complete |
-| MOD-01 | Phase 2 | Pending |
-| MOD-02 | Phase 2 | Pending |
-| MOD-03 | Phase 2 | Pending |
+| MOD-01 | Phase 2 | Complete |
+| MOD-02 | Phase 2 | Complete |
+| MOD-03 | Phase 2 | Complete |
 | MOD-04 | Phase 3 | Pending |
 | MOD-05 | Phase 4 | Pending |
 | MOD-06 | Phase 5 | Pending |
@@ -147,8 +147,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | DEV-01 | Phase 1 | Complete |
 | DEV-02 | Phase 1 | Complete |
 | DEV-03 | Phase 1 | Complete |
-| DEV-04 | Phase 2 | Pending |
-| DEV-05 | Phase 2 | Pending |
+| DEV-04 | Phase 2 | Complete |
+| DEV-05 | Phase 2 | Complete |
 
 **Coverage:**
 - v1 requirements: 47 total

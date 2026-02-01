@@ -13,7 +13,7 @@ This roadmap transforms a 1635-line monolithic Indigo plugin into a maintainable
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation & Critical Fixes** - Fix silent failures, establish development workflow, quick quality wins
-- [ ] **Phase 2: Base Modules** - Extract no-dependency modules (constants, exceptions, utils)
+- [x] **Phase 2: Base Modules** - Extract no-dependency modules (constants, exceptions, utils)
 - [ ] **Phase 3: API Client** - Extract API layer with throttle management and reliability features
 - [ ] **Phase 4: Validators** - Extract configuration validation functions
 - [ ] **Phase 5: Device Handlers** - Extract device update logic, slim plugin.py to coordinator
@@ -51,8 +51,8 @@ Plans:
 **Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 02-01-PLAN.md — Create constants.py, exceptions.py, and utils.py modules
-- [ ] 02-02-PLAN.md — Update plugin.py imports and add unit tests
+- [x] 02-01-PLAN.md — Create constants.py, exceptions.py, and utils.py modules
+- [x] 02-02-PLAN.md — Update plugin.py imports and add unit tests
 
 ### Phase 3: API Client
 **Goal**: API communication isolated in dedicated module with proactive throttle management
