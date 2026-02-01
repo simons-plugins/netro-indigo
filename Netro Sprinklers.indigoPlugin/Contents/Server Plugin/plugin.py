@@ -655,7 +655,7 @@ class Plugin(indigo.PluginBase):
                             self.logger.error("error getting user data from netro api")
                             self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                         self._fireTrigger("personInfoCall")
-                    except Exception as exc:
+                    except Exception:
                         self.logger.error("Error getting user data from Netro via API.")
                         self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                         self._fireTrigger("personInfoCall")
@@ -663,7 +663,7 @@ class Plugin(indigo.PluginBase):
                 # Update Whisperer Plant Sensors
                 if dev.deviceTypeId == "Whisperer":
                     try:
-                        self.logger.debug(u"Device ID: " + dev.address)
+                        self.logger.debug(f"Device ID: {dev.address}")
                         self.serialNo = str(dev.address)
                         if dev.sensorValue is not None:
                             sensorValuesLatest = self.callSensorAPI(self.serialNo)
@@ -686,7 +686,7 @@ class Plugin(indigo.PluginBase):
                     except ThrottleDelayError:
                         # Already logged detailed warning in _make_api_call, just skip this device
                         pass
-                    except Exception as exc:
+                    except Exception:
                         self.logger.error(f"error getting sensor data from netro api for device \"{dev.name}\"")
                         self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
         except Exception as exc:
@@ -1178,7 +1178,7 @@ class Plugin(indigo.PluginBase):
             dev_id: Device ID associated with event (None for non-device events)
         """
         try:
-            for triggerId, trigger in self.triggerDict.items():
+            for trigger in self.triggerDict.values():
                 if trigger.pluginTypeId == "sprinklerError":
                     if int(trigger.pluginProps["id"]) == dev_id:
                         # for the all trigger type, we fire any event that's in the ALL_OPERATIONAL_ERROR_EVENTS
@@ -1200,8 +1200,8 @@ class Plugin(indigo.PluginBase):
                 elif trigger.pluginTypeId == event:
                     # an update is available, just fire the trigger since there's nothing else to look at
                     indigo.trigger.execute(trigger)
-        except Exception as exc:
-            self.logger.error(u"An error occurred during trigger processing")
+        except Exception:
+            self.logger.error("An error occurred during trigger processing")
             self.logger.debug(f"An error occurred during trigger processing: \n{traceback.format_exc(10)}")
 
     ########################################
@@ -1407,7 +1407,7 @@ class Plugin(indigo.PluginBase):
             self._make_api_call(DEVICE_SET_STATUS_URL, request_method="post", data=data)
             mode_status = 'on' if pluginAction.props['mode'] else 'off'
             self.logger.info(f"Standby mode for controller '{dev.name}' turned {mode_status}")
-        except Exception as exc:
+        except Exception:
             self.logger.error("Could not set standby mode - check your controller.")
             self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
             self._fireTrigger("setStandbyFailed", dev.id)
