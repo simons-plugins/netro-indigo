@@ -603,6 +603,13 @@ class Plugin(indigo.PluginBase):
                         if dev.sensorValue is not None:
                             sensorValuesLatest = self.callSensorAPI(self.serialNo)
                             self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
+
+                            # Check if sensor is offline (no recent readings from device)
+                            if not sensorValuesLatest['currentReadings']:
+                                dev.setErrorStateOnServer('sensor offline - no recent data')
+                            else:
+                                dev.setErrorStateOnServer('')
+
                             if dev.onState is not None:
                                 self.key_val_list.append({'key': 'onOffState', 'value': not dev.onState})
                                 dev.updateStatesOnServer(self.key_val_list)
@@ -685,12 +692,18 @@ class Plugin(indigo.PluginBase):
 
         # Guard against empty sensor readings list
         if not sensorReadings:
-            self.logger.warning("No sensor data available from API")
+            self.logger.info(f"No sensor data available from API for device {serial} (sensor offline or not reporting)")
+            # Still update device with API metadata so user knows plugin is working
             return {
                 'sensorStatus': jsonData['status'],
-                'sensorMeta': jsonData['meta'],
+                'sensorMeta': jmeta,
                 'currentReadings': {},
-                'sensorKeyValuesList': []
+                'sensorKeyValuesList': [
+                    {'key': 'token_remaining', 'value': jmeta.get("token_remaining", 0)},
+                    {'key': 'token_reset', 'value': jmeta.get("token_reset", "unknown")},
+                    {'key': 'api_last_active', 'value': jmeta.get("last_active", "unknown")},
+                    {'key': 'time', 'value': jmeta.get("time", "unknown")},
+                ]
             }
 
         sensorReadings.sort(key=lambda x: x.get('id'), reverse=True)
