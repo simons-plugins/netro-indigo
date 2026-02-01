@@ -21,8 +21,9 @@ Note:
     to prevent circular imports and maintain testability.
 """
 
+from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from constants import MINIMUM_POLLING_INTERVAL_MINUTES
 
@@ -296,6 +297,100 @@ def validate_device_config(
     return (len(errors) == 0, sanitized, errors)
 
 
+def _validate_start_zone_action(
+    values: Dict[str, Any],
+    sanitized: Dict[str, Any],
+    errors: Dict[str, str],
+) -> None:
+    """Validate startZoneWithDelay action parameters.
+
+    Args:
+        values: Input values dict
+        sanitized: Dict to store sanitized values (modified in place)
+        errors: Dict to store error messages (modified in place)
+    """
+    # Validate duration (1-180 minutes)
+    is_valid, duration, error = validate_integer_range(
+        values.get("duration", 15), "Duration", 1, 180, default=15
+    )
+    if is_valid and duration is not None:
+        sanitized["duration"] = duration
+    elif error:
+        errors["duration"] = error
+
+    # Validate delay (0-60 minutes)
+    is_valid, delay, error = validate_integer_range(
+        values.get("delay", 0), "Delay", 0, 60, default=0
+    )
+    if is_valid and delay is not None:
+        sanitized["delay"] = delay
+    elif error:
+        errors["delay"] = error
+
+    # Validate start_time if provided (must be valid Unix timestamp)
+    start_time = values.get("start_time", "")
+    if isinstance(start_time, str):
+        start_time = start_time.strip()
+    if start_time:
+        try:
+            sanitized["start_time"] = int(start_time)
+        except (ValueError, TypeError):
+            errors["start_time"] = "Start time must be a valid Unix timestamp (integer)"
+
+    # Validate zone selected
+    if not values.get("zone"):
+        errors["zone"] = "You must select a zone"
+
+
+def _validate_report_weather_action(
+    values: Dict[str, Any],
+    sanitized: Dict[str, Any],
+    errors: Dict[str, str],
+) -> None:
+    """Validate reportWeather action parameters.
+
+    Args:
+        values: Input values dict
+        sanitized: Dict to store sanitized values (modified in place)
+        errors: Dict to store error messages (modified in place)
+    """
+    # Validate required temperature field
+    is_valid, temp, error = validate_required_float(
+        values.get("temperature", ""), "Current temperature"
+    )
+    if is_valid and temp is not None:
+        sanitized["temperature"] = temp
+    elif error:
+        errors["temperature"] = error
+
+    # Validate optional numeric fields
+    optional_fields = [
+        ("t_max", "Max temperature", -50.0, 150.0),
+        ("t_min", "Min temperature", -50.0, 150.0),
+        ("humidity", "Humidity", 0.0, 100.0),
+        ("rain", "Rainfall", 0.0, 100.0),
+        ("rain_prob", "Rain probability", 0.0, 100.0),
+        ("wind_speed", "Wind speed", 0.0, 200.0),
+        ("pressure", "Pressure", 20.0, 35.0),
+    ]
+
+    for field, label, min_val, max_val in optional_fields:
+        is_valid, val, error = validate_optional_float(
+            values.get(field, ""), label, min_val, max_val
+        )
+        if is_valid and val is not None:
+            sanitized[field] = val
+        elif error:
+            errors[field] = error
+
+    # Validate date format if provided
+    is_valid, date_val, error = validate_date_format(values.get("date", ""))
+    if is_valid and date_val is not None:
+        sanitized["date"] = date_val
+    elif error:
+        errors["date"] = error
+
+
 def validate_action_config(
     values: Dict[str, Any],
     type_id: str,
@@ -315,86 +410,9 @@ def validate_action_config(
     errors: Dict[str, str] = {}
 
     if type_id == "startZoneWithDelay":
-        # Validate duration (1-180 minutes)
-        is_valid, duration, error = validate_integer_range(
-            values.get("duration", 15),
-            "Duration",
-            1,
-            180,
-            default=15,
-        )
-        if is_valid and duration is not None:
-            sanitized["duration"] = duration
-        elif error:
-            errors["duration"] = error
-
-        # Validate delay (0-60 minutes)
-        is_valid, delay, error = validate_integer_range(
-            values.get("delay", 0),
-            "Delay",
-            0,
-            60,
-            default=0,
-        )
-        if is_valid and delay is not None:
-            sanitized["delay"] = delay
-        elif error:
-            errors["delay"] = error
-
-        # Validate start_time if provided (must be valid Unix timestamp)
-        start_time = values.get("start_time", "")
-        if isinstance(start_time, str):
-            start_time = start_time.strip()
-        if start_time:
-            try:
-                sanitized["start_time"] = int(start_time)
-            except (ValueError, TypeError):
-                errors["start_time"] = "Start time must be a valid Unix timestamp (integer)"
-
-        # Validate zone selected
-        if not values.get("zone"):
-            errors["zone"] = "You must select a zone"
-
+        _validate_start_zone_action(values, sanitized, errors)
     elif type_id == "reportWeather":
-        # Validate required temperature field
-        is_valid, temp, error = validate_required_float(
-            values.get("temperature", ""),
-            "Current temperature",
-        )
-        if is_valid and temp is not None:
-            sanitized["temperature"] = temp
-        elif error:
-            errors["temperature"] = error
-
-        # Validate optional numeric fields
-        optional_fields = [
-            ("t_max", "Max temperature", -50.0, 150.0),
-            ("t_min", "Min temperature", -50.0, 150.0),
-            ("humidity", "Humidity", 0.0, 100.0),
-            ("rain", "Rainfall", 0.0, 100.0),
-            ("rain_prob", "Rain probability", 0.0, 100.0),
-            ("wind_speed", "Wind speed", 0.0, 200.0),
-            ("pressure", "Pressure", 20.0, 35.0),
-        ]
-
-        for field, label, min_val, max_val in optional_fields:
-            is_valid, val, error = validate_optional_float(
-                values.get(field, ""),
-                label,
-                min_val,
-                max_val,
-            )
-            if is_valid and val is not None:
-                sanitized[field] = val
-            elif error:
-                errors[field] = error
-
-        # Validate date format if provided
-        is_valid, date_val, error = validate_date_format(values.get("date", ""))
-        if is_valid and date_val is not None:
-            sanitized["date"] = date_val
-        elif error:
-            errors["date"] = error
+        _validate_report_weather_action(values, sanitized, errors)
 
     return (len(errors) == 0, sanitized, errors)
 
@@ -423,6 +441,39 @@ def validate_event_config(
     return (len(errors) == 0, sanitized, errors)
 
 
+@dataclass(frozen=True)
+class PrefsFieldSpec:
+    """Specification for a preferences field validation."""
+    field: str
+    min_val: int
+    max_val: int
+    default: int
+    min_error: str
+    max_error: str
+
+
+# Preferences field validation specifications
+_PREFS_FIELDS: List[PrefsFieldSpec] = [
+    PrefsFieldSpec(
+        "pollingInterval", MINIMUM_POLLING_INTERVAL_MINUTES, 1440,
+        MINIMUM_POLLING_INTERVAL_MINUTES,
+        f"Polling interval must be at least {MINIMUM_POLLING_INTERVAL_MINUTES} "
+        "minutes to avoid API rate limits",
+        "Polling interval cannot exceed 1440 minutes (24 hours)",
+    ),
+    PrefsFieldSpec(
+        "apiTimeout", 1, 60, 5,
+        "Timeout must be at least 1 second",
+        "Timeout cannot exceed 60 seconds",
+    ),
+    PrefsFieldSpec(
+        "maxZoneRunTime", 60, 10800, 3600,
+        "Max runtime must be at least 60 seconds (1 minute)",
+        "Max runtime cannot exceed 10800 seconds (3 hours)",
+    ),
+]
+
+
 def validate_prefs_config(
     values: Dict[str, Any],
 ) -> ValidationResult:
@@ -439,67 +490,21 @@ def validate_prefs_config(
     sanitized: Dict[str, Any] = dict(values)
     errors: Dict[str, str] = {}
 
-    # Validate polling interval (minimum from constants, max 1440 = 24 hours)
-    is_valid, polling, error = validate_integer_range(
-        values.get("pollingInterval", MINIMUM_POLLING_INTERVAL_MINUTES),
-        "Polling interval",
-        MINIMUM_POLLING_INTERVAL_MINUTES,
-        1440,
-        default=MINIMUM_POLLING_INTERVAL_MINUTES,
-    )
-    if is_valid and polling is not None:
-        sanitized["pollingInterval"] = polling
-    elif error:
-        # Use more descriptive error messages
-        if "must be between" in (error or ""):
-            if polling is not None and polling < MINIMUM_POLLING_INTERVAL_MINUTES:
-                errors["pollingInterval"] = (
-                    f"Polling interval must be at least {MINIMUM_POLLING_INTERVAL_MINUTES} "
-                    "minutes to avoid API rate limits"
-                )
+    for spec in _PREFS_FIELDS:
+        is_valid, parsed, error = validate_integer_range(
+            values.get(spec.field, spec.default),
+            spec.field,
+            spec.min_val,
+            spec.max_val,
+            default=spec.default,
+        )
+        if is_valid and parsed is not None:
+            sanitized[spec.field] = parsed
+        elif error:
+            if "must be between" in (error or ""):
+                is_below_min = parsed is not None and parsed < spec.min_val
+                errors[spec.field] = spec.min_error if is_below_min else spec.max_error
             else:
-                errors["pollingInterval"] = "Polling interval cannot exceed 1440 minutes (24 hours)"
-        else:
-            errors["pollingInterval"] = error
-
-    # Validate API timeout (1-60 seconds)
-    is_valid, timeout, error = validate_integer_range(
-        values.get("apiTimeout", 5),
-        "Timeout",
-        1,
-        60,
-        default=5,
-    )
-    if is_valid and timeout is not None:
-        sanitized["apiTimeout"] = timeout
-    elif error:
-        # Use more descriptive error messages
-        if "must be between" in (error or ""):
-            if timeout is not None and timeout < 1:
-                errors["apiTimeout"] = "Timeout must be at least 1 second"
-            else:
-                errors["apiTimeout"] = "Timeout cannot exceed 60 seconds"
-        else:
-            errors["apiTimeout"] = error
-
-    # Validate max zone runtime (60-10800 seconds = 1 minute to 3 hours)
-    is_valid, max_runtime, error = validate_integer_range(
-        values.get("maxZoneRunTime", 3600),
-        "Max runtime",
-        60,
-        10800,
-        default=3600,
-    )
-    if is_valid and max_runtime is not None:
-        sanitized["maxZoneRunTime"] = max_runtime
-    elif error:
-        # Use more descriptive error messages
-        if "must be between" in (error or ""):
-            if max_runtime is not None and max_runtime < 60:
-                errors["maxZoneRunTime"] = "Max runtime must be at least 60 seconds (1 minute)"
-            else:
-                errors["maxZoneRunTime"] = "Max runtime cannot exceed 10800 seconds (3 hours)"
-        else:
-            errors["maxZoneRunTime"] = error
+                errors[spec.field] = error
 
     return (len(errors) == 0, sanitized, errors)
