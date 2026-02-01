@@ -824,8 +824,13 @@ class Plugin(indigo.PluginBase):
         while True:
             try:
                 self._update_from_netro()
-            except (Exception,):
-                pass
+            except self.StopThread:
+                # Clean shutdown requested by Indigo - must re-raise
+                self.logger.debug("Concurrent thread stopping")
+                raise
+            except Exception:
+                # Log error with full traceback but continue polling - thread must not die
+                self.logger.exception("Error in polling loop, will retry next interval")
             self.sleep(self.pollingInterval * 60)
 
 
