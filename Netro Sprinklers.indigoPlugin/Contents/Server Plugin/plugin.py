@@ -391,10 +391,10 @@ class Plugin(indigo.PluginBase):
 
                         # Warn if API tokens are running low - parse defensively
                         try:
-                            tokens_remaining = int(reply_dict_device.get("token_remaining", 2000))
+                            tokens_remaining = int(reply_dict_device.get("token_remaining", 0))
                         except (ValueError, TypeError):
-                            tokens_remaining = 2000
-                            self.logger.debug("invalid token_remaining value from api, using default 2000")
+                            tokens_remaining = 0
+                            self.logger.warning("Invalid token_remaining value from API - treating as 0 (no tokens available). API may be throttling requests.")
 
                         try:
                             token_reset = str(reply_dict_device.get('token_reset', 'unknown'))
