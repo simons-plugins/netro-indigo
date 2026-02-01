@@ -64,10 +64,12 @@ Plans:
   3. Throttle state persists across plugin restarts (saved to pluginPrefs)
   4. API responses are validated against schema, warnings logged on format changes
   5. Token budget warnings logged when remaining tokens drop below 200
-**Plans**: TBD
+**Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] 03-01: TBD
+- [ ] 03-01-PLAN.md — Create api_client.py with NetroAPIClient class and throttle management
+- [ ] 03-02-PLAN.md — Update plugin.py to use NetroAPIClient for all API calls
+- [ ] 03-03-PLAN.md — Add comprehensive tests for api_client module
 
 ### Phase 4: Validators
 **Goal**: Configuration validation extracted to standalone module
@@ -122,7 +124,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 |-------|----------------|--------|-----------|
 | 1. Foundation & Critical Fixes | 3/3 | Complete | 2026-02-01 |
 | 2. Base Modules | 2/2 | Complete | 2026-02-01 |
-| 3. API Client | 0/TBD | Not started | - |
+| 3. API Client | 0/3 | Planned | - |
 | 4. Validators | 2/2 | Complete | 2026-02-01 |
 | 5. Device Handlers | 0/TBD | Not started | - |
 | 6. Testing Expansion | 0/TBD | Not started | - |
@@ -131,5 +133,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 *Roadmap created: 2026-02-01*
 *Phase 1 planned: 2026-02-01*
 *Phase 2 planned: 2026-02-01*
+*Phase 3 planned: 2026-02-01*
 *Phase 4 planned: 2026-02-01*
 *Requirements coverage: 47/47 (100%)*
