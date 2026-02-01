@@ -582,10 +582,10 @@ class Plugin(indigo.PluginBase):
                                 update_list.append({"key": "nextScheduleSource", "value": "None"})
                                 update_list.append({"key": "nextScheduleDuration", "value": 0})
 
-                        except Exception as exc:
+                        except Exception:
                             update_list.append(
                                 {"key": "activeSchedule", "value": "Error getting current schedule"})
-                            self.logger.debug("API error: \n{}".format(traceback.format_exc(10)))
+                            self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                             self._fireTrigger("getScheduleCall")
 
                         # Send the state updates to the server
@@ -598,8 +598,7 @@ class Plugin(indigo.PluginBase):
                         zones_data = []  # Store zone data for getZoneList()
                         dev_dict = ls_reply_dict_devices[0]
                         for zone in sorted(dev_dict["zones"], key=itemgetter('ith')):
-                            zoneNames += (", {}".format(zone["name"]) if len(zoneNames)
-                                          else zone["name"])
+                            zoneNames += f", {zone['name']}" if zoneNames else zone["name"]
                             # Set max duration to plugin max for enabled zones, 0 for disabled zones
                             max_duration = self.maxZoneRunTime if zone["enabled"] else 0
                             maxZoneDurations.append(str(max_duration))
