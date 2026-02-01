@@ -635,13 +635,23 @@ class Plugin(indigo.PluginBase):
         The polling interval is configurable but must be at least 3 minutes
         to avoid hitting Netro's API rate limit (2000 calls/day).
 
+        Includes proactive pause when API tokens drop below threshold to
+        prevent exhausting the daily limit.
+
         Exceptions during updates are silently caught to prevent the thread
         from exiting - errors are logged within _update_from_netro().
         """
         self.logger.debug("Starting concurrent thread")
         while True:
             try:
-                self._update_from_netro()
+                # Check proactive pause before polling
+                if self.api_client.should_pause_polling:
+                    self.logger.warning(
+                        f"Polling paused: only {self.api_client.token_remaining} tokens "
+                        f"remaining (threshold: 100), will resume when tokens reset"
+                    )
+                else:
+                    self._update_from_netro()
             except self.StopThread:
                 # Clean shutdown requested by Indigo - must re-raise
                 self.logger.debug("Concurrent thread stopping")
