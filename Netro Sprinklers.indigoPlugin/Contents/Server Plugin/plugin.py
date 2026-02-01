@@ -128,7 +128,8 @@ def get_key_from_dict(a_key, a_dict):
         return a_dict[a_key]
     except KeyError:
         return "unavailable from API"
-    except (Exception,):
+    except (TypeError, AttributeError):
+        # dict is None or not a dict-like object
         return "unknown error"
 
 
@@ -1232,9 +1233,9 @@ class Plugin(indigo.PluginBase):
         self.logger.debug("Stop processing trigger " + str(trigger.id))
         try:
             del self.triggerDict[trigger.id]
-        except (Exception,):
-            # the trigger isn't in the list for some reason so just skip it
-            pass
+        except KeyError:
+            # Trigger wasn't in dict - already removed or never added
+            self.logger.debug(f"Trigger {trigger.id} not found in triggerDict")
         self.logger.debug(f"Stop trigger processing list: {str(self.triggerDict)}")
 
     ########################################
@@ -1287,11 +1288,12 @@ class Plugin(indigo.PluginBase):
                     self._make_api_call(ZONE_START_URL, request_method="put", data=data)
                     self.logger.info(f'sent "{dev.name} - {zoneName}" on')
                     dev.updateStateOnServer("activeZone", action.zoneIndex)
-                except (Exception,):
-                    # Else log failure but do NOT update state on Indigo Server.
-                    # Also, fire any triggers the user has on zone start failures.
-                    self.logger.error(f'send "{dev.name} - {zoneName}" on failed')
-                    self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+                except requests.exceptions.RequestException:
+                    # Network/HTTP error - log with traceback and fire trigger
+                    self.logger.exception(f'send "{dev.name} - {zoneName}" on failed')
+                    self._fireTrigger("startZoneFailed", dev.id)
+                except ThrottleDelayError:
+                    self.logger.warning(f'send "{dev.name} - {zoneName}" throttled - in rate limit period')
                     self._fireTrigger("startZoneFailed", dev.id)
             else:
                 self.logger.error(
@@ -1308,10 +1310,12 @@ class Plugin(indigo.PluginBase):
                 self._make_api_call(DEVICE_STOP_WATER_URL, request_method="post", data=data)
                 self.logger.info(f'sent "{dev.name}" {"all zones off"}')
                 dev.updateStateOnServer("activeZone", 0)
-            except (Exception,):
-                # Else log failure but do NOT update state on Indigo Server.
-                self.logger.info(f'send "{dev.name}" {"all zones off"} failed')
-                self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+            except requests.exceptions.RequestException:
+                # Network/HTTP error - log with traceback and fire trigger
+                self.logger.exception(f'send "{dev.name}" all zones off failed')
+                self._fireTrigger("stopFailed", dev.id)
+            except ThrottleDelayError:
+                self.logger.warning(f'send "{dev.name}" all zones off throttled - in rate limit period')
                 self._fireTrigger("stopFailed", dev.id)
 
         ############################################
