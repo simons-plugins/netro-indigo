@@ -34,9 +34,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] 01-01-PLAN.md — Fix silent exception handlers with proper logging
-- [ ] 01-02-PLAN.md — Create pyproject.toml and fix code style issues
-- [ ] 01-03-PLAN.md — Create GitHub issues and commit with issue references
+- [x] 01-01-PLAN.md — Fix silent exception handlers with proper logging
+- [x] 01-02-PLAN.md — Create pyproject.toml and fix code style issues
+- [x] 01-03-PLAN.md — Create GitHub issues and commit with issue references
 
 ### Phase 2: Base Modules
 **Goal**: Foundation modules extracted and tested, proving multi-file pattern works with Indigo
@@ -47,11 +47,12 @@ Plans:
   2. exceptions.py exists with custom exception classes for API errors
   3. utils.py exists with timestamp parsing and helper functions
   4. Plugin loads successfully in Indigo with new module structure
-  5. All 64 existing tests pass with new imports
-**Plans**: TBD
+  5. Unit tests exist for all three extracted modules
+**Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 02-01: TBD
+- [ ] 02-01-PLAN.md — Create constants.py, exceptions.py, and utils.py modules
+- [ ] 02-02-PLAN.md — Update plugin.py imports and add unit tests
 
 ### Phase 3: API Client
 **Goal**: API communication isolated in dedicated module with proactive throttle management
@@ -119,7 +120,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Critical Fixes | 3/3 | Complete | 2026-02-01 |
-| 2. Base Modules | 0/TBD | Not started | - |
+| 2. Base Modules | 0/2 | Planned | - |
 | 3. API Client | 0/TBD | Not started | - |
 | 4. Validators | 0/TBD | Not started | - |
 | 5. Device Handlers | 0/TBD | Not started | - |
@@ -128,4 +129,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 ---
 *Roadmap created: 2026-02-01*
 *Phase 1 planned: 2026-02-01*
+*Phase 2 planned: 2026-02-01*
 *Requirements coverage: 47/47 (100%)*
