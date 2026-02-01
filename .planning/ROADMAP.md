@@ -12,7 +12,7 @@ This roadmap transforms a 1635-line monolithic Indigo plugin into a maintainable
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation & Critical Fixes** - Fix silent failures, establish development workflow, quick quality wins
+- [x] **Phase 1: Foundation & Critical Fixes** - Fix silent failures, establish development workflow, quick quality wins
 - [ ] **Phase 2: Base Modules** - Extract no-dependency modules (constants, exceptions, utils)
 - [ ] **Phase 3: API Client** - Extract API layer with throttle management and reliability features
 - [ ] **Phase 4: Validators** - Extract configuration validation functions
@@ -118,7 +118,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Critical Fixes | 0/3 | Ready to execute | - |
+| 1. Foundation & Critical Fixes | 3/3 | Complete | 2026-02-01 |
 | 2. Base Modules | 0/TBD | Not started | - |
 | 3. API Client | 0/TBD | Not started | - |
 | 4. Validators | 0/TBD | Not started | - |
