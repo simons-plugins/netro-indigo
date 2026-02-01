@@ -56,7 +56,7 @@ class TestConstants:
     def test_api_url_format(self):
         """API_URL should be properly formatted with version."""
         assert "v1" in API_URL
-        assert API_URL.startswith("http://api.netrohome.com")
+        assert API_URL.startswith("https://api.netrohome.com")
 
     def test_api_base_url_contains_placeholder(self):
         """API_BASE_URL should contain apiVersion placeholder."""
