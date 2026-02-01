@@ -323,7 +323,7 @@ class NetroAPIClient:
 
         # Check for invalid serial (error code 1)
         if error_code == 1:
-            self.logger.error(f"Invalid device serial number: {error_message}")
+            self.logger.error("Invalid device serial number: %s", error_message)
             raise NetroAPIError(
                 f"Invalid serial number: {error_message}",
                 status_code=status_code,
@@ -331,7 +331,7 @@ class NetroAPIClient:
             ) from exc
 
         # Log other HTTP errors
-        self.logger.error(f"HTTP error {status_code}: {error_message}")
+        self.logger.error("HTTP error %s: %s", status_code, error_message)
 
     # =========================================================================
     # Token Budget Management
@@ -426,7 +426,7 @@ class NetroAPIClient:
                 self._token_reset = datetime.fromisoformat(state["token_reset"])
 
         except (json.JSONDecodeError, ValueError, KeyError) as exc:
-            self.logger.warning(f"Could not restore throttle state: {exc}")
+            self.logger.warning("Could not restore throttle state: %s", exc)
 
     # =========================================================================
     # Schema Validation
