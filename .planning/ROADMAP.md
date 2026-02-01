@@ -31,10 +31,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. GitHub issues exist for all major work items
   4. Pylint score is 9.0+ (up from 8.75)
   5. pyproject.toml exists with Pylint configuration
-**Plans**: TBD
+**Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] 01-01: TBD
+- [ ] 01-01-PLAN.md — Fix silent exception handlers with proper logging
+- [ ] 01-02-PLAN.md — Create pyproject.toml and fix code style issues
+- [ ] 01-03-PLAN.md — Create GitHub issues and commit with issue references
 
 ### Phase 2: Base Modules
 **Goal**: Foundation modules extracted and tested, proving multi-file pattern works with Indigo
@@ -116,7 +118,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Critical Fixes | 0/TBD | Not started | - |
+| 1. Foundation & Critical Fixes | 0/3 | Ready to execute | - |
 | 2. Base Modules | 0/TBD | Not started | - |
 | 3. API Client | 0/TBD | Not started | - |
 | 4. Validators | 0/TBD | Not started | - |
@@ -125,4 +127,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 ---
 *Roadmap created: 2026-02-01*
+*Phase 1 planned: 2026-02-01*
 *Requirements coverage: 47/47 (100%)*
