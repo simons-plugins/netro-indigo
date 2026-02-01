@@ -72,6 +72,7 @@ from validators import (
     validate_event_config,
     validate_prefs_config,
 )
+from api_client import NetroAPIClient
 
 
 ################################################################################
@@ -118,9 +119,16 @@ class Plugin(indigo.PluginBase):
 
         self.triggerDict = {}
 
-        # Initialize throttle and weather update tracking
-        self.throttle_next_call = None
+        # Initialize weather update tracking
         self._next_weather_update = datetime.now()
+
+        # Initialize API client with prefs callbacks for throttle state persistence
+        self.api_client = NetroAPIClient(
+            timeout=self.timeout,
+            logger=self.logger,
+            prefs_getter=lambda: dict(self.pluginPrefs),
+            prefs_setter=lambda k, v: self.pluginPrefs.__setitem__(k, v)
+        )
 
         # Initialize data structures populated by API calls
         self.person = {}
