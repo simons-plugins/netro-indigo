@@ -707,27 +707,40 @@ class Plugin(indigo.PluginBase):
             }
 
         sensorReadings.sort(key=lambda x: x.get('id'), reverse=True)
-        devStates=sensorReadings[0]
+        devStates = sensorReadings[0]
         self.logger.debug(devStates)
-        key_values_list = [
-            {'key': 'sensorValue', 'value': devStates['moisture'], 'uiValue':  f"{devStates['moisture']:.1f} %"},
-            {'key': 'humidity', 'value': devStates['moisture']},
-            {'key': 'soilMoisture', 'value': devStates['moisture']},
-            {'key': 'temperature', 'value': devStates['celsius']},
-            {'key': 'soilTemperature', 'value': devStates['celsius']},
-            {'key': 'sunlight', 'value': devStates['sunlight']},
-            {'key': 'readingID', 'value': devStates['id']},
-            {'key': 'readingTime', 'value': devStates['time']},
-            {'key': 'readingLocalDate', 'value': devStates['local_date']},
-            {'key': 'readingLocalTime', 'value': devStates['local_time']},
-            {'key': 'id', 'value': devStates['id']},
-            {'key': 'token_remaining', 'value': jmeta["token_remaining"]},
-            {'key': 'token_reset', 'value': jmeta["token_reset"]},
-            {'key': 'api_last_active', 'value': jmeta["last_active"]},
-            {'key': 'sensor_last_active', 'value': devStates["time"]},
-            {'key': 'time', 'value': jmeta["time"]},
-            {'key': 'batteryLevel', 'value': devStates['battery_level']}
-        ]
+
+        try:
+            key_values_list = [
+                {'key': 'sensorValue', 'value': devStates['moisture'], 'uiValue':  f"{devStates['moisture']:.1f} %"},
+                {'key': 'humidity', 'value': devStates['moisture']},
+                {'key': 'soilMoisture', 'value': devStates['moisture']},
+                {'key': 'temperature', 'value': devStates['celsius']},
+                {'key': 'soilTemperature', 'value': devStates['celsius']},
+                {'key': 'sunlight', 'value': devStates['sunlight']},
+                {'key': 'readingID', 'value': devStates['id']},
+                {'key': 'readingTime', 'value': devStates['time']},
+                {'key': 'readingLocalDate', 'value': devStates['local_date']},
+                {'key': 'readingLocalTime', 'value': devStates['local_time']},
+                {'key': 'id', 'value': devStates['id']},
+                {'key': 'token_remaining', 'value': jmeta["token_remaining"]},
+                {'key': 'token_reset', 'value': jmeta["token_reset"]},
+                {'key': 'api_last_active', 'value': jmeta["last_active"]},
+                {'key': 'sensor_last_active', 'value': devStates["time"]},
+                {'key': 'time', 'value': jmeta["time"]},
+                {'key': 'batteryLevel', 'value': devStates['battery_level']}
+            ]
+        except KeyError as e:
+            self.logger.error(f"Missing expected field in sensor data for device {serial}: {e}")
+            self.logger.debug(f"Sensor data structure: {devStates}")
+            # Return minimal update with what we have
+            return {
+                'sensorStatus': jsonData.get('status', 'unknown'),
+                'sensorMeta': jmeta,
+                'currentReadings': {},
+                'sensorKeyValuesList': []
+            }
+
         sensorValues = dict()
         sensorValues['sensorStatus'] = jsonData['status']
         sensorValues['sensorMeta'] = jsonData['meta']
