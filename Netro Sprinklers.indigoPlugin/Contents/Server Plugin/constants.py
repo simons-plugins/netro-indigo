@@ -26,7 +26,7 @@ from typing import Final
 NETRO_API_VERSION: Final[str] = "1"
 """Current Netro API version."""
 
-API_BASE_URL: Final[str] = "http://api.netrohome.com/npa/v{apiVersion}/"
+API_BASE_URL: Final[str] = "https://api.netrohome.com/npa/v{apiVersion}/"
 """Base URL template for Netro API (requires apiVersion formatting)."""
 
 API_URL: Final[str] = API_BASE_URL.format(apiVersion=NETRO_API_VERSION)

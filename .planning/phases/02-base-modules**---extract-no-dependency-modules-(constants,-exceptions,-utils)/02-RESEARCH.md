@@ -300,9 +300,8 @@ def convert_timestamp(timestamp_ms: int) -> datetime:
     """
     from_zone = tz.tzutc()
     to_zone = tz.tzlocal()
-    time_utc = datetime.utcfromtimestamp(timestamp_ms / 1000)
-    time_utc_gmt = time_utc.replace(tzinfo=from_zone)
-    return time_utc_gmt.astimezone(to_zone)
+    time_utc = datetime.fromtimestamp(timestamp_ms / 1000, tz=from_zone)
+    return time_utc.astimezone(to_zone)
 
 def get_key_from_dict(key: str, data: dict, default: T = None) -> Any:
     """Safely get value from dictionary with graceful error handling.
