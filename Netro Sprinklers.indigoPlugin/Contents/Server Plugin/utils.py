@@ -77,6 +77,12 @@ def get_key_from_dict(key: str, data: dict, default: Any = None) -> Any:
         This matches existing plugin.py behavior for backward compatibility
         with API response handling. The specific string returns are used
         in Indigo device state values.
+
+    Warning:
+        This function fails silently by design - errors are converted to
+        fallback strings rather than raised. Callers should log when they
+        receive "unavailable from API" or "unknown error" if visibility
+        into missing data is important.
     """
     try:
         return data[key]
