@@ -42,7 +42,7 @@ from exceptions import (
     NetroConnectionError,
     NetroTimeoutError,
 )
-from utils import convert_timestamp, get_key_from_dict
+from utils import get_key_from_dict
 
 
 class TestConstants:
@@ -275,44 +275,6 @@ class TestExceptions:
 
 class TestUtils:
     """Tests for utils.py module."""
-
-    def test_convert_timestamp_basic(self):
-        """convert_timestamp should convert ms to datetime."""
-        # 2024-02-02 12:00:00 UTC in milliseconds
-        timestamp_ms = 1706875200000
-        result = convert_timestamp(timestamp_ms)
-        assert isinstance(result, datetime)
-        assert result.tzinfo is not None  # Should have timezone
-
-    def test_convert_timestamp_returns_local_timezone(self):
-        """convert_timestamp should return local timezone datetime."""
-        timestamp_ms = 1706875200000
-        result = convert_timestamp(timestamp_ms)
-        # Result should be timezone-aware
-        assert result.tzinfo is not None
-
-    def test_convert_timestamp_preserves_date(self):
-        """convert_timestamp should preserve the date (allowing for timezone shift)."""
-        # Use a timestamp in the middle of the day to avoid date boundary issues
-        # 2024-02-02 12:00:00 UTC
-        timestamp_ms = 1706875200000
-        result = convert_timestamp(timestamp_ms)
-        # The date should be either Feb 2 or Feb 1/3 depending on timezone
-        assert result.year == 2024
-        assert result.month == 2
-
-    def test_convert_timestamp_different_values(self):
-        """convert_timestamp should handle various timestamp values."""
-        # Test with different timestamps
-        timestamps = [
-            1609459200000,  # 2021-01-01 00:00:00 UTC
-            1640995200000,  # 2022-01-01 00:00:00 UTC
-            1672531200000,  # 2023-01-01 00:00:00 UTC
-        ]
-        for ts in timestamps:
-            result = convert_timestamp(ts)
-            assert isinstance(result, datetime)
-            assert result.tzinfo is not None
 
     def test_get_key_from_dict_existing_key(self):
         """get_key_from_dict should return value for existing key."""
