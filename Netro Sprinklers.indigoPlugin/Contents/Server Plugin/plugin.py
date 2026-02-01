@@ -66,6 +66,12 @@ from constants import (
 )
 from exceptions import ThrottleDelayError
 from utils import get_key_from_dict
+from validators import (
+    validate_device_config,
+    validate_action_config,
+    validate_event_config,
+    validate_prefs_config,
+)
 
 
 ################################################################################
@@ -845,200 +851,58 @@ class Plugin(indigo.PluginBase):
     ########################################
     # pylint: disable=unused-argument
     def validateDeviceConfigUi(self, valuesDict, typeId, devId):
-        """Validate device configuration before saving.
-
-        Args:
-            valuesDict: Device configuration values from UI
-            typeId: Device type ID
-            devId: Device ID
-
-        Returns:
-            Tuple of (is_valid, valuesDict, errorsDict)
-        """
+        """Validate device configuration before saving."""
         self.logger.threaddebug("validateDeviceConfigUi")
-        errorsDict = indigo.Dict()
+        is_valid, sanitized, errors = validate_device_config(dict(valuesDict), typeId)
 
-        # Validate controller serial number (required)
-        if typeId == "sprinkler":
-            serial = valuesDict.get("address", "").strip()
-            if not serial:
-                errorsDict["address"] = "Serial number is required for Netro controller"
-            elif len(serial) < 8:
-                errorsDict["address"] = "Serial number appears too short (should be 12 hex characters)"
-
-        # Validate Whisperer sensor serial number and set capabilities
-        if typeId == "Whisperer":
-            serial = valuesDict.get("address", "").strip()
-            if not serial:
-                errorsDict["address"] = "Serial number is required for Whisperer sensor"
-            elif len(serial) < 8:
-                errorsDict["address"] = "Serial number appears too short"
-
-            # Set sensor capabilities
-            valuesDict["SupportsBatteryLevel"] = True
-            valuesDict["NumTemperatureInputs"] = 1
-            valuesDict["NumHumidityInputs"] = 1
-            valuesDict["SupportsTemperatureReporting"] = True
-
-        if len(errorsDict):
-            return False, valuesDict, errorsDict
-        return True, valuesDict
+        if is_valid:
+            # Update valuesDict with sanitized values
+            for key, value in sanitized.items():
+                valuesDict[key] = value
+            return True, valuesDict
+        errorsDict = indigo.Dict(errors)
+        return False, valuesDict, errorsDict
 
     ########################################
-    # pylint: disable=unused-argument,too-many-branches
+    # pylint: disable=unused-argument
     def validateActionConfigUi(self, valuesDict, typeId, devId):
-        """Validate action configuration before saving.
-
-        Args:
-            valuesDict: Action configuration values
-            typeId: Action type ID
-            devId: Device ID
-
-        Returns:
-            Tuple of (is_valid, valuesDict, errorsDict)
-        """
+        """Validate action configuration before saving."""
         self.logger.threaddebug(f"validateActionConfigUi for {typeId}")
-        errorsDict = indigo.Dict()
+        is_valid, sanitized, errors = validate_action_config(dict(valuesDict), typeId)
 
-        if typeId == "startZoneWithDelay":
-            # Validate duration (1-180 minutes)
-            try:
-                duration = int(valuesDict.get("duration", 15))
-                if duration < 1 or duration > 180:
-                    errorsDict["duration"] = "Duration must be between 1 and 180 minutes"
-            except (ValueError, TypeError):
-                errorsDict["duration"] = "Duration must be a valid number"
-
-            # Validate delay (0-60 minutes)
-            try:
-                delay = int(valuesDict.get("delay", 0))
-                if delay < 0 or delay > 60:
-                    errorsDict["delay"] = "Delay must be between 0 and 60 minutes"
-            except (ValueError, TypeError):
-                errorsDict["delay"] = "Delay must be a valid number"
-
-            # Validate start_time if provided (must be valid Unix timestamp)
-            start_time = valuesDict.get("start_time", "").strip()
-            if start_time:
-                try:
-                    int(start_time)
-                except ValueError:
-                    errorsDict["start_time"] = "Start time must be a valid Unix timestamp (integer)"
-
-            # Validate zone selected
-            if not valuesDict.get("zone"):
-                errorsDict["zone"] = "You must select a zone"
-
-        elif typeId == "reportWeather":
-            # Validate required temperature field
-            temperature = valuesDict.get("temperature", "").strip()
-            if not temperature:
-                errorsDict["temperature"] = "Current temperature is required"
-            else:
-                try:
-                    float(temperature)
-                except ValueError:
-                    errorsDict["temperature"] = "Temperature must be a valid number"
-
-            # Validate optional numeric fields if provided
-            for field, label, min_val, max_val in [
-                ("t_max", "Max temperature", -50, 150),
-                ("t_min", "Min temperature", -50, 150),
-                ("humidity", "Humidity", 0, 100),
-                ("rain", "Rainfall", 0, 100),
-                ("rain_prob", "Rain probability", 0, 100),
-                ("wind_speed", "Wind speed", 0, 200),
-                ("pressure", "Pressure", 20, 35)
-            ]:
-                value = valuesDict.get(field, "").strip()
-                if value:
-                    try:
-                        num_value = float(value)
-                        if num_value < min_val or num_value > max_val:
-                            errorsDict[field] = f"{label} must be between {min_val} and {max_val}"
-                    except ValueError:
-                        errorsDict[field] = f"{label} must be a valid number"
-
-            # Validate date format if provided
-            date_str = valuesDict.get("date", "").strip()
-            if date_str:
-                try:
-                    datetime.strptime(date_str, "%Y-%m-%d")
-                except ValueError:
-                    errorsDict["date"] = "Date must be in YYYY-MM-DD format"
-
-        if len(errorsDict):
-            return False, valuesDict, errorsDict
-        return True, valuesDict
+        if is_valid:
+            for key, value in sanitized.items():
+                valuesDict[key] = value
+            return True, valuesDict
+        errorsDict = indigo.Dict(errors)
+        return False, valuesDict, errorsDict
 
     ########################################
     # pylint: disable=unused-argument
     def validateEventConfigUi(self, valuesDict, typeId, devId):
-        """Validate event/trigger configuration before saving.
-
-        Args:
-            valuesDict: Event configuration values from UI
-            typeId: Event type ID
-            devId: Device ID
-
-        Returns:
-            Tuple of (is_valid, valuesDict, errorsDict)
-        """
+        """Validate event/trigger configuration before saving."""
         self.logger.threaddebug("validateEventConfigUi")
-        errorsDict = indigo.Dict()
-        if typeId == "sprinklerError":
-            if valuesDict["serial"] == "":
-                errorsDict["serial"] = "You must select a Netro Sprinkler device."
-        if len(errorsDict):
-            return False, valuesDict, errorsDict
-        return True, valuesDict
+        is_valid, sanitized, errors = validate_event_config(dict(valuesDict), typeId)
+
+        if is_valid:
+            for key, value in sanitized.items():
+                valuesDict[key] = value
+            return True, valuesDict
+        errorsDict = indigo.Dict(errors)
+        return False, valuesDict, errorsDict
 
     ########################################
     def validatePrefsConfigUi(self, valuesDict):
-        """Validate plugin configuration before saving.
-
-        Args:
-            valuesDict: Configuration values from UI
-
-        Returns:
-            Tuple of (is_valid, valuesDict, errorsDict)
-        """
+        """Validate plugin configuration before saving."""
         self.logger.threaddebug("validatePrefsConfigUi")
-        errorsDict = indigo.Dict()
+        is_valid, sanitized, errors = validate_prefs_config(dict(valuesDict))
 
-        # Validate polling interval (minimum 3 minutes to avoid rate limits)
-        try:
-            polling = int(valuesDict.get("pollingInterval", 3))
-            if polling < 3:
-                errorsDict["pollingInterval"] = "Polling interval must be at least 3 minutes to avoid API rate limits"
-            elif polling > 1440:
-                errorsDict["pollingInterval"] = "Polling interval cannot exceed 1440 minutes (24 hours)"
-        except (ValueError, TypeError):
-            errorsDict["pollingInterval"] = "Polling interval must be a valid number"
-
-        # Validate API timeout (1-60 seconds)
-        try:
-            timeout = int(valuesDict.get("apiTimeout", 5))
-            if timeout < 1:
-                errorsDict["apiTimeout"] = "Timeout must be at least 1 second"
-            elif timeout > 60:
-                errorsDict["apiTimeout"] = "Timeout cannot exceed 60 seconds"
-        except (ValueError, TypeError):
-            errorsDict["apiTimeout"] = "Timeout must be a valid number"
-
-        # Validate max zone runtime (60-10800 seconds = 1 minute to 3 hours)
-        try:
-            max_runtime = int(valuesDict.get("maxZoneRunTime", 3600))
-            if max_runtime < 60:
-                errorsDict["maxZoneRunTime"] = "Max runtime must be at least 60 seconds (1 minute)"
-            elif max_runtime > 10800:
-                errorsDict["maxZoneRunTime"] = "Max runtime cannot exceed 10800 seconds (3 hours)"
-        except (ValueError, TypeError):
-            errorsDict["maxZoneRunTime"] = "Max runtime must be a valid number"
-
-        if len(errorsDict):
-            return False, valuesDict, errorsDict
-        return True, valuesDict
+        if is_valid:
+            for key, value in sanitized.items():
+                valuesDict[key] = value
+            return True, valuesDict
+        errorsDict = indigo.Dict(errors)
+        return False, valuesDict, errorsDict
 
     ########################################
     def closedPrefsConfigUi(self, valuesDict, userCancelled):
