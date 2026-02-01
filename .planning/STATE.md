@@ -75,7 +75,7 @@ None yet.
 
 ### Blockers/Concerns
 
-None - Phase 4 complete, ready for Phase 5 (API Client).
+None - Phase 4 complete. Note: Phase 3 (API Client) was skipped, needs planning before Phase 5 (Device Handlers).
 
 ## Session Continuity
 

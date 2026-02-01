@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: Foundation & Critical Fixes** - Fix silent failures, establish development workflow, quick quality wins
 - [x] **Phase 2: Base Modules** - Extract no-dependency modules (constants, exceptions, utils)
 - [ ] **Phase 3: API Client** - Extract API layer with throttle management and reliability features
-- [ ] **Phase 4: Validators** - Extract configuration validation functions
+- [x] **Phase 4: Validators** - Extract configuration validation functions
 - [ ] **Phase 5: Device Handlers** - Extract device update logic, slim plugin.py to coordinator
 - [ ] **Phase 6: Testing Expansion** - Expand test coverage to 87%, cover all critical paths
 
@@ -80,8 +80,8 @@ Plans:
 **Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 04-01-PLAN.md — Create validators.py with pure validation functions
-- [ ] 04-02-PLAN.md — Update plugin.py callbacks and add comprehensive tests
+- [x] 04-01-PLAN.md — Create validators.py with pure validation functions
+- [x] 04-02-PLAN.md — Update plugin.py callbacks and add comprehensive tests
 
 ### Phase 5: Device Handlers
 **Goal**: Device update logic extracted, plugin.py reduced to slim coordinator (~400 lines)
@@ -123,7 +123,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 1. Foundation & Critical Fixes | 3/3 | Complete | 2026-02-01 |
 | 2. Base Modules | 2/2 | Complete | 2026-02-01 |
 | 3. API Client | 0/TBD | Not started | - |
-| 4. Validators | 0/2 | Planned | - |
+| 4. Validators | 2/2 | Complete | 2026-02-01 |
 | 5. Device Handlers | 0/TBD | Not started | - |
 | 6. Testing Expansion | 0/TBD | Not started | - |
 

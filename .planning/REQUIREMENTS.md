@@ -31,7 +31,7 @@
 - [ ] **MOD-02**: Extract exceptions.py (custom exception classes) ~30 lines
 - [ ] **MOD-03**: Extract utils.py (timestamp parsing, helper functions) ~100 lines
 - [ ] **MOD-04**: Extract api_client.py (Netro API HTTP client + throttle management) ~250 lines
-- [ ] **MOD-05**: Extract validators.py (all validation functions) ~200 lines
+- [x] **MOD-05**: Extract validators.py (all validation functions) ~200 lines
 - [ ] **MOD-06**: Extract device_handlers.py (SprinklerHandler, WhispererHandler) ~260 lines
 - [ ] **MOD-07**: Refactor plugin.py to slim coordinator ~400 lines (down from 1635)
 - [ ] **MOD-08**: Update all imports throughout codebase
@@ -120,7 +120,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MOD-02 | Phase 2 | Complete |
 | MOD-03 | Phase 2 | Complete |
 | MOD-04 | Phase 3 | Pending |
-| MOD-05 | Phase 4 | Pending |
+| MOD-05 | Phase 4 | Complete |
 | MOD-06 | Phase 5 | Pending |
 | MOD-07 | Phase 5 | Pending |
 | MOD-08 | Phase 5 | Pending |
