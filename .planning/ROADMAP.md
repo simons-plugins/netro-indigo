@@ -77,10 +77,11 @@ Plans:
   1. validators.py exists with all validate*ConfigUi functions
   2. Validation logic is pure functions with no side effects
   3. Plugin configuration validation works identically to before extraction
-**Plans**: TBD
+**Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 04-01: TBD
+- [ ] 04-01-PLAN.md — Create validators.py with pure validation functions
+- [ ] 04-02-PLAN.md — Update plugin.py callbacks and add comprehensive tests
 
 ### Phase 5: Device Handlers
 **Goal**: Device update logic extracted, plugin.py reduced to slim coordinator (~400 lines)
@@ -120,9 +121,9 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Critical Fixes | 3/3 | Complete | 2026-02-01 |
-| 2. Base Modules | 0/2 | Planned | - |
+| 2. Base Modules | 2/2 | Complete | 2026-02-01 |
 | 3. API Client | 0/TBD | Not started | - |
-| 4. Validators | 0/TBD | Not started | - |
+| 4. Validators | 0/2 | Planned | - |
 | 5. Device Handlers | 0/TBD | Not started | - |
 | 6. Testing Expansion | 0/TBD | Not started | - |
 
@@ -130,4 +131,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 *Roadmap created: 2026-02-01*
 *Phase 1 planned: 2026-02-01*
 *Phase 2 planned: 2026-02-01*
+*Phase 4 planned: 2026-02-01*
 *Requirements coverage: 47/47 (100%)*
