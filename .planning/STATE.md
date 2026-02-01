@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-01)
 
 **Core value:** Maintain reliable, maintainable Indigo plugin for Netro smart irrigation control with clean, testable code
-**Current focus:** Phase 3 - API Client (Complete with Tests)
+**Current focus:** Phase 3 - API Client (Complete with Integration)
 
 ## Current Position
 
 Phase: 3 of 6 (API Client)
-Plan: 3 of 3 in current phase
+Plan: 4 of 4 in current phase (03-01, 03-02, 03-03 complete)
 Status: Phase complete
-Last activity: 2026-02-01 - Completed 03-03-PLAN.md (API Client Tests)
+Last activity: 2026-02-01 - Completed 03-02-PLAN.md (Plugin API Client Integration)
 
-Progress: [████████░░] 55%
+Progress: [████████░░] 60%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 9
+- Total plans completed: 10
 - Average duration: 3 min
-- Total execution time: 0.45 hours
+- Total execution time: 0.52 hours
 
 **By Phase:**
 
@@ -29,11 +29,11 @@ Progress: [████████░░] 55%
 |-------|-------|-------|----------|
 | 01-foundation | 3 | 8 min | 2.7 min |
 | 02-base-modules | 2 | 7 min | 3.5 min |
-| 03-api-client | 3 | 10 min | 3.3 min |
+| 03-api-client | 3 | 11 min | 3.7 min |
 | 04-validators | 2 | 6 min | 3.0 min |
 
 **Recent Trend:**
-- Last 5 plans: 04-01 (3 min), 04-02 (3 min), 03-01 (3 min), 03-02 (4 min), 03-03 (4 min)
+- Last 5 plans: 04-02 (3 min), 03-01 (3 min), 03-03 (4 min), 03-02 (4 min)
 - Trend: Stable (fast execution)
 
 *Updated after each plan completion*
@@ -66,6 +66,9 @@ Recent decisions affecting current work:
 - (03-01): Use callback injection for logger and prefs to avoid circular imports
 - (03-01): Re-export TOKEN_PAUSE_THRESHOLD and TOKEN_WARNING_THRESHOLD from api_client
 - (03-01): Accept too-many-branches warning in make_request method
+- (03-02): Use api_client convenience methods for most API calls
+- (03-02): Keep ZONE_START_ENDPOINT import for direct make_request call
+- (03-02): Log warning once per poll cycle when paused
 - (03-03): Use requests.exceptions.ConnectionError not built-in ConnectionError
 - (03-03): Group tests by functional area matching api_client internal organization
 - (04-01): Use 3-tuple ValidationResult for Indigo callback compatibility
@@ -81,12 +84,12 @@ None yet.
 
 ### Blockers/Concerns
 
-None - Phase 3 complete with tests. Ready for Phase 5 (Device Handlers) or integration.
+None - Phase 3 complete with full integration. Ready for Phase 5 (Device Handlers).
 
 ## Session Continuity
 
-Last session: 2026-02-01 23:21 UTC
-Stopped at: Completed 03-03-PLAN.md (API Client Tests) - Phase 3 complete
+Last session: 2026-02-01 23:30 UTC
+Stopped at: Completed 03-02-PLAN.md (Plugin API Client Integration) - Phase 3 complete
 Resume file: None
 
 ## Test Suite Status
