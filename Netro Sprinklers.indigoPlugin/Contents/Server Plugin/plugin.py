@@ -1090,15 +1090,15 @@ class Plugin(indigo.PluginBase):
     def deviceStartComm(self, dev):
         """Called when device communication should start.
 
-        Triggers an immediate update from the Netro API to populate the
-        device's initial state.
+        The concurrent thread will handle the initial update within seconds,
+        so we don't need to make redundant API calls here.
 
         Args:
             dev: Device starting communication
         """
-        # Get the full device info and update the newly created device
-        # Update all the states here
-        self._update_from_netro()
+        # Don't update here - would cause duplicate API calls for each device
+        # The concurrent thread handles regular updates
+        pass
 
 
     ########################################
