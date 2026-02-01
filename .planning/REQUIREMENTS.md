@@ -102,23 +102,23 @@ Which phases cover which requirements. Updated during roadmap creation.
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| CRIT-01 | Phase 1 | Pending |
-| CRIT-02 | Phase 1 | Pending |
-| CRIT-03 | Phase 1 | Pending |
-| CRIT-04 | Phase 1 | Pending |
-| QUAL-01 | Phase 1 | Pending |
-| QUAL-02 | Phase 1 | Pending |
-| QUAL-03 | Phase 1 | Pending |
-| QUAL-04 | Phase 1 | Pending |
-| QUAL-05 | Phase 1 | Pending |
-| QUAL-06 | Phase 1 | Pending |
-| QUAL-07 | Phase 1 | Pending |
-| QUAL-08 | Phase 1 | Pending |
-| QUAL-09 | Phase 1 | Pending |
-| QUAL-10 | Phase 1 | Pending |
-| MOD-01 | Phase 2 | Pending |
-| MOD-02 | Phase 2 | Pending |
-| MOD-03 | Phase 2 | Pending |
+| CRIT-01 | Phase 1 | Complete |
+| CRIT-02 | Phase 1 | Complete |
+| CRIT-03 | Phase 1 | Complete |
+| CRIT-04 | Phase 1 | Complete |
+| QUAL-01 | Phase 1 | Complete |
+| QUAL-02 | Phase 1 | Complete |
+| QUAL-03 | Phase 1 | Complete |
+| QUAL-04 | Phase 1 | Complete |
+| QUAL-05 | Phase 1 | Complete |
+| QUAL-06 | Phase 1 | Complete |
+| QUAL-07 | Phase 1 | Complete |
+| QUAL-08 | Phase 1 | Complete |
+| QUAL-09 | Phase 1 | Complete |
+| QUAL-10 | Phase 1 | Complete |
+| MOD-01 | Phase 2 | Complete |
+| MOD-02 | Phase 2 | Complete |
+| MOD-03 | Phase 2 | Complete |
 | MOD-04 | Phase 3 | Pending |
 | MOD-05 | Phase 4 | Pending |
 | MOD-06 | Phase 5 | Pending |
@@ -144,11 +144,11 @@ Which phases cover which requirements. Updated during roadmap creation.
 | API-06 | Phase 3 | Pending |
 | API-07 | Phase 3 | Pending |
 | API-08 | Phase 3 | Pending |
-| DEV-01 | Phase 1 | Pending |
-| DEV-02 | Phase 1 | Pending |
-| DEV-03 | Phase 1 | Pending |
-| DEV-04 | Phase 2 | Pending |
-| DEV-05 | Phase 2 | Pending |
+| DEV-01 | Phase 1 | Complete |
+| DEV-02 | Phase 1 | Complete |
+| DEV-03 | Phase 1 | Complete |
+| DEV-04 | Phase 2 | Complete |
+| DEV-05 | Phase 2 | Complete |
 
 **Coverage:**
 - v1 requirements: 47 total

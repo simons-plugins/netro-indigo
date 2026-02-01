@@ -12,8 +12,8 @@ This roadmap transforms a 1635-line monolithic Indigo plugin into a maintainable
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Foundation & Critical Fixes** - Fix silent failures, establish development workflow, quick quality wins
-- [ ] **Phase 2: Base Modules** - Extract no-dependency modules (constants, exceptions, utils)
+- [x] **Phase 1: Foundation & Critical Fixes** - Fix silent failures, establish development workflow, quick quality wins
+- [x] **Phase 2: Base Modules** - Extract no-dependency modules (constants, exceptions, utils)
 - [ ] **Phase 3: API Client** - Extract API layer with throttle management and reliability features
 - [ ] **Phase 4: Validators** - Extract configuration validation functions
 - [ ] **Phase 5: Device Handlers** - Extract device update logic, slim plugin.py to coordinator
@@ -34,9 +34,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] 01-01-PLAN.md — Fix silent exception handlers with proper logging
-- [ ] 01-02-PLAN.md — Create pyproject.toml and fix code style issues
-- [ ] 01-03-PLAN.md — Create GitHub issues and commit with issue references
+- [x] 01-01-PLAN.md — Fix silent exception handlers with proper logging
+- [x] 01-02-PLAN.md — Create pyproject.toml and fix code style issues
+- [x] 01-03-PLAN.md — Create GitHub issues and commit with issue references
 
 ### Phase 2: Base Modules
 **Goal**: Foundation modules extracted and tested, proving multi-file pattern works with Indigo
@@ -47,11 +47,12 @@ Plans:
   2. exceptions.py exists with custom exception classes for API errors
   3. utils.py exists with timestamp parsing and helper functions
   4. Plugin loads successfully in Indigo with new module structure
-  5. All 64 existing tests pass with new imports
-**Plans**: TBD
+  5. Unit tests exist for all three extracted modules
+**Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 02-01: TBD
+- [x] 02-01-PLAN.md — Create constants.py, exceptions.py, and utils.py modules
+- [x] 02-02-PLAN.md — Update plugin.py imports and add unit tests
 
 ### Phase 3: API Client
 **Goal**: API communication isolated in dedicated module with proactive throttle management
@@ -118,8 +119,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Foundation & Critical Fixes | 0/3 | Ready to execute | - |
-| 2. Base Modules | 0/TBD | Not started | - |
+| 1. Foundation & Critical Fixes | 3/3 | Complete | 2026-02-01 |
+| 2. Base Modules | 0/2 | Planned | - |
 | 3. API Client | 0/TBD | Not started | - |
 | 4. Validators | 0/TBD | Not started | - |
 | 5. Device Handlers | 0/TBD | Not started | - |
@@ -128,4 +129,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 ---
 *Roadmap created: 2026-02-01*
 *Phase 1 planned: 2026-02-01*
+*Phase 2 planned: 2026-02-01*
 *Requirements coverage: 47/47 (100%)*

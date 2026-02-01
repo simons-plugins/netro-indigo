@@ -44,93 +44,28 @@ from datetime import datetime, timedelta, date
 
 import indigo
 import requests
-from dateutil import tz
 
-# API Configuration
-NETRO_API_VERSION = "1"
-NETRO_MAX_ZONE_DURATION = 10800
-DEFAULT_API_CALL_TIMEOUT = 5  # number of seconds after which we time out any network calls
-# number of minutes between each poll, default is 3 (changed 2/27/2018 to help avoid throttling)
-MINIMUM_POLLING_INTERVAL = 3
-DEFAULT_WEATHER_UPDATE_INTERVAL = 10  # number of minutes between each forecast update, default is 10
-# number of minutes to wait if we've received a throttle error before doing any API calls
-THROTTLE_LIMIT_TIMER = 61
-FORECAST_UPDATE_INTERVAL = 60  # minutes between forecast updates
-
-# API Base URL
-API_BASE_URL = "http://api.netrohome.com/npa/v{apiVersion}/"
-API_URL = API_BASE_URL.format(apiVersion=NETRO_API_VERSION)
-
-# API Endpoints
-DEVICE_INFO_URL = API_URL + "info.json"
-DEVICE_SCHEDULES_URL = API_URL + "schedules.json"
-DEVICE_MOISTURES_URL = API_URL + "moistures.json"
-DEVICE_SENSOR_DATA_URL = API_URL + "sensor_data.json"
-DEVICE_WATER_URL = API_URL + "water.json"
-DEVICE_STOP_WATER_URL = API_URL + "stop_water.json"
-DEVICE_SET_STATUS_URL = API_URL + "set_status.json"
-DEVICE_NO_WATER_URL = API_URL + "no_water.json"
-DEVICE_REPORT_WEATHER_URL = API_URL + "report_weather.json"
-ZONE_START_URL = API_URL + "zone/start"
-
-
-ALL_OPERATIONAL_ERROR_EVENTS = {
-    "startZoneFailed",
-    "stopFailed",
-    "setStandbyFailed",
-}
-
-ALL_COMM_ERROR_EVENTS = {
-    "personCall",
-    "personInfoCall",
-    "getScheduleCall",
-    "forecastCall",
-}
-
-
-class ThrottleDelayError(Exception):
-    """Raised when API calls are throttled due to rate limit violations.
-
-    The Netro API allows 2000 calls per day. When the limit is exceeded,
-    the API returns HTTP 429. This exception is raised to prevent further
-    API calls until the throttle period expires (61 minutes).
-    """
-    pass
-
-
-def convert_timestamp(timestamp):
-    """Convert Unix timestamp (milliseconds) to local timezone datetime.
-
-    Args:
-        timestamp: Unix timestamp in milliseconds
-
-    Returns:
-        datetime: Timestamp converted to local timezone
-    """
-    from_zone = tz.tzutc()
-    to_zone = tz.tzlocal()
-    time_utc = datetime.utcfromtimestamp(timestamp / 1000)
-    time_utc_gmt = time_utc.replace(tzinfo=from_zone)
-    return time_utc_gmt.astimezone(to_zone)
-
-
-def get_key_from_dict(a_key, a_dict):
-    """Safely get value from dictionary with graceful error handling.
-
-    Args:
-        a_key: Dictionary key to retrieve
-        a_dict: Dictionary to search
-
-    Returns:
-        Value if key exists, otherwise "unavailable from API" or "unknown error"
-    """
-    try:
-        return a_dict[a_key]
-    except KeyError:
-        return "unavailable from API"
-    except (TypeError, AttributeError):
-        # dict is None or not a dict-like object
-        return "unknown error"
+# Import from extracted modules
+from constants import (
+    MAX_ZONE_DURATION_SECONDS,
+    DEFAULT_API_TIMEOUT_SECONDS,
+    MINIMUM_POLLING_INTERVAL_MINUTES,
+    THROTTLE_LIMIT_MINUTES,
+    DEVICE_INFO_ENDPOINT,
+    DEVICE_SCHEDULES_ENDPOINT,
+    DEVICE_MOISTURES_ENDPOINT,
+    DEVICE_SENSOR_DATA_ENDPOINT,
+    DEVICE_WATER_ENDPOINT,
+    DEVICE_STOP_WATER_ENDPOINT,
+    DEVICE_SET_STATUS_ENDPOINT,
+    DEVICE_NO_WATER_ENDPOINT,
+    DEVICE_REPORT_WEATHER_ENDPOINT,
+    ZONE_START_ENDPOINT,
+    OPERATIONAL_ERROR_EVENTS,
+    COMM_ERROR_EVENTS,
+)
+from exceptions import ThrottleDelayError
+from utils import get_key_from_dict
 
 
 ################################################################################
@@ -161,13 +96,13 @@ class Plugin(indigo.PluginBase):
         self._displayed_connection_error = False
         self.pluginId = pluginId
         self.debug = pluginPrefs.get("showDebugInfo", False)
-        self.pollingInterval = int(pluginPrefs.get("pollingInterval", MINIMUM_POLLING_INTERVAL))
-        self.timeout = int(pluginPrefs.get("apiTimeout", DEFAULT_API_CALL_TIMEOUT))
+        self.pollingInterval = int(pluginPrefs.get("pollingInterval", MINIMUM_POLLING_INTERVAL_MINUTES))
+        self.timeout = int(pluginPrefs.get("apiTimeout", DEFAULT_API_TIMEOUT_SECONDS))
 
         self.unused_devices = {}
         # Netro API uses serial number for authentication (not bearer tokens)
         # Serial numbers are configured per-device, not at plugin level
-        self.maxZoneRunTime = int(pluginPrefs.get("maxZoneRunTime", NETRO_MAX_ZONE_DURATION))
+        self.maxZoneRunTime = int(pluginPrefs.get("maxZoneRunTime", MAX_ZONE_DURATION_SECONDS))
 
         # HTTP headers for JSON requests
         self.headers = {
@@ -295,10 +230,10 @@ class Plugin(indigo.PluginBase):
                                 )
                             except (ValueError, TypeError):
                                 # Fallback to fixed delay if we can't parse reset time
-                                self.throttle_next_call = datetime.now() + timedelta(minutes=THROTTLE_LIMIT_TIMER)
+                                self.throttle_next_call = datetime.now() + timedelta(minutes=THROTTLE_LIMIT_MINUTES)
                                 error_msg = (
                                     f"netro api rate limit exceeded, "
-                                    f"will retry in {THROTTLE_LIMIT_TIMER} minutes, "
+                                    f"will retry in {THROTTLE_LIMIT_MINUTES} minutes, "
                                     f"consider increasing polling interval"
                                 )
 
@@ -314,10 +249,10 @@ class Plugin(indigo.PluginBase):
             except (ValueError, AttributeError):
                 # If we can't parse JSON, check for HTTP 429 as fallback
                 if exc.response.status_code == 429:
-                    self.throttle_next_call = datetime.now() + timedelta(minutes=THROTTLE_LIMIT_TIMER)
+                    self.throttle_next_call = datetime.now() + timedelta(minutes=THROTTLE_LIMIT_MINUTES)
                     error_msg = (
                         f"api rate limit exceeded (http 429), "
-                        f"will retry in {THROTTLE_LIMIT_TIMER} minutes"
+                        f"will retry in {THROTTLE_LIMIT_MINUTES} minutes"
                     )
                     self.logger.warning(error_msg)
                     self._fireTrigger("rateLimitExceeded")
@@ -395,7 +330,7 @@ class Plugin(indigo.PluginBase):
                     try:
                         # Get device info using serial number from device address
                         reply_dict = self._make_api_call(
-                            f"{DEVICE_INFO_URL}?key={dev.address}")
+                            f"{DEVICE_INFO_ENDPOINT}?key={dev.address}")
 
                         reply_dict_data = reply_dict["data"]
                         reply_dict_device = reply_dict_data["device"]
@@ -456,10 +391,10 @@ class Plugin(indigo.PluginBase):
 
                         # Warn if API tokens are running low - parse defensively
                         try:
-                            tokens_remaining = int(reply_dict_device.get("token_remaining", 2000))
+                            tokens_remaining = int(reply_dict_device.get("token_remaining", 0))
                         except (ValueError, TypeError):
-                            tokens_remaining = 2000
-                            self.logger.debug("invalid token_remaining value from api, using default 2000")
+                            tokens_remaining = 0
+                            self.logger.warning("Invalid token_remaining value from API - treating as 0 (no tokens available). API may be throttling requests.")
 
                         try:
                             token_reset = str(reply_dict_device.get('token_reset', 'unknown'))
@@ -504,7 +439,7 @@ class Plugin(indigo.PluginBase):
                         # Get the current schedule for the device - it will tell us if it's running or not
                         try:
                             schedule_dict = self._make_api_call(
-                                f"{DEVICE_SCHEDULES_URL}?key={netroSerial}")
+                                f"{DEVICE_SCHEDULES_ENDPOINT}?key={netroSerial}")
                             # Loop all possible schedules to find active and next
                             all_schedules_data = schedule_dict["data"]
                             all_schedules = all_schedules_data["schedules"]
@@ -668,6 +603,13 @@ class Plugin(indigo.PluginBase):
                         if dev.sensorValue is not None:
                             sensorValuesLatest = self.callSensorAPI(self.serialNo)
                             self.key_val_list = sensorValuesLatest['sensorKeyValuesList']
+
+                            # Check if sensor is offline (no recent readings from device)
+                            if not sensorValuesLatest['currentReadings']:
+                                dev.setErrorStateOnServer('sensor offline - no recent data')
+                            else:
+                                dev.setErrorStateOnServer('')
+
                             if dev.onState is not None:
                                 self.key_val_list.append({'key': 'onOffState', 'value': not dev.onState})
                                 dev.updateStatesOnServer(self.key_val_list)
@@ -702,7 +644,7 @@ class Plugin(indigo.PluginBase):
         Returns:
             List of dicts with zone moisture states
         """
-        url = f"{DEVICE_MOISTURES_URL}?key={serial}"
+        url = f"{DEVICE_MOISTURES_ENDPOINT}?key={serial}"
         jsonData = self._make_api_call(url)
         jdata = jsonData['data']
         jmoistures = jdata['moistures']
@@ -741,7 +683,7 @@ class Plugin(indigo.PluginBase):
         Returns:
             List of dicts with sensor states
         """
-        url = f"{DEVICE_SENSOR_DATA_URL}?key={serial}"
+        url = f"{DEVICE_SENSOR_DATA_ENDPOINT}?key={serial}"
         self.logger.debug(url)
         jsonData = self._make_api_call(url)
         jdata = jsonData['data']
@@ -750,36 +692,55 @@ class Plugin(indigo.PluginBase):
 
         # Guard against empty sensor readings list
         if not sensorReadings:
-            self.logger.warning("No sensor data available from API")
+            self.logger.info(f"No sensor data available from API for device {serial} (sensor offline or not reporting)")
+            # Still update device with API metadata so user knows plugin is working
             return {
                 'sensorStatus': jsonData['status'],
-                'sensorMeta': jsonData['meta'],
+                'sensorMeta': jmeta,
+                'currentReadings': {},
+                'sensorKeyValuesList': [
+                    {'key': 'token_remaining', 'value': jmeta.get("token_remaining", 0)},
+                    {'key': 'token_reset', 'value': jmeta.get("token_reset", "unknown")},
+                    {'key': 'api_last_active', 'value': jmeta.get("last_active", "unknown")},
+                    {'key': 'time', 'value': jmeta.get("time", "unknown")},
+                ]
+            }
+
+        sensorReadings.sort(key=lambda x: x.get('id'), reverse=True)
+        devStates = sensorReadings[0]
+        self.logger.debug(devStates)
+
+        try:
+            key_values_list = [
+                {'key': 'sensorValue', 'value': devStates['moisture'], 'uiValue':  f"{devStates['moisture']:.1f} %"},
+                {'key': 'humidity', 'value': devStates['moisture']},
+                {'key': 'soilMoisture', 'value': devStates['moisture']},
+                {'key': 'temperature', 'value': devStates['celsius']},
+                {'key': 'soilTemperature', 'value': devStates['celsius']},
+                {'key': 'sunlight', 'value': devStates['sunlight']},
+                {'key': 'readingID', 'value': devStates['id']},
+                {'key': 'readingTime', 'value': devStates['time']},
+                {'key': 'readingLocalDate', 'value': devStates['local_date']},
+                {'key': 'readingLocalTime', 'value': devStates['local_time']},
+                {'key': 'id', 'value': devStates['id']},
+                {'key': 'token_remaining', 'value': jmeta["token_remaining"]},
+                {'key': 'token_reset', 'value': jmeta["token_reset"]},
+                {'key': 'api_last_active', 'value': jmeta["last_active"]},
+                {'key': 'sensor_last_active', 'value': devStates["time"]},
+                {'key': 'time', 'value': jmeta["time"]},
+                {'key': 'batteryLevel', 'value': devStates['battery_level']}
+            ]
+        except KeyError as e:
+            self.logger.error(f"Missing expected field in sensor data for device {serial}: {e}")
+            self.logger.debug(f"Sensor data structure: {devStates}")
+            # Return minimal update with what we have
+            return {
+                'sensorStatus': jsonData.get('status', 'unknown'),
+                'sensorMeta': jmeta,
                 'currentReadings': {},
                 'sensorKeyValuesList': []
             }
 
-        sensorReadings.sort(key=lambda x: x.get('id'), reverse=True)
-        devStates=sensorReadings[0]
-        self.logger.debug(devStates)
-        key_values_list = [
-            {'key': 'sensorValue', 'value': devStates['moisture'], 'uiValue':  f"{devStates['moisture']:.1f} %"},
-            {'key': 'humidity', 'value': devStates['moisture']},
-            {'key': 'soilMoisture', 'value': devStates['moisture']},
-            {'key': 'temperature', 'value': devStates['celsius']},
-            {'key': 'soilTemperature', 'value': devStates['celsius']},
-            {'key': 'sunlight', 'value': devStates['sunlight']},
-            {'key': 'readingID', 'value': devStates['id']},
-            {'key': 'readingTime', 'value': devStates['time']},
-            {'key': 'readingLocalDate', 'value': devStates['local_date']},
-            {'key': 'readingLocalTime', 'value': devStates['local_time']},
-            {'key': 'id', 'value': devStates['id']},
-            {'key': 'token_remaining', 'value': jmeta["token_remaining"]},
-            {'key': 'token_reset', 'value': jmeta["token_reset"]},
-            {'key': 'api_last_active', 'value': jmeta["last_active"]},
-            {'key': 'sensor_last_active', 'value': devStates["time"]},
-            {'key': 'time', 'value': jmeta["time"]},
-            {'key': 'batteryLevel', 'value': devStates['battery_level']}
-        ]
         sensorValues = dict()
         sensorValues['sensorStatus'] = jsonData['status']
         sensorValues['sensorMeta'] = jsonData['meta']
@@ -1102,7 +1063,7 @@ class Plugin(indigo.PluginBase):
 
             # Update polling interval
             try:
-                new_polling_interval = int(valuesDict.get("pollingInterval", MINIMUM_POLLING_INTERVAL))
+                new_polling_interval = int(valuesDict.get("pollingInterval", MINIMUM_POLLING_INTERVAL_MINUTES))
                 if new_polling_interval != self.pollingInterval:
                     self.pollingInterval = new_polling_interval
                     self.logger.info(f"Polling interval updated to {self.pollingInterval} minutes")
@@ -1111,7 +1072,7 @@ class Plugin(indigo.PluginBase):
 
             # Update max zone runtime
             try:
-                new_max_runtime = int(valuesDict.get("maxZoneRunTime", NETRO_MAX_ZONE_DURATION))
+                new_max_runtime = int(valuesDict.get("maxZoneRunTime", MAX_ZONE_DURATION_SECONDS))
                 if new_max_runtime != self.maxZoneRunTime:
                     self.maxZoneRunTime = new_max_runtime
                     self.logger.info(f"Max zone runtime updated to {self.maxZoneRunTime} seconds")
@@ -1142,15 +1103,15 @@ class Plugin(indigo.PluginBase):
     def deviceStartComm(self, dev):
         """Called when device communication should start.
 
-        Triggers an immediate update from the Netro API to populate the
-        device's initial state.
+        The concurrent thread will handle the initial update within seconds,
+        so we don't need to make redundant API calls here.
 
         Args:
             dev: Device starting communication
         """
-        # Get the full device info and update the newly created device
-        # Update all the states here
-        self._update_from_netro()
+        # Don't update here - would cause duplicate API calls for each device
+        # The concurrent thread handles regular updates
+        pass
 
 
     ########################################
@@ -1181,18 +1142,18 @@ class Plugin(indigo.PluginBase):
             for trigger in self.triggerDict.values():
                 if trigger.pluginTypeId == "sprinklerError":
                     if int(trigger.pluginProps["id"]) == dev_id:
-                        # for the all trigger type, we fire any event that's in the ALL_OPERATIONAL_ERROR_EVENTS
+                        # for the all trigger type, we fire any event that's in the OPERATIONAL_ERROR_EVENTS
                         # list we defined at the top.
                         trigger_type = trigger.pluginProps["errorType"]
-                        if trigger_type == "all" and event in ALL_OPERATIONAL_ERROR_EVENTS:
+                        if trigger_type == "all" and event in OPERATIONAL_ERROR_EVENTS:
                             indigo.trigger.execute(trigger)
                         # then we fire if the event specifically matches the trigger type
                         if trigger_type == event:
                             indigo.trigger.execute(trigger)
                 elif trigger.pluginTypeId == "commError":
                     trigger_type = trigger.pluginProps["errorType"]
-                    # first we fire the trigger if it's any comm error in the ALL_COMM_ERROR_EVENTS list
-                    if trigger_type == "allCommErrors" and event in ALL_COMM_ERROR_EVENTS:
+                    # first we fire the trigger if it's any comm error in the COMM_ERROR_EVENTS list
+                    if trigger_type == "allCommErrors" and event in COMM_ERROR_EVENTS:
                         indigo.trigger.execute(trigger)
                     # then we fire if the event specifically matches the trigger type
                     if trigger_type == event:
@@ -1284,7 +1245,7 @@ class Plugin(indigo.PluginBase):
                                  else self.maxZoneRunTime),
                 }
                 try:
-                    self._make_api_call(ZONE_START_URL, request_method="put", data=data)
+                    self._make_api_call(ZONE_START_ENDPOINT, request_method="put", data=data)
                     self.logger.info(f'sent "{dev.name} - {zoneName}" on')
                     dev.updateStateOnServer("activeZone", action.zoneIndex)
                 except requests.exceptions.RequestException:
@@ -1306,7 +1267,7 @@ class Plugin(indigo.PluginBase):
                 "id": dev.states["id"],
             }
             try:
-                self._make_api_call(DEVICE_STOP_WATER_URL, request_method="post", data=data)
+                self._make_api_call(DEVICE_STOP_WATER_ENDPOINT, request_method="post", data=data)
                 self.logger.info(f'sent "{dev.name}" {"all zones off"}')
                 dev.updateStateOnServer("activeZone", 0)
             except requests.exceptions.RequestException:
@@ -1375,7 +1336,7 @@ class Plugin(indigo.PluginBase):
                     "key": dev.address,
                     "days": num_Days,
                 }
-                response = self._make_api_call(DEVICE_NO_WATER_URL, request_method="post", data=data)
+                response = self._make_api_call(DEVICE_NO_WATER_ENDPOINT, request_method="post", data=data)
                 response_status = response["status"]
                 self.logger.debug(response)
                 if response_status == "OK":
@@ -1404,7 +1365,7 @@ class Plugin(indigo.PluginBase):
                 "key": dev.address,
                 "status": 0 if pluginAction.props["mode"] else 1,
             }
-            self._make_api_call(DEVICE_SET_STATUS_URL, request_method="post", data=data)
+            self._make_api_call(DEVICE_SET_STATUS_ENDPOINT, request_method="post", data=data)
             mode_status = 'on' if pluginAction.props['mode'] else 'off'
             self.logger.info(f"Standby mode for controller '{dev.name}' turned {mode_status}")
         except Exception:
@@ -1462,7 +1423,7 @@ class Plugin(indigo.PluginBase):
                     return
 
             # Make API call
-            response = self._make_api_call(DEVICE_WATER_URL, request_method="post", data=data)
+            response = self._make_api_call(DEVICE_WATER_ENDPOINT, request_method="post", data=data)
             response_status = response.get("status")
 
             if response_status == "OK":
@@ -1529,7 +1490,7 @@ class Plugin(indigo.PluginBase):
                 return
 
             # Make API call
-            response = self._make_api_call(DEVICE_REPORT_WEATHER_URL, request_method="post", data=data)
+            response = self._make_api_call(DEVICE_REPORT_WEATHER_ENDPOINT, request_method="post", data=data)
             response_status = response.get("status")
 
             if response_status == "OK":
