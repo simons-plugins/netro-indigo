@@ -1383,8 +1383,8 @@ class Plugin(indigo.PluginBase):
                 else:
                     self.logger.info("Error setting rain delay")
                 return
-            except Exception as exc:
-                self.logger.debug("API error: \n{}".format(traceback.format_exc(10)))
+            except Exception:
+                self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                 self._fireTrigger("setNoWater", dev.id)
 
     ########################################
