@@ -332,8 +332,9 @@ class TestMakeRequest:
 
     def test_make_request_handles_connection_error(self, client, mock_logger):
         """ConnectionError logged and re-raised."""
-        with patch("api_client.requests.get", side_effect=ConnectionError("Network down")):
-            with pytest.raises(ConnectionError):
+        import requests as req
+        with patch("api_client.requests.get", side_effect=req.exceptions.ConnectionError("Network down")):
+            with pytest.raises(req.exceptions.ConnectionError):
                 client.make_request("https://api.test.com/endpoint")
 
         mock_logger.error.assert_called()
@@ -391,11 +392,12 @@ class TestMakeRequest:
 
     def test_make_request_suppresses_repeated_connection_errors(self, client, mock_logger):
         """Connection errors are logged only once."""
-        with patch("api_client.requests.get", side_effect=ConnectionError("Network down")):
+        import requests as req
+        with patch("api_client.requests.get", side_effect=req.exceptions.ConnectionError("Network down")):
             for _ in range(3):
                 try:
                     client.make_request("https://api.test.com/endpoint")
-                except ConnectionError:
+                except req.exceptions.ConnectionError:
                     pass
 
         # Should only log once
@@ -403,11 +405,12 @@ class TestMakeRequest:
 
     def test_make_request_resets_error_suppression_on_success(self, client, mock_logger):
         """Error suppression resets after successful request."""
+        import requests as req
         # First, cause a connection error
-        with patch("api_client.requests.get", side_effect=ConnectionError("Network down")):
+        with patch("api_client.requests.get", side_effect=req.exceptions.ConnectionError("Network down")):
             try:
                 client.make_request("https://api.test.com/endpoint")
-            except ConnectionError:
+            except req.exceptions.ConnectionError:
                 pass
 
         # Then succeed
