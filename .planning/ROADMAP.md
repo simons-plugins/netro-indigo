@@ -24,7 +24,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 ### Phase 1: Foundation & Critical Fixes
 **Goal**: Plugin has no silent failures, development workflow is established, quick quality wins achieved
 **Depends on**: Nothing (first phase)
-**Requirements**: CRIT-01, CRIT-02, CRIT-03, CRIT-04, DEV-01, DEV-02, DEV-03, DEV-04, DEV-05, QUAL-06, QUAL-07, QUAL-08, QUAL-09, QUAL-10
+**Requirements**: CRIT-01, CRIT-02, CRIT-03, CRIT-04, DEV-01, DEV-02, DEV-03, QUAL-01, QUAL-02, QUAL-03, QUAL-04, QUAL-05, QUAL-06, QUAL-07, QUAL-08, QUAL-09, QUAL-10
 **Success Criteria** (what must be TRUE):
   1. runConcurrentThread logs all exceptions with full traceback (no silent deaths)
   2. All bare exception handlers replaced with specific exceptions + logging
@@ -41,7 +41,7 @@ Plans:
 ### Phase 2: Base Modules
 **Goal**: Foundation modules extracted and tested, proving multi-file pattern works with Indigo
 **Depends on**: Phase 1
-**Requirements**: MOD-01, MOD-02, MOD-03
+**Requirements**: MOD-01, MOD-02, MOD-03, DEV-04, DEV-05
 **Success Criteria** (what must be TRUE):
   1. constants.py exists with all API URLs, defaults, and enums
   2. exceptions.py exists with custom exception classes for API errors
