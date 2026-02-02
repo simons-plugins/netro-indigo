@@ -575,6 +575,112 @@ class TestMakeRequest:
 
         assert client._throttle_until is not None
 
+    def test_handle_http_error_500_no_json_body(self, client, mock_logger):
+        """HTTP 500 without JSON body is handled and logged."""
+        import requests as req
+
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.json.side_effect = ValueError("Not JSON")
+        mock_response.raise_for_status.side_effect = req.exceptions.HTTPError(
+            response=mock_response
+        )
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        mock_logger.error.assert_called()
+
+    def test_handle_http_error_500_with_json_error(self, client, mock_logger):
+        """HTTP 500 with JSON error message is logged."""
+        import requests as req
+
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.json.return_value = {
+            "status": "ERROR",
+            "error": "Internal server error"
+        }
+        mock_response.raise_for_status.side_effect = req.exceptions.HTTPError(
+            response=mock_response
+        )
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        # Verify error was logged with status code and message
+        mock_logger.error.assert_called()
+        call_args = mock_logger.error.call_args[0]
+        assert len(call_args) >= 2  # Format string + at least status code
+
+    def test_handle_http_error_502_bad_gateway(self, client, mock_logger):
+        """HTTP 502 Bad Gateway is handled and logged."""
+        import requests as req
+
+        mock_response = Mock()
+        mock_response.status_code = 502
+        mock_response.json.side_effect = ValueError("HTML error page")
+        mock_response.raise_for_status.side_effect = req.exceptions.HTTPError(
+            response=mock_response
+        )
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        mock_logger.error.assert_called()
+
+    def test_handle_http_error_503_service_unavailable(self, client, mock_logger):
+        """HTTP 503 Service Unavailable is handled and logged."""
+        import requests as req
+
+        mock_response = Mock()
+        mock_response.status_code = 503
+        mock_response.json.side_effect = ValueError("Service temporarily unavailable")
+        mock_response.raise_for_status.side_effect = req.exceptions.HTTPError(
+            response=mock_response
+        )
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        mock_logger.error.assert_called()
+
+    def test_handle_http_error_504_gateway_timeout(self, client, mock_logger):
+        """HTTP 504 Gateway Timeout is handled and logged."""
+        import requests as req
+
+        mock_response = Mock()
+        mock_response.status_code = 504
+        mock_response.json.side_effect = ValueError("Gateway timeout")
+        mock_response.raise_for_status.side_effect = req.exceptions.HTTPError(
+            response=mock_response
+        )
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        mock_logger.error.assert_called()
+
+    def test_handle_http_error_response_none(self, client, mock_logger):
+        """HTTPError with response=None doesn't crash."""
+        import requests as req
+
+        # Create HTTPError without response object (edge case)
+        http_error = req.exceptions.HTTPError()
+        http_error.response = None
+
+        with patch("api_client.requests.get", side_effect=http_error):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        # Should still log error, even without response details
+        mock_logger.error.assert_called()
+
     def test_make_request_suppresses_repeated_connection_errors(self, client, mock_logger):
         """Connection errors are logged only once."""
         import requests as req
