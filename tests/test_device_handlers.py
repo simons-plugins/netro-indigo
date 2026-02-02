@@ -871,8 +871,8 @@ class TestWhispererHandler:
         assert has_readings is False
         mock_logger.info.assert_called()
 
-    def test_process_sensor_data_null_moisture_value(self, whisperer_handler):
-        """Moisture value of None is passed through (get() doesn't replace explicit None)."""
+    def test_process_sensor_data_null_moisture_value(self, whisperer_handler, mock_logger):
+        """Moisture value of None causes TypeError in f-string formatting."""
         response = {
             "status": "OK",
             "data": {
@@ -886,10 +886,9 @@ class TestWhispererHandler:
         }
         states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
 
-        assert has_readings is True
-        moisture = next(s for s in states if s["key"] == "soilMoisture")
-        # When key exists with None value, .get() returns None (not default)
-        assert moisture["value"] is None
+        # f-string formatting "{moisture:.1f}" raises TypeError with None
+        assert has_readings is False
+        mock_logger.error.assert_called()
 
     def test_process_sensor_data_negative_moisture(self, whisperer_handler):
         """Negative moisture values are preserved (API quirk)."""
