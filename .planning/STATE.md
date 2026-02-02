@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-01)
 
 **Core value:** Maintain reliable, maintainable Indigo plugin for Netro smart irrigation control with clean, testable code
-**Current focus:** Phase 3 - API Client (COMPLETE)
+**Current focus:** Phase 5 - Device Handlers (IN PROGRESS)
 
 ## Current Position
 
-Phase: 3 of 6 (API Client)
-Plan: 4 of 4 in current phase (03-01, 03-02, 03-03 complete)
-Status: Phase complete
-Last activity: 2026-02-01 - Completed 03-02-PLAN.md (Plugin API Client Integration)
+Phase: 5 of 6 (Device Handlers)
+Plan: 1 of 2 in current phase (05-01 complete)
+Status: In progress
+Last activity: 2026-02-02 - Completed 05-01-PLAN.md (Device Handlers Module)
 
-Progress: [████████░░] 60%
+Progress: [█████████░] 65%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 10
-- Average duration: 3 min
-- Total execution time: 0.52 hours
+- Total plans completed: 11
+- Average duration: 3.2 min
+- Total execution time: 0.59 hours
 
 **By Phase:**
 
@@ -31,9 +31,10 @@ Progress: [████████░░] 60%
 | 02-base-modules | 2 | 7 min | 3.5 min |
 | 03-api-client | 3 | 11 min | 3.7 min |
 | 04-validators | 2 | 6 min | 3.0 min |
+| 05-device-handlers | 1 | 4 min | 4.0 min |
 
 **Recent Trend:**
-- Last 5 plans: 04-02 (3 min), 03-01 (3 min), 03-03 (4 min), 03-02 (4 min)
+- Last 5 plans: 05-01 (4 min), 04-02 (3 min), 03-01 (3 min), 03-03 (4 min), 03-02 (4 min)
 - Trend: Stable (fast execution)
 
 *Updated after each plan completion*
@@ -77,6 +78,9 @@ Recent decisions affecting current work:
 - (04-02): Convert indigo.Dict to dict at validators boundary
 - (04-02): Keep debug logging in plugin.py, not validators
 - (04-02): Thin wrapper pattern for validation callbacks
+- (05-01): Handlers return state dicts, coordinator applies to Indigo devices
+- (05-01): Use pylint disable for too-few-public-methods on WhispererHandler (design choice)
+- (05-01): Keep f-string logging to match codebase convention
 
 ### Pending Todos
 
@@ -84,12 +88,12 @@ None yet.
 
 ### Blockers/Concerns
 
-None - Phase 3 complete with full integration. Ready for Phase 5 (Device Handlers).
+None - Plan 05-01 complete. Ready for Plan 05-02 (handler integration).
 
 ## Session Continuity
 
-Last session: 2026-02-01 23:30 UTC
-Stopped at: Completed 03-02-PLAN.md (Plugin API Client Integration) - Phase 3 complete
+Last session: 2026-02-02 00:05 UTC
+Stopped at: Completed 05-01-PLAN.md (Device Handlers Module)
 Resume file: None
 
 ## Test Suite Status
