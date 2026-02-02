@@ -95,10 +95,11 @@ Plans:
   3. No circular import dependencies exist between modules
   4. All bare `except (Exception,):` handlers replaced with specific exception types
   5. All existing tests pass with updated imports
-**Plans**: TBD
+**Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 05-01: TBD
+- [ ] 05-01-PLAN.md — Create device_handlers.py with SprinklerHandler and WhispererHandler classes
+- [ ] 05-02-PLAN.md — Update plugin.py to use handlers and add comprehensive tests
 
 ### Phase 6: Testing Expansion
 **Goal**: Test coverage expanded to 87%, all critical paths tested
@@ -126,7 +127,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 2. Base Modules | 2/2 | Complete | 2026-02-01 |
 | 3. API Client | 3/3 | Complete | 2026-02-01 |
 | 4. Validators | 2/2 | Complete | 2026-02-01 |
-| 5. Device Handlers | 0/TBD | Not started | - |
+| 5. Device Handlers | 0/2 | Planned | - |
 | 6. Testing Expansion | 0/TBD | Not started | - |
 
 ---
@@ -135,4 +136,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 *Phase 2 planned: 2026-02-01*
 *Phase 3 planned: 2026-02-01*
 *Phase 4 planned: 2026-02-01*
+*Phase 5 planned: 2026-02-02*
 *Requirements coverage: 47/47 (100%)*
