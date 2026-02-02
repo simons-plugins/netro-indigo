@@ -603,12 +603,11 @@ class TestSprinklerHandlerMoistures:
     # -------------------------------------------------------------------------
 
     def test_process_moistures_moistures_is_string(self, sprinkler_handler, mock_logger):
-        """Moistures as string instead of list returns empty states."""
+        """Moistures as string instead of list raises AttributeError."""
         response = {"status": "OK", "data": {"moistures": "none"}}
-        states = sprinkler_handler.process_moistures(response)
-
-        assert states == []
-        mock_logger.error.assert_called()
+        # String has no .sort() method, so AttributeError is raised
+        with pytest.raises(AttributeError):
+            sprinkler_handler.process_moistures(response)
 
 
 # =============================================================================
