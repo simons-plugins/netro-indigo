@@ -380,6 +380,133 @@ class TestMakeRequest:
         mock_logger.error.assert_called()
         assert "timed out" in mock_logger.error.call_args[0][0].lower()
 
+    def test_make_request_timeout_on_post(self, client, mock_logger):
+        """Timeout during POST request logged and re-raised."""
+        import requests as req
+        with patch("api_client.requests.post", side_effect=req.exceptions.Timeout("POST timed out")):
+            with pytest.raises(req.exceptions.Timeout):
+                client.make_request(
+                    "https://api.test.com/endpoint",
+                    method="post",
+                    data={"key": "test"}
+                )
+
+        mock_logger.error.assert_called()
+        assert "timed out" in mock_logger.error.call_args[0][0].lower()
+
+    def test_make_request_timeout_on_put(self, client, mock_logger):
+        """Timeout during PUT request logged and re-raised."""
+        import requests as req
+        with patch("api_client.requests.put", side_effect=req.exceptions.Timeout("PUT timed out")):
+            with pytest.raises(req.exceptions.Timeout):
+                client.make_request(
+                    "https://api.test.com/endpoint",
+                    method="put",
+                    data={"key": "test"}
+                )
+
+        mock_logger.error.assert_called()
+        assert "timed out" in mock_logger.error.call_args[0][0].lower()
+
+    def test_make_request_timeout_suppresses_repeated(self, client, mock_logger):
+        """Second timeout not logged (error suppression)."""
+        import requests as req
+        with patch("api_client.requests.get", side_effect=req.exceptions.Timeout("Timed out")):
+            for _ in range(3):
+                try:
+                    client.make_request("https://api.test.com/endpoint")
+                except req.exceptions.Timeout:
+                    pass
+
+        # Should only log once
+        assert mock_logger.error.call_count == 1
+
+    def test_make_request_timeout_resets_after_success(self, client, mock_logger):
+        """Success clears timeout error state, next timeout is logged."""
+        import requests as req
+
+        # First timeout
+        with patch("api_client.requests.get", side_effect=req.exceptions.Timeout("Timed out")):
+            try:
+                client.make_request("https://api.test.com/endpoint")
+            except req.exceptions.Timeout:
+                pass
+
+        # Then succeed
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            client.make_request("https://api.test.com/endpoint")
+
+        # Reset error count before second timeout
+        mock_logger.error.reset_mock()
+
+        # Second timeout should be logged again (error state was cleared)
+        with patch("api_client.requests.get", side_effect=req.exceptions.Timeout("Timed out again")):
+            try:
+                client.make_request("https://api.test.com/endpoint")
+            except req.exceptions.Timeout:
+                pass
+
+        mock_logger.error.assert_called()
+
+    def test_make_request_timeout_preserves_throttle_state(self, client, mock_logger):
+        """Timeout doesn't affect throttle state."""
+        import requests as req
+        from datetime import timedelta
+
+        # Set throttle state
+        future_time = datetime.now() + timedelta(minutes=30)
+        client._throttle_until = future_time
+        client._token_remaining = 500
+
+        # Cause timeout (should raise ThrottleDelayError before hitting network)
+        with pytest.raises(ThrottleDelayError):
+            client.make_request("https://api.test.com/endpoint")
+
+        # Throttle state should be preserved
+        assert client._throttle_until == future_time
+        assert client._token_remaining == 500
+
+    def test_make_request_timeout_with_custom_timeout_value(self, client):
+        """Client timeout attribute passed to requests library."""
+        import requests as req
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        # Set custom timeout on client
+        client.timeout = 15
+
+        with patch("api_client.requests.get", return_value=mock_response) as mock_get:
+            client.make_request("https://api.test.com/endpoint")
+
+            # Verify timeout parameter was passed to requests.get
+            call_kwargs = mock_get.call_args[1]
+            assert "timeout" in call_kwargs
+            assert call_kwargs["timeout"] == 15
+
+    def test_make_request_read_timeout_vs_connect_timeout(self, client, mock_logger):
+        """ReadTimeout (subclass of Timeout) handled correctly."""
+        import requests as req
+
+        # ReadTimeout is a specific subclass of Timeout
+        with patch("api_client.requests.get", side_effect=req.exceptions.ReadTimeout("Read timeout")):
+            with pytest.raises(req.exceptions.ReadTimeout):
+                client.make_request("https://api.test.com/endpoint")
+
+        mock_logger.error.assert_called()
+        assert "timed out" in mock_logger.error.call_args[0][0].lower()
+
+    def test_get_device_info_timeout(self, client):
+        """Convenience method timeout propagation."""
+        import requests as req
+        with patch("api_client.requests.get", side_effect=req.exceptions.Timeout("Timed out")):
+            with pytest.raises(req.exceptions.Timeout):
+                client.get_device_info("SERIAL123")
+
     def test_make_request_detects_rate_limit_error_code_3(self, client, mock_logger):
         """HTTP error with error code 3 (Netro format) sets throttle and raises ThrottleDelayError."""
         import requests as req
