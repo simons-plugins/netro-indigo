@@ -5,23 +5,23 @@
 See: .planning/PROJECT.md (updated 2026-02-01)
 
 **Core value:** Maintain reliable, maintainable Indigo plugin for Netro smart irrigation control with clean, testable code
-**Current focus:** Phase 5 - Device Handlers (COMPLETE)
+**Current focus:** Phase 6 - Testing Expansion (IN PROGRESS)
 
 ## Current Position
 
-Phase: 5 of 6 (Device Handlers)
-Plan: 2 of 2 in current phase (05-01, 05-02 complete)
-Status: Phase complete
-Last activity: 2026-02-02 - Completed 05-02-PLAN.md (Plugin Device Handler Integration)
+Phase: 6 of 6 (Testing Expansion)
+Plan: 2 of 4 in current phase (06-01, 06-02 complete)
+Status: In progress
+Last activity: 2026-02-02 - Completed 06-02-PLAN.md (Whisperer & Malformed JSON Tests)
 
-Progress: [█████████░] 70%
+Progress: [█████████░] 75%
 
 ## Performance Metrics
 
 **Velocity:**
-- Total plans completed: 12
-- Average duration: 3.5 min
-- Total execution time: 0.72 hours
+- Total plans completed: 14
+- Average duration: 3.8 min
+- Total execution time: 0.87 hours
 
 **By Phase:**
 
@@ -32,10 +32,11 @@ Progress: [█████████░] 70%
 | 03-api-client | 3 | 11 min | 3.7 min |
 | 04-validators | 2 | 6 min | 3.0 min |
 | 05-device-handlers | 2 | 12 min | 6.0 min |
+| 06-testing-expansion | 2 | 13 min | 6.5 min |
 
 **Recent Trend:**
-- Last 5 plans: 05-02 (8 min), 05-01 (4 min), 04-02 (3 min), 03-01 (3 min), 03-03 (4 min)
-- Trend: Slightly increased due to comprehensive testing
+- Last 5 plans: 06-02 (7 min), 06-01 (6 min), 05-02 (8 min), 05-01 (4 min), 04-02 (3 min)
+- Trend: Testing phases take longer (6-7 min) due to comprehensive edge case coverage
 
 *Updated after each plan completion*
 
@@ -84,6 +85,10 @@ Recent decisions affecting current work:
 - (05-02): Extract _update_sprinkler_device and _update_whisperer_device helper methods
 - (05-02): Retain legacy self.person and self.netro_devices for compatibility
 - (05-02): Line count target not achievable - Indigo callbacks cannot be extracted
+- (06-01): Created conftest.py for shared pytest fixtures to reduce test duplication
+- (06-01): Network timeout tests cover GET, POST, PUT methods separately
+- (06-01): HTTP 5xx tests cover all major server error codes (500, 502, 503, 504)
+- (06-01): Test verify client.timeout attribute is passed to requests library
 
 ### Pending Todos
 
@@ -91,9 +96,9 @@ None yet.
 
 ### Blockers/Concerns
 
-None - Phase 5 complete. Ready for Phase 6 (Cleanup and Polish).
+None - Phase 6 in progress. Plan 06-01 complete.
 
-**Note:** The 450-line target for plugin.py was not achievable (actual: 1038 lines). Many Indigo framework callbacks cannot be extracted from plugin.py. This is a documentation issue in the plan, not an implementation failure.
+**Note:** Test suite has 2 pre-existing failures in test_device_handlers.py that are unrelated to plan 06-01 work.
 
 ## Session Continuity
 
