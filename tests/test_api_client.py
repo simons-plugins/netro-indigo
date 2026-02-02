@@ -20,7 +20,7 @@ SERVER_PLUGIN_DIR = (
 sys.path.insert(0, str(SERVER_PLUGIN_DIR))
 
 from api_client import NetroAPIClient, TOKEN_PAUSE_THRESHOLD, TOKEN_WARNING_THRESHOLD
-from exceptions import ThrottleDelayError
+from exceptions import ThrottleDelayError, NetroAPIError
 
 
 # =============================================================================
@@ -262,6 +262,22 @@ class TestProactivePause:
         assert client.should_pause_polling is True
         mock_logger.warning.assert_called()
 
+    def test_should_pause_polling_auto_resets_past_reset_time(self, client, mock_logger):
+        """Auto-resets token count when past token_reset time to prevent self-locking."""
+        # Set low tokens and a reset time in the past
+        client._token_remaining = 50  # Below threshold
+        client._token_reset = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)  # Past date
+
+        # Check should_pause_polling - will auto-reset tokens since reset time passed
+        should_pause = client.should_pause_polling
+
+        # Tokens should be auto-reset to 2000 (not paused)
+        assert should_pause is False
+        assert client._token_remaining == 2000
+        assert client._token_reset is None
+        mock_logger.info.assert_called()
+        assert "reset" in mock_logger.info.call_args[0][0].lower()
+
 
 # =============================================================================
 # TestMakeRequest
@@ -365,13 +381,15 @@ class TestMakeRequest:
         assert "timed out" in mock_logger.error.call_args[0][0].lower()
 
     def test_make_request_detects_rate_limit_error_code_3(self, client, mock_logger):
-        """HTTP error with error code 3 sets throttle and raises ThrottleDelayError."""
+        """HTTP error with error code 3 (Netro format) sets throttle and raises ThrottleDelayError."""
         import requests as req
 
         mock_response = Mock()
         mock_response.status_code = 400
         mock_response.json.return_value = {
-            "errors": {"code": 3, "message": "Rate limit exceeded"}
+            "status": "ERROR",
+            "errors": [{"code": 3, "message": "Rate limit exceeded"}],
+            "meta": {"token_remaining": -50, "token_reset": "2026-02-02T00:00:00"}
         }
 
         http_error = req.exceptions.HTTPError(response=mock_response)
@@ -383,7 +401,33 @@ class TestMakeRequest:
             with pytest.raises(ThrottleDelayError):
                 client.make_request("https://api.test.com/endpoint")
 
+        # Should use token_reset from meta
         assert client._throttle_until is not None
+        assert client._throttle_until == datetime(2026, 2, 2, 0, 0, 0, tzinfo=timezone.utc)
+
+    def test_make_request_detects_invalid_serial_error_code_1(self, client, mock_logger):
+        """HTTP error with error code 1 (invalid serial) raises NetroAPIError."""
+        import requests as req
+
+        mock_response = Mock()
+        mock_response.status_code = 400
+        mock_response.json.return_value = {
+            "status": "ERROR",
+            "errors": [{"code": 1, "message": "Invalid device key"}],
+            "meta": {}
+        }
+
+        http_error = req.exceptions.HTTPError(response=mock_response)
+
+        with patch("api_client.requests.get") as mock_get:
+            mock_get.return_value = mock_response
+            mock_response.raise_for_status.side_effect = http_error
+
+            with pytest.raises(NetroAPIError) as exc_info:
+                client.make_request("https://api.test.com/endpoint")
+
+        assert "serial" in str(exc_info.value).lower()
+        mock_logger.error.assert_called()
 
     def test_make_request_detects_http_429(self, client, mock_logger):
         """HTTP 429 sets throttle and raises ThrottleDelayError."""
