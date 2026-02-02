@@ -311,6 +311,47 @@ class TestSprinklerHandlerDeviceInfo:
         assert is_online is True
         assert device_data.get("zones") == []
 
+    def test_process_device_info_unicode_device_name(self, sprinkler_handler):
+        """Device name with unicode characters is preserved."""
+        response = {
+            "status": "OK",
+            "data": {
+                "device": {
+                    "serial": "ABC123",
+                    "status": "ONLINE",
+                    "version": 1,
+                    "name": "Syst\u00e8me d'arrosage"  # French with accent
+                }
+            },
+            "meta": {}
+        }
+        states, is_online, device_data = sprinkler_handler.process_device_info(response, "ABC123")
+
+        name_state = next(s for s in states if s["key"] == "name")
+        assert name_state["value"] == "Syst\u00e8me d'arrosage"
+
+    def test_process_device_info_zones_key_missing(self, sprinkler_handler):
+        """Missing zones key returns empty zones list."""
+        response = {
+            "status": "OK",
+            "data": {"device": {"serial": "ABC123", "status": "ONLINE", "version": 1}},
+            "meta": {}
+        }
+        states, is_online, device_data = sprinkler_handler.process_device_info(response, "ABC123")
+
+        # Should handle gracefully, empty zones_data
+        assert device_data.get("zones") == []
+        assert is_online is True
+
+    def test_api_response_completely_empty(self, sprinkler_handler, mock_logger):
+        """Completely empty response is handled gracefully."""
+        response = {}
+        states, is_online, device_data = sprinkler_handler.process_device_info(response, "ABC123")
+
+        # Should log error and return error states
+        assert is_online is False
+        mock_logger.error.assert_called()
+
 
 # =============================================================================
 # TestSprinklerHandlerSchedules
@@ -604,6 +645,22 @@ class TestSprinklerHandlerZoneInfo:
         assert max_durations == []
         assert zones_data == []
 
+    @pytest.mark.parametrize("zone_name", [
+        "Garden \U0001f33b",           # Emoji (sunflower)
+        "\u82b1\u56ed",                 # Chinese characters
+        "\u062d\u062f\u064a\u0642\u0629",  # Arabic RTL
+        "Zone\u003c\u0026\u003e",      # Mixed with HTML entities
+        "\u00c9tage",                   # French accent
+        "Jard\u00edn",                  # Spanish accent
+    ])
+    def test_extract_zone_info_unicode_names(self, sprinkler_handler, zone_name):
+        """Zone names with unicode characters are preserved."""
+        device_data = {"zones": [{"ith": 1, "name": zone_name, "enabled": True}]}
+        zone_names, max_durations, zones_data = sprinkler_handler.extract_zone_info(device_data, 3600)
+
+        assert zones_data[0]["name"] == zone_name
+        assert zone_name in zone_names
+
 
 # =============================================================================
 # TestWhispererHandler
@@ -730,6 +787,327 @@ class TestWhispererHandler:
 
         battery = next(s for s in states if s["key"] == "batteryLevel")
         assert battery["value"] == 95
+
+    def test_process_sensor_data_unicode_in_timestamps(self, whisperer_handler):
+        """Unicode characters in timestamp fields are handled without crash."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {
+                        "id": 1,
+                        "moisture": 40.0,
+                        "celsius": 20.0,
+                        "sunlight": 50,
+                        "time": "2026-02-01T12:00:00\u200b",  # Zero-width space
+                        "local_date": "2026-02-01",
+                        "local_time": "12:00:00",
+                        "battery_level": 90
+                    }
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        # Should not crash, should process time
+        assert has_readings is True
+        time_state = next(s for s in states if s["key"] == "readingTime")
+        assert time_state is not None
+
+    def test_process_sensor_data_meta_completely_missing(self, whisperer_handler):
+        """Completely missing meta section uses defaults."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {
+                        "id": 1,
+                        "moisture": 40.0,
+                        "celsius": 20.0,
+                        "sunlight": 50,
+                        "time": "2026-02-01T12:00:00",
+                        "local_date": "2026-02-01",
+                        "local_time": "12:00:00",
+                        "battery_level": 90
+                    }
+                ]
+            }
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        # Should use defaults, no crash
+        assert has_readings is True
+        token_state = next((s for s in states if s["key"] == "token_remaining"), None)
+        assert token_state is not None
+        assert token_state["value"] == 0  # Default
+
+    # -------------------------------------------------------------------------
+    # Whisperer Edge Case Tests (TEST-01)
+    # -------------------------------------------------------------------------
+
+    def test_process_sensor_data_keyerror_missing_data_key(self, whisperer_handler, mock_logger):
+        """Missing 'data' key returns empty gracefully."""
+        response = {"status": "OK", "meta": {"token_remaining": 1500}}
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is False
+        # Should not raise KeyError
+        mock_logger.error.assert_called()
+
+    def test_process_sensor_data_typeerror_data_is_string(self, whisperer_handler, mock_logger):
+        """Data as string instead of dict raises AttributeError."""
+        response = {"status": "OK", "data": "not a dict", "meta": {}}
+        # String has no .get() method, so AttributeError is raised
+        with pytest.raises(AttributeError):
+            whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+    def test_process_sensor_data_typeerror_sensor_data_is_dict(self, whisperer_handler, mock_logger):
+        """Sensor_data as dict instead of list treats as empty."""
+        response = {"status": "OK", "data": {"sensor_data": {}}, "meta": {}}
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        # Empty dict is falsy, so no readings
+        assert has_readings is False
+        mock_logger.info.assert_called()
+
+    def test_process_sensor_data_null_moisture_value(self, whisperer_handler):
+        """Moisture value of None is passed through (get() doesn't replace explicit None)."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {"id": 1, "moisture": None, "celsius": 20, "sunlight": 50,
+                     "time": "2026-02-01T12:00:00", "local_date": "2026-02-01",
+                     "local_time": "12:00:00", "battery_level": 90}
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is True
+        moisture = next(s for s in states if s["key"] == "soilMoisture")
+        # When key exists with None value, .get() returns None (not default)
+        assert moisture["value"] is None
+
+    def test_process_sensor_data_negative_moisture(self, whisperer_handler):
+        """Negative moisture values are preserved (API quirk)."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {"id": 1, "moisture": -10, "celsius": 20, "sunlight": 50,
+                     "time": "2026-02-01T12:00:00", "local_date": "2026-02-01",
+                     "local_time": "12:00:00", "battery_level": 90}
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is True
+        moisture = next(s for s in states if s["key"] == "soilMoisture")
+        assert moisture["value"] == -10
+
+    def test_process_sensor_data_null_celsius_value(self, whisperer_handler):
+        """Celsius value of None is passed through (not replaced with default)."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {"id": 1, "moisture": 42.5, "celsius": None, "sunlight": 50,
+                     "time": "2026-02-01T12:00:00", "local_date": "2026-02-01",
+                     "local_time": "12:00:00", "battery_level": 90}
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is True
+        temp = next(s for s in states if s["key"] == "temperature")
+        # When key exists with None value, .get() returns None (not default)
+        assert temp["value"] is None
+
+    def test_process_sensor_data_null_battery_level(self, whisperer_handler):
+        """Battery_level value of None is passed through (not replaced with default)."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {"id": 1, "moisture": 42.5, "celsius": 20, "sunlight": 50,
+                     "time": "2026-02-01T12:00:00", "local_date": "2026-02-01",
+                     "local_time": "12:00:00", "battery_level": None}
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is True
+        battery = next(s for s in states if s["key"] == "batteryLevel")
+        # When key exists with None value, .get() returns None (not default)
+        assert battery["value"] is None
+
+    def test_process_sensor_data_battery_zero(self, whisperer_handler):
+        """Battery level of 0 is valid boundary value."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {"id": 1, "moisture": 42.5, "celsius": 20, "sunlight": 50,
+                     "time": "2026-02-01T12:00:00", "local_date": "2026-02-01",
+                     "local_time": "12:00:00", "battery_level": 0}
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is True
+        battery = next(s for s in states if s["key"] == "batteryLevel")
+        assert battery["value"] == 0
+
+    def test_process_sensor_data_battery_100(self, whisperer_handler):
+        """Battery level of 100 is valid boundary value."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {"id": 1, "moisture": 42.5, "celsius": 20, "sunlight": 50,
+                     "time": "2026-02-01T12:00:00", "local_date": "2026-02-01",
+                     "local_time": "12:00:00", "battery_level": 100}
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is True
+        battery = next(s for s in states if s["key"] == "batteryLevel")
+        assert battery["value"] == 100
+
+    def test_process_sensor_data_very_large_reading_id(self, whisperer_handler):
+        """Very large reading ID does not overflow."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {"id": 2147483647, "moisture": 42.5, "celsius": 20, "sunlight": 50,
+                     "time": "2026-02-01T12:00:00", "local_date": "2026-02-01",
+                     "local_time": "12:00:00", "battery_level": 90}
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is True
+        reading_id = next(s for s in states if s["key"] == "readingID")
+        assert reading_id["value"] == 2147483647
+
+    def test_process_sensor_data_unicode_time_field(self, whisperer_handler):
+        """Time with unicode characters is handled gracefully."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {"id": 1, "moisture": 42.5, "celsius": 20, "sunlight": 50,
+                     "time": "2026-02-01T12:00:00\u200b", "local_date": "2026-02-01",
+                     "local_time": "12:00:00", "battery_level": 90}
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is True
+        reading_time = next(s for s in states if s["key"] == "readingTime")
+        # Should preserve the unicode character
+        assert "\u200b" in reading_time["value"]
+
+    def test_process_sensor_data_missing_all_optional_fields(self, whisperer_handler):
+        """Minimal valid reading with only id and moisture."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {"id": 1, "moisture": 42.5}
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is True
+        # All missing fields should use defaults
+        temp = next(s for s in states if s["key"] == "temperature")
+        assert temp["value"] == 0
+        sunlight = next(s for s in states if s["key"] == "sunlight")
+        assert sunlight["value"] == 0
+        battery = next(s for s in states if s["key"] == "batteryLevel")
+        assert battery["value"] == 0
+
+    def test_process_sensor_data_extra_unexpected_fields(self, whisperer_handler):
+        """Extra unexpected fields are ignored gracefully."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {
+                        "id": 1, "moisture": 42.5, "celsius": 20, "sunlight": 50,
+                        "time": "2026-02-01T12:00:00", "local_date": "2026-02-01",
+                        "local_time": "12:00:00", "battery_level": 90,
+                        "unknown_field": "should be ignored",
+                        "another_unknown": 123
+                    }
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is True
+        # Should process successfully despite extra fields
+        moisture = next(s for s in states if s["key"] == "soilMoisture")
+        assert moisture["value"] == 42.5
+
+    def test_process_sensor_data_empty_serial_string(self, whisperer_handler):
+        """Empty serial string does not crash."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {"id": 1, "moisture": 42.5, "celsius": 20, "sunlight": 50,
+                     "time": "2026-02-01T12:00:00", "local_date": "2026-02-01",
+                     "local_time": "12:00:00", "battery_level": 90}
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "")
+
+        assert has_readings is True
+        # Should process successfully with empty serial
+
+    def test_process_sensor_data_serial_with_unicode(self, whisperer_handler):
+        """Serial with unicode characters is handled."""
+        response = {
+            "status": "OK",
+            "data": {
+                "sensor_data": [
+                    {"id": 1, "moisture": 42.5, "celsius": 20, "sunlight": 50,
+                     "time": "2026-02-01T12:00:00", "local_date": "2026-02-01",
+                     "local_time": "12:00:00", "battery_level": 90}
+                ]
+            },
+            "meta": {}
+        }
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR-\u2603")
+
+        assert has_readings is True
+        # Should process successfully with unicode in serial
 
 
 # =============================================================================
