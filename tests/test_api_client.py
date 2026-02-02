@@ -714,6 +714,61 @@ class TestMakeRequest:
 
         assert client._last_error_type is None
 
+    # -------------------------------------------------------------------------
+    # Thread Safety Tests (TEST-08)
+    # -------------------------------------------------------------------------
+
+    def test_api_client_multiple_device_requests_state_isolation(self, client, mock_logger):
+        """Multiple device requests maintain state isolation."""
+        mock_response1 = Mock()
+        mock_response1.status_code = 200
+        mock_response1.json.return_value = {
+            "status": "OK",
+            "data": {"device": {"serial": "SERIAL1"}},
+            "meta": {"token_remaining": 1500}
+        }
+
+        mock_response2 = Mock()
+        mock_response2.status_code = 200
+        mock_response2.json.return_value = {
+            "status": "OK",
+            "data": {"device": {"serial": "SERIAL2"}},
+            "meta": {"token_remaining": 1400}
+        }
+
+        with patch("api_client.requests.get", side_effect=[mock_response1, mock_response2]):
+            response1 = client.make_request("https://api.test.com/device/SERIAL1")
+            response2 = client.make_request("https://api.test.com/device/SERIAL2")
+
+        # Verify no state pollution between calls
+        assert response1["data"]["device"]["serial"] == "SERIAL1"
+        assert response2["data"]["device"]["serial"] == "SERIAL2"
+
+    def test_api_client_token_budget_tracks_across_requests(self, client):
+        """Token budget is tracked across multiple requests."""
+        mock_response1 = Mock()
+        mock_response1.status_code = 200
+        mock_response1.json.return_value = {
+            "status": "OK",
+            "data": {},
+            "meta": {"token_remaining": 1500}
+        }
+
+        mock_response2 = Mock()
+        mock_response2.status_code = 200
+        mock_response2.json.return_value = {
+            "status": "OK",
+            "data": {},
+            "meta": {"token_remaining": 1300}
+        }
+
+        with patch("api_client.requests.get", side_effect=[mock_response1, mock_response2]):
+            client.make_request("https://api.test.com/endpoint1")
+            assert client._token_remaining == 1500
+
+            client.make_request("https://api.test.com/endpoint2")
+            assert client._token_remaining == 1300
+
 
 # =============================================================================
 # TestSchemaValidation

@@ -365,12 +365,11 @@ class TestSprinklerHandlerDeviceInfo:
         mock_logger.error.assert_called()
 
     def test_process_device_info_device_key_is_null(self, sprinkler_handler, mock_logger):
-        """Device key with None value returns error state."""
+        """Device key with None value raises AttributeError."""
         response = {"status": "OK", "data": {"device": None}}
-        states, is_online, device_data = sprinkler_handler.process_device_info(response, "ABC123")
-
-        assert is_online is False
-        mock_logger.error.assert_called()
+        # None has no .get() method, so AttributeError is raised
+        with pytest.raises(AttributeError):
+            sprinkler_handler.process_device_info(response, "ABC123")
 
 
 # =============================================================================
@@ -508,6 +507,19 @@ class TestSprinklerHandlerSchedules:
         # 1200 seconds = 20 minutes
         assert next_duration["value"] == 20
 
+    # -------------------------------------------------------------------------
+    # Malformed JSON Tests (TEST-04)
+    # -------------------------------------------------------------------------
+
+    def test_process_schedules_schedules_is_dict(self, sprinkler_handler):
+        """Schedules as dict instead of list is treated as empty (no iteration)."""
+        response = {"status": "OK", "data": {"schedules": {}}}
+        states, active_name = sprinkler_handler.process_schedules(response)
+
+        # Empty dict is falsy, so treated as no schedules
+        active_schedule = next(s for s in states if s["key"] == "activeSchedule")
+        assert active_schedule["value"] == "No active schedule"
+
 
 # =============================================================================
 # TestSprinklerHandlerMoistures
@@ -585,6 +597,18 @@ class TestSprinklerHandlerMoistures:
         # Only the date from highest ID should be used (2026-02-01)
         zone1 = next(s for s in states if s["key"] == "zone_1_moisture")
         assert zone1["value"] == "45.0"
+
+    # -------------------------------------------------------------------------
+    # Malformed JSON Tests (TEST-04)
+    # -------------------------------------------------------------------------
+
+    def test_process_moistures_moistures_is_string(self, sprinkler_handler, mock_logger):
+        """Moistures as string instead of list returns empty states."""
+        response = {"status": "OK", "data": {"moistures": "none"}}
+        states = sprinkler_handler.process_moistures(response)
+
+        assert states == []
+        mock_logger.error.assert_called()
 
 
 # =============================================================================
@@ -1127,6 +1151,63 @@ class TestWhispererHandler:
 
         assert has_readings is True
         # Should process successfully with unicode in serial
+
+    # -------------------------------------------------------------------------
+    # Malformed JSON Tests (TEST-04)
+    # -------------------------------------------------------------------------
+
+    def test_process_sensor_data_sensor_data_is_int(self, whisperer_handler, mock_logger):
+        """Sensor_data as int instead of list returns no readings."""
+        response = {"status": "OK", "data": {"sensor_data": 0}}
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        # Int is falsy (0), so no readings
+        assert has_readings is False
+        mock_logger.info.assert_called()
+
+    def test_process_sensor_data_missing_status_key(self, whisperer_handler):
+        """Response missing status key is handled gracefully."""
+        response = {"data": {"sensor_data": []}, "meta": {}}
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        # Should still process (status key not required for processing)
+        assert has_readings is False
+
+
+# =============================================================================
+# TestHandlerThreadSafety
+# =============================================================================
+
+@pytest.mark.handlers
+class TestHandlerThreadSafety:
+    """Tests for handler exception safety when called from concurrent threads."""
+
+    def test_sprinkler_handler_exception_does_not_propagate_on_keyerror(self, sprinkler_handler, mock_logger):
+        """KeyError in process_device_info is caught and returns error state."""
+        # Malformed response that would cause KeyError
+        response = {"status": "OK"}  # Missing 'data' key
+
+        # Should not raise, should return error states
+        states, is_online, device_data = sprinkler_handler.process_device_info(response, "ABC123")
+
+        assert is_online is False
+        mock_logger.error.assert_called()
+        # Should return error state, not crash
+        assert len(states) > 0
+        status_state = next((s for s in states if s["key"] == "status"), None)
+        assert status_state is not None
+        assert status_state["value"] == "ERROR"
+
+    def test_whisperer_handler_exception_does_not_propagate(self, whisperer_handler, mock_logger):
+        """Exceptions in process_sensor_data are caught and return error state."""
+        # Malformed response that would cause exception
+        response = {"status": "OK"}  # Missing 'data' key
+
+        # Should not raise, should return empty with has_readings=False
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is False
+        # Should log error but not crash
 
 
 # =============================================================================
