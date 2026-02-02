@@ -90,6 +90,12 @@ THROTTLE_LIMIT_MINUTES: Final[int] = 61
 FORECAST_UPDATE_INTERVAL_MINUTES: Final[int] = 60
 """Interval between forecast updates in minutes."""
 
+TOKEN_PAUSE_THRESHOLD: Final[int] = 100
+"""Token count below which polling should pause proactively."""
+
+TOKEN_WARNING_THRESHOLD: Final[int] = 200
+"""Token count below which warnings are logged."""
+
 
 # =============================================================================
 # Event Sets

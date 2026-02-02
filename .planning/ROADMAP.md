@@ -14,8 +14,8 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Foundation & Critical Fixes** - Fix silent failures, establish development workflow, quick quality wins
 - [x] **Phase 2: Base Modules** - Extract no-dependency modules (constants, exceptions, utils)
-- [ ] **Phase 3: API Client** - Extract API layer with throttle management and reliability features
-- [ ] **Phase 4: Validators** - Extract configuration validation functions
+- [x] **Phase 3: API Client** - Extract API layer with throttle management and reliability features
+- [x] **Phase 4: Validators** - Extract configuration validation functions
 - [ ] **Phase 5: Device Handlers** - Extract device update logic, slim plugin.py to coordinator
 - [ ] **Phase 6: Testing Expansion** - Expand test coverage to 87%, cover all critical paths
 
@@ -64,10 +64,12 @@ Plans:
   3. Throttle state persists across plugin restarts (saved to pluginPrefs)
   4. API responses are validated against schema, warnings logged on format changes
   5. Token budget warnings logged when remaining tokens drop below 200
-**Plans**: TBD
+**Plans**: 3 plans in 2 waves
 
 Plans:
-- [ ] 03-01: TBD
+- [x] 03-01-PLAN.md — Create api_client.py with NetroAPIClient class and throttle management
+- [x] 03-02-PLAN.md — Update plugin.py to use NetroAPIClient for all API calls
+- [x] 03-03-PLAN.md — Add comprehensive tests for api_client module
 
 ### Phase 4: Validators
 **Goal**: Configuration validation extracted to standalone module
@@ -77,10 +79,11 @@ Plans:
   1. validators.py exists with all validate*ConfigUi functions
   2. Validation logic is pure functions with no side effects
   3. Plugin configuration validation works identically to before extraction
-**Plans**: TBD
+**Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 04-01: TBD
+- [x] 04-01-PLAN.md — Create validators.py with pure validation functions
+- [x] 04-02-PLAN.md — Update plugin.py callbacks and add comprehensive tests
 
 ### Phase 5: Device Handlers
 **Goal**: Device update logic extracted, plugin.py reduced to slim coordinator (~400 lines)
@@ -120,9 +123,9 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Foundation & Critical Fixes | 3/3 | Complete | 2026-02-01 |
-| 2. Base Modules | 0/2 | Planned | - |
-| 3. API Client | 0/TBD | Not started | - |
-| 4. Validators | 0/TBD | Not started | - |
+| 2. Base Modules | 2/2 | Complete | 2026-02-01 |
+| 3. API Client | 3/3 | Complete | 2026-02-01 |
+| 4. Validators | 2/2 | Complete | 2026-02-01 |
 | 5. Device Handlers | 0/TBD | Not started | - |
 | 6. Testing Expansion | 0/TBD | Not started | - |
 
@@ -130,4 +133,6 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 *Roadmap created: 2026-02-01*
 *Phase 1 planned: 2026-02-01*
 *Phase 2 planned: 2026-02-01*
+*Phase 3 planned: 2026-02-01*
+*Phase 4 planned: 2026-02-01*
 *Requirements coverage: 47/47 (100%)*

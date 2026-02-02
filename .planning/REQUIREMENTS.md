@@ -30,8 +30,8 @@
 - [ ] **MOD-01**: Extract constants.py (API URLs, defaults, enums) ~80 lines
 - [ ] **MOD-02**: Extract exceptions.py (custom exception classes) ~30 lines
 - [ ] **MOD-03**: Extract utils.py (timestamp parsing, helper functions) ~100 lines
-- [ ] **MOD-04**: Extract api_client.py (Netro API HTTP client + throttle management) ~250 lines
-- [ ] **MOD-05**: Extract validators.py (all validation functions) ~200 lines
+- [x] **MOD-04**: Extract api_client.py (Netro API HTTP client + throttle management) ~250 lines
+- [x] **MOD-05**: Extract validators.py (all validation functions) ~200 lines
 - [ ] **MOD-06**: Extract device_handlers.py (SprinklerHandler, WhispererHandler) ~260 lines
 - [ ] **MOD-07**: Refactor plugin.py to slim coordinator ~400 lines (down from 1635)
 - [ ] **MOD-08**: Update all imports throughout codebase
@@ -53,14 +53,14 @@
 
 ### API Reliability
 
-- [ ] **API-01**: Implement proactive throttle prevention (pause polling when tokens <100)
-- [ ] **API-02**: Add token budget tracking and warnings at <200 remaining
-- [ ] **API-03**: Persist throttle state to pluginPrefs (survives plugin restart)
-- [ ] **API-04**: Restore throttle state from pluginPrefs on startup
-- [ ] **API-05**: Add API response schema validation (detect format changes)
-- [ ] **API-06**: Create schema definitions for all API endpoints
-- [ ] **API-07**: Add version detection for API responses
-- [ ] **API-08**: Log warnings when API response format doesn't match schema
+- [x] **API-01**: Implement proactive throttle prevention (pause polling when tokens <100)
+- [x] **API-02**: Add token budget tracking and warnings at <200 remaining
+- [x] **API-03**: Persist throttle state to pluginPrefs (survives plugin restart)
+- [x] **API-04**: Restore throttle state from pluginPrefs on startup
+- [x] **API-05**: Add API response schema validation (detect format changes)
+- [x] **API-06**: Create schema definitions for all API endpoints
+- [x] **API-07**: Add version detection for API responses
+- [x] **API-08**: Log warnings when API response format doesn't match schema
 
 ### Development Workflow
 
@@ -119,8 +119,8 @@ Which phases cover which requirements. Updated during roadmap creation.
 | MOD-01 | Phase 2 | Complete |
 | MOD-02 | Phase 2 | Complete |
 | MOD-03 | Phase 2 | Complete |
-| MOD-04 | Phase 3 | Pending |
-| MOD-05 | Phase 4 | Pending |
+| MOD-04 | Phase 3 | Complete |
+| MOD-05 | Phase 4 | Complete |
 | MOD-06 | Phase 5 | Pending |
 | MOD-07 | Phase 5 | Pending |
 | MOD-08 | Phase 5 | Pending |
@@ -136,14 +136,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-08 | Phase 6 | Pending |
 | TEST-09 | Phase 6 | Pending |
 | TEST-10 | Phase 6 | Pending |
-| API-01 | Phase 3 | Pending |
-| API-02 | Phase 3 | Pending |
-| API-03 | Phase 3 | Pending |
-| API-04 | Phase 3 | Pending |
-| API-05 | Phase 3 | Pending |
-| API-06 | Phase 3 | Pending |
-| API-07 | Phase 3 | Pending |
-| API-08 | Phase 3 | Pending |
+| API-01 | Phase 3 | Complete |
+| API-02 | Phase 3 | Complete |
+| API-03 | Phase 3 | Complete |
+| API-04 | Phase 3 | Complete |
+| API-05 | Phase 3 | Complete |
+| API-06 | Phase 3 | Complete |
+| API-07 | Phase 3 | Complete |
+| API-08 | Phase 3 | Complete |
 | DEV-01 | Phase 1 | Complete |
 | DEV-02 | Phase 1 | Complete |
 | DEV-03 | Phase 1 | Complete |

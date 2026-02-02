@@ -40,7 +40,7 @@ import json
 import copy
 import traceback
 from operator import itemgetter
-from datetime import datetime, timedelta, date
+from datetime import datetime, date
 
 import indigo
 import requests
@@ -50,22 +50,19 @@ from constants import (
     MAX_ZONE_DURATION_SECONDS,
     DEFAULT_API_TIMEOUT_SECONDS,
     MINIMUM_POLLING_INTERVAL_MINUTES,
-    THROTTLE_LIMIT_MINUTES,
-    DEVICE_INFO_ENDPOINT,
-    DEVICE_SCHEDULES_ENDPOINT,
-    DEVICE_MOISTURES_ENDPOINT,
-    DEVICE_SENSOR_DATA_ENDPOINT,
-    DEVICE_WATER_ENDPOINT,
-    DEVICE_STOP_WATER_ENDPOINT,
-    DEVICE_SET_STATUS_ENDPOINT,
-    DEVICE_NO_WATER_ENDPOINT,
-    DEVICE_REPORT_WEATHER_ENDPOINT,
     ZONE_START_ENDPOINT,
     OPERATIONAL_ERROR_EVENTS,
     COMM_ERROR_EVENTS,
 )
 from exceptions import ThrottleDelayError
 from utils import get_key_from_dict
+from validators import (
+    validate_device_config,
+    validate_action_config,
+    validate_event_config,
+    validate_prefs_config,
+)
+from api_client import NetroAPIClient
 
 
 ################################################################################
@@ -82,7 +79,7 @@ class Plugin(indigo.PluginBase):
         pollingInterval: Minutes between API polls (default 3, minimum 3)
         timeout: API request timeout in seconds (default 5)
         maxZoneRunTime: Maximum allowed zone runtime in seconds (default 3600)
-        throttle_next_call: Datetime when throttle period expires (None if not throttled)
+        api_client: NetroAPIClient instance for all API communication
         person: Dict containing Netro user and device data from API
         netro_devices: List of Netro devices from API response
         triggerDict: Dict of active Indigo triggers for event handling
@@ -112,9 +109,16 @@ class Plugin(indigo.PluginBase):
 
         self.triggerDict = {}
 
-        # Initialize throttle and weather update tracking
-        self.throttle_next_call = None
+        # Initialize weather update tracking
         self._next_weather_update = datetime.now()
+
+        # Initialize API client with prefs callbacks for throttle state persistence
+        self.api_client = NetroAPIClient(
+            timeout=self.timeout,
+            logger=self.logger,
+            prefs_getter=lambda: dict(self.pluginPrefs),
+            prefs_setter=lambda k, v: self.pluginPrefs.__setitem__(k, v)
+        )
 
         # Initialize data structures populated by API calls
         self.person = {}
@@ -125,149 +129,6 @@ class Plugin(indigo.PluginBase):
 
     ########################################
     # Internal helper methods
-    ########################################
-
-    # pylint: disable=too-many-branches,too-many-statements
-    def _make_api_call(self, url, request_method="get", data=None):
-        """Make an API call to Netro API with proper error handling.
-
-        Args:
-            url: Full URL to call
-            request_method: HTTP method (get, post, put)
-            data: Optional data dict for POST/PUT requests
-
-        Returns:
-            JSON response data or True for 204 responses
-
-        Raises:
-            ThrottleDelayError: If API calls are throttled
-        """
-        # Check if we're in a throttle period
-        if self.throttle_next_call and datetime.now() < self.throttle_next_call:
-            raise ThrottleDelayError(
-                f"api calls throttled until {self.throttle_next_call:%H:%M:%S}"
-            )
-        elif self.throttle_next_call:
-            # Throttle period has expired, reset it
-            self.throttle_next_call = None
-            self.logger.info("api rate limit throttle period has expired - resuming normal operation")
-
-        try:
-            self.logger.debug(f"API call: {request_method.upper()} {url}")
-
-            # Select HTTP method
-            if request_method == "put":
-                method = requests.put
-            elif request_method == "post":
-                method = requests.post
-            else:
-                method = requests.get
-
-            # Make the request
-            if data and request_method in ["put", "post"]:
-                r = method(url, data=json.dumps(data), headers=self.headers, timeout=self.timeout)
-            else:
-                r = method(url, headers=self.headers, timeout=self.timeout)
-
-            # Handle response
-            if r.status_code == 200:
-                return_val = r.json()
-                self._displayed_connection_error = False
-            elif r.status_code == 204:
-                return_val = True
-                self._displayed_connection_error = False
-            else:
-                r.raise_for_status()
-                return_val = None
-
-            return return_val
-        except requests.exceptions.ConnectionError as exc:
-            if not self._displayed_connection_error:
-                self.logger.error("Connection to Netro API server failed. Will continue to retry silently.")
-                self._displayed_connection_error = True
-            raise exc
-        except requests.exceptions.ReadTimeout as exc:
-            if not self._displayed_connection_error:
-                self.logger.error(
-                    "Unable to contact device - the controller may be offline. "
-                    "Will continue to retry silently.")
-                self._displayed_connection_error = True
-            raise exc
-        except requests.exceptions.Timeout as exc:
-            if not self._displayed_connection_error:
-                self.logger.error("Connection to Netro API server failed. Will continue to retry silently.")
-                self._displayed_connection_error = True
-            raise exc
-        except requests.exceptions.HTTPError as exc:
-            # Check for Netro-specific rate limit error (error code 3)
-            # Netro returns HTTP 400 with JSON error response, not HTTP 429
-            try:
-                error_data = exc.response.json()
-                if error_data.get("status") == "ERROR":
-                    errors = error_data.get("errors", [])
-                    meta = error_data.get("meta", {})
-
-                    # Check for rate limit error (code 3)
-                    for error in errors:
-                        if error.get("code") == 3:
-                            # Extract reset time from meta
-                            token_reset = meta.get("token_reset", "")
-                            token_remaining = meta.get("token_remaining", 0)
-
-                            # Parse reset time (format: "2026-02-01T00:00:00")
-                            try:
-                                reset_dt = datetime.strptime(token_reset, "%Y-%m-%dT%H:%M:%S")
-                                self.throttle_next_call = reset_dt
-                                # Format token message based on positive/negative
-                                if token_remaining >= 0:
-                                    token_msg = f"{token_remaining} tokens remaining"
-                                else:
-                                    token_msg = f"{abs(token_remaining)} tokens over limit"
-                                error_msg = (
-                                    f"netro api rate limit exceeded ({token_msg}), "
-                                    f"calls will resume after {reset_dt.strftime('%Y-%m-%d %H:%M:%S')}, "
-                                    f"consider increasing polling interval in plugin preferences"
-                                )
-                            except (ValueError, TypeError):
-                                # Fallback to fixed delay if we can't parse reset time
-                                self.throttle_next_call = datetime.now() + timedelta(minutes=THROTTLE_LIMIT_MINUTES)
-                                error_msg = (
-                                    f"netro api rate limit exceeded, "
-                                    f"will retry in {THROTTLE_LIMIT_MINUTES} minutes, "
-                                    f"consider increasing polling interval"
-                                )
-
-                            self.logger.warning(error_msg)
-                            self._fireTrigger("rateLimitExceeded")
-                            raise ThrottleDelayError(error_msg)
-                        elif error.get("code") == 1:
-                            # Invalid key error
-                            self.logger.error(
-                                f"invalid netro serial number: {error.get('message')}, "
-                                f"verify the serial number in your device configuration"
-                            )
-            except (ValueError, AttributeError):
-                # If we can't parse JSON, check for HTTP 429 as fallback
-                if exc.response.status_code == 429:
-                    self.throttle_next_call = datetime.now() + timedelta(minutes=THROTTLE_LIMIT_MINUTES)
-                    error_msg = (
-                        f"api rate limit exceeded (http 429), "
-                        f"will retry in {THROTTLE_LIMIT_MINUTES} minutes"
-                    )
-                    self.logger.warning(error_msg)
-                    self._fireTrigger("rateLimitExceeded")
-                    raise ThrottleDelayError(error_msg)
-            raise exc
-        except ThrottleDelayError:
-            # Already logged when raised, just re-raise to propagate
-            raise
-        except Exception as exc:
-            self.logger.error(
-                f"Connection to Netro API server failed with exception: {exc.__class__.__name__}. "
-                f"Check the log file for full details.")
-            self.logger.debug(
-                f"Connection to Netro API server failed with exception:\n{traceback.format_exc(10)}")
-            raise exc
     ########################################
     def _get_device_dict(self, dev_id):
         """Get device dictionary from cached person data by device ID.
@@ -329,8 +190,7 @@ class Plugin(indigo.PluginBase):
                 if dev.deviceTypeId == "sprinkler":
                     try:
                         # Get device info using serial number from device address
-                        reply_dict = self._make_api_call(
-                            f"{DEVICE_INFO_ENDPOINT}?key={dev.address}")
+                        reply_dict = self.api_client.get_device_info(dev.address)
 
                         reply_dict_data = reply_dict["data"]
                         reply_dict_device = reply_dict_data["device"]
@@ -389,57 +249,12 @@ class Plugin(indigo.PluginBase):
                             {"key": "token_reset", 'value': reply_dict_device["token_reset"]})
                         update_list.append({"key": "name", "value": reply_dict_device["name"]})
 
-                        # Warn if API tokens are running low - parse defensively
-                        try:
-                            tokens_remaining = int(reply_dict_device.get("token_remaining", 0))
-                        except (ValueError, TypeError):
-                            tokens_remaining = 0
-                            self.logger.warning("Invalid token_remaining value from API - treating as 0 (no tokens available). API may be throttling requests.")
-
-                        try:
-                            token_reset = str(reply_dict_device.get('token_reset', 'unknown'))
-                        except (ValueError, TypeError):
-                            token_reset = 'unknown'
-
-                        # Calculate calls per polling cycle (info + schedules + moistures = 3)
-                        calls_per_cycle = 3
-                        try:
-                            cycles_remaining = tokens_remaining // calls_per_cycle
-                            hours_remaining = (cycles_remaining * self.pollingInterval) / 60
-                        except (ZeroDivisionError, TypeError):
-                            cycles_remaining = 0
-                            hours_remaining = 0.0
-                            self.logger.debug("error calculating token cycle estimates, using defaults")
-
-                        if tokens_remaining <= 0:
-                            self.logger.error(
-                                f"api rate limit exceeded - no tokens remaining until {token_reset}, "
-                                f"increase polling interval to prevent this tomorrow"
-                            )
-                        elif tokens_remaining < 50:
-                            self.logger.error(
-                                f"low api tokens: {tokens_remaining} of 2000 remaining "
-                                f"(~{hours_remaining:.1f} hours), resets at {token_reset}, "
-                                f"recommend increasing polling interval"
-                            )
-                        elif tokens_remaining < 200:
-                            self.logger.warning(
-                                f"api tokens low: {tokens_remaining} of 2000 remaining "
-                                f"(~{hours_remaining:.1f} hours), resets at {token_reset}, "
-                                f"consider increasing polling interval"
-                            )
-                        elif tokens_remaining < 500:
-                            self.logger.info(
-                                f"api tokens: {tokens_remaining} of 2000 remaining today "
-                                f"(~{hours_remaining:.1f} hours at current rate)"
-                            )
-
+                        # Token warnings are now handled by api_client
                         activeScheduleName = None
 
                         # Get the current schedule for the device - it will tell us if it's running or not
                         try:
-                            schedule_dict = self._make_api_call(
-                                f"{DEVICE_SCHEDULES_ENDPOINT}?key={netroSerial}")
+                            schedule_dict = self.api_client.get_schedules(netroSerial)
                             # Loop all possible schedules to find active and next
                             all_schedules_data = schedule_dict["data"]
                             all_schedules = all_schedules_data["schedules"]
@@ -557,7 +372,7 @@ class Plugin(indigo.PluginBase):
                         dev.updateStatesOnServer(update_moisture)
 
                     except ThrottleDelayError:
-                        # Already logged detailed error in _make_api_call, just skip this device
+                        # Already logged detailed error in api_client, just skip this device
                         pass
                     except requests.exceptions.HTTPError as exc:
                         # Check if we already logged a detailed error for this
@@ -574,7 +389,7 @@ class Plugin(indigo.PluginBase):
                                         for error in errors
                                     )
                                     if is_recognized:
-                                        # Already logged specific error in _make_api_call
+                                        # Already logged specific error in api_client
                                         pass
                                     else:
                                         # Unrecognized error code - log it
@@ -626,7 +441,7 @@ class Plugin(indigo.PluginBase):
                         else:
                             dev.updateStateImageOnServer(indigo.kStateImageSel.Auto)
                     except ThrottleDelayError:
-                        # Already logged detailed warning in _make_api_call, just skip this device
+                        # Already logged detailed warning in api_client, just skip this device
                         pass
                     except Exception:
                         self.logger.error(f"error getting sensor data from netro api for device \"{dev.name}\"")
@@ -644,8 +459,7 @@ class Plugin(indigo.PluginBase):
         Returns:
             List of dicts with zone moisture states
         """
-        url = f"{DEVICE_MOISTURES_ENDPOINT}?key={serial}"
-        jsonData = self._make_api_call(url)
+        jsonData = self.api_client.get_moistures(serial)
         jdata = jsonData['data']
         jmoistures = jdata['moistures']
 
@@ -683,9 +497,8 @@ class Plugin(indigo.PluginBase):
         Returns:
             List of dicts with sensor states
         """
-        url = f"{DEVICE_SENSOR_DATA_ENDPOINT}?key={serial}"
-        self.logger.debug(url)
-        jsonData = self._make_api_call(url)
+        self.logger.debug(f"Getting sensor data for {serial}")
+        jsonData = self.api_client.get_sensor_data(serial)
         jdata = jsonData['data']
         jmeta = jsonData['meta']
         sensorReadings = jdata['sensor_data']
@@ -778,13 +591,23 @@ class Plugin(indigo.PluginBase):
         The polling interval is configurable but must be at least 3 minutes
         to avoid hitting Netro's API rate limit (2000 calls/day).
 
+        Includes proactive pause when API tokens drop below threshold to
+        prevent exhausting the daily limit.
+
         Exceptions during updates are silently caught to prevent the thread
         from exiting - errors are logged within _update_from_netro().
         """
         self.logger.debug("Starting concurrent thread")
         while True:
             try:
-                self._update_from_netro()
+                # Check proactive pause before polling
+                if self.api_client.should_pause_polling:
+                    self.logger.warning(
+                        f"Polling paused: only {self.api_client.token_remaining} tokens "
+                        f"remaining (threshold: 100), will resume when tokens reset"
+                    )
+                else:
+                    self._update_from_netro()
             except self.StopThread:
                 # Clean shutdown requested by Indigo - must re-raise
                 self.logger.debug("Concurrent thread stopping")
@@ -845,200 +668,58 @@ class Plugin(indigo.PluginBase):
     ########################################
     # pylint: disable=unused-argument
     def validateDeviceConfigUi(self, valuesDict, typeId, devId):
-        """Validate device configuration before saving.
-
-        Args:
-            valuesDict: Device configuration values from UI
-            typeId: Device type ID
-            devId: Device ID
-
-        Returns:
-            Tuple of (is_valid, valuesDict, errorsDict)
-        """
+        """Validate device configuration before saving."""
         self.logger.threaddebug("validateDeviceConfigUi")
-        errorsDict = indigo.Dict()
+        is_valid, sanitized, errors = validate_device_config(dict(valuesDict), typeId)
 
-        # Validate controller serial number (required)
-        if typeId == "sprinkler":
-            serial = valuesDict.get("address", "").strip()
-            if not serial:
-                errorsDict["address"] = "Serial number is required for Netro controller"
-            elif len(serial) < 8:
-                errorsDict["address"] = "Serial number appears too short (should be 12 hex characters)"
-
-        # Validate Whisperer sensor serial number and set capabilities
-        if typeId == "Whisperer":
-            serial = valuesDict.get("address", "").strip()
-            if not serial:
-                errorsDict["address"] = "Serial number is required for Whisperer sensor"
-            elif len(serial) < 8:
-                errorsDict["address"] = "Serial number appears too short"
-
-            # Set sensor capabilities
-            valuesDict["SupportsBatteryLevel"] = True
-            valuesDict["NumTemperatureInputs"] = 1
-            valuesDict["NumHumidityInputs"] = 1
-            valuesDict["SupportsTemperatureReporting"] = True
-
-        if len(errorsDict):
-            return False, valuesDict, errorsDict
-        return True, valuesDict
+        if is_valid:
+            # Update valuesDict with sanitized values
+            for key, value in sanitized.items():
+                valuesDict[key] = value
+            return True, valuesDict
+        errorsDict = indigo.Dict(errors)
+        return False, valuesDict, errorsDict
 
     ########################################
-    # pylint: disable=unused-argument,too-many-branches
+    # pylint: disable=unused-argument
     def validateActionConfigUi(self, valuesDict, typeId, devId):
-        """Validate action configuration before saving.
-
-        Args:
-            valuesDict: Action configuration values
-            typeId: Action type ID
-            devId: Device ID
-
-        Returns:
-            Tuple of (is_valid, valuesDict, errorsDict)
-        """
+        """Validate action configuration before saving."""
         self.logger.threaddebug(f"validateActionConfigUi for {typeId}")
-        errorsDict = indigo.Dict()
+        is_valid, sanitized, errors = validate_action_config(dict(valuesDict), typeId)
 
-        if typeId == "startZoneWithDelay":
-            # Validate duration (1-180 minutes)
-            try:
-                duration = int(valuesDict.get("duration", 15))
-                if duration < 1 or duration > 180:
-                    errorsDict["duration"] = "Duration must be between 1 and 180 minutes"
-            except (ValueError, TypeError):
-                errorsDict["duration"] = "Duration must be a valid number"
-
-            # Validate delay (0-60 minutes)
-            try:
-                delay = int(valuesDict.get("delay", 0))
-                if delay < 0 or delay > 60:
-                    errorsDict["delay"] = "Delay must be between 0 and 60 minutes"
-            except (ValueError, TypeError):
-                errorsDict["delay"] = "Delay must be a valid number"
-
-            # Validate start_time if provided (must be valid Unix timestamp)
-            start_time = valuesDict.get("start_time", "").strip()
-            if start_time:
-                try:
-                    int(start_time)
-                except ValueError:
-                    errorsDict["start_time"] = "Start time must be a valid Unix timestamp (integer)"
-
-            # Validate zone selected
-            if not valuesDict.get("zone"):
-                errorsDict["zone"] = "You must select a zone"
-
-        elif typeId == "reportWeather":
-            # Validate required temperature field
-            temperature = valuesDict.get("temperature", "").strip()
-            if not temperature:
-                errorsDict["temperature"] = "Current temperature is required"
-            else:
-                try:
-                    float(temperature)
-                except ValueError:
-                    errorsDict["temperature"] = "Temperature must be a valid number"
-
-            # Validate optional numeric fields if provided
-            for field, label, min_val, max_val in [
-                ("t_max", "Max temperature", -50, 150),
-                ("t_min", "Min temperature", -50, 150),
-                ("humidity", "Humidity", 0, 100),
-                ("rain", "Rainfall", 0, 100),
-                ("rain_prob", "Rain probability", 0, 100),
-                ("wind_speed", "Wind speed", 0, 200),
-                ("pressure", "Pressure", 20, 35)
-            ]:
-                value = valuesDict.get(field, "").strip()
-                if value:
-                    try:
-                        num_value = float(value)
-                        if num_value < min_val or num_value > max_val:
-                            errorsDict[field] = f"{label} must be between {min_val} and {max_val}"
-                    except ValueError:
-                        errorsDict[field] = f"{label} must be a valid number"
-
-            # Validate date format if provided
-            date_str = valuesDict.get("date", "").strip()
-            if date_str:
-                try:
-                    datetime.strptime(date_str, "%Y-%m-%d")
-                except ValueError:
-                    errorsDict["date"] = "Date must be in YYYY-MM-DD format"
-
-        if len(errorsDict):
-            return False, valuesDict, errorsDict
-        return True, valuesDict
+        if is_valid:
+            for key, value in sanitized.items():
+                valuesDict[key] = value
+            return True, valuesDict
+        errorsDict = indigo.Dict(errors)
+        return False, valuesDict, errorsDict
 
     ########################################
     # pylint: disable=unused-argument
     def validateEventConfigUi(self, valuesDict, typeId, devId):
-        """Validate event/trigger configuration before saving.
-
-        Args:
-            valuesDict: Event configuration values from UI
-            typeId: Event type ID
-            devId: Device ID
-
-        Returns:
-            Tuple of (is_valid, valuesDict, errorsDict)
-        """
+        """Validate event/trigger configuration before saving."""
         self.logger.threaddebug("validateEventConfigUi")
-        errorsDict = indigo.Dict()
-        if typeId == "sprinklerError":
-            if valuesDict["serial"] == "":
-                errorsDict["serial"] = "You must select a Netro Sprinkler device."
-        if len(errorsDict):
-            return False, valuesDict, errorsDict
-        return True, valuesDict
+        is_valid, sanitized, errors = validate_event_config(dict(valuesDict), typeId)
+
+        if is_valid:
+            for key, value in sanitized.items():
+                valuesDict[key] = value
+            return True, valuesDict
+        errorsDict = indigo.Dict(errors)
+        return False, valuesDict, errorsDict
 
     ########################################
     def validatePrefsConfigUi(self, valuesDict):
-        """Validate plugin configuration before saving.
-
-        Args:
-            valuesDict: Configuration values from UI
-
-        Returns:
-            Tuple of (is_valid, valuesDict, errorsDict)
-        """
+        """Validate plugin configuration before saving."""
         self.logger.threaddebug("validatePrefsConfigUi")
-        errorsDict = indigo.Dict()
+        is_valid, sanitized, errors = validate_prefs_config(dict(valuesDict))
 
-        # Validate polling interval (minimum 3 minutes to avoid rate limits)
-        try:
-            polling = int(valuesDict.get("pollingInterval", 3))
-            if polling < 3:
-                errorsDict["pollingInterval"] = "Polling interval must be at least 3 minutes to avoid API rate limits"
-            elif polling > 1440:
-                errorsDict["pollingInterval"] = "Polling interval cannot exceed 1440 minutes (24 hours)"
-        except (ValueError, TypeError):
-            errorsDict["pollingInterval"] = "Polling interval must be a valid number"
-
-        # Validate API timeout (1-60 seconds)
-        try:
-            timeout = int(valuesDict.get("apiTimeout", 5))
-            if timeout < 1:
-                errorsDict["apiTimeout"] = "Timeout must be at least 1 second"
-            elif timeout > 60:
-                errorsDict["apiTimeout"] = "Timeout cannot exceed 60 seconds"
-        except (ValueError, TypeError):
-            errorsDict["apiTimeout"] = "Timeout must be a valid number"
-
-        # Validate max zone runtime (60-10800 seconds = 1 minute to 3 hours)
-        try:
-            max_runtime = int(valuesDict.get("maxZoneRunTime", 3600))
-            if max_runtime < 60:
-                errorsDict["maxZoneRunTime"] = "Max runtime must be at least 60 seconds (1 minute)"
-            elif max_runtime > 10800:
-                errorsDict["maxZoneRunTime"] = "Max runtime cannot exceed 10800 seconds (3 hours)"
-        except (ValueError, TypeError):
-            errorsDict["maxZoneRunTime"] = "Max runtime must be a valid number"
-
-        if len(errorsDict):
-            return False, valuesDict, errorsDict
-        return True, valuesDict
+        if is_valid:
+            for key, value in sanitized.items():
+                valuesDict[key] = value
+            return True, valuesDict
+        errorsDict = indigo.Dict(errors)
+        return False, valuesDict, errorsDict
 
     ########################################
     def closedPrefsConfigUi(self, valuesDict, userCancelled):
@@ -1219,19 +900,16 @@ class Plugin(indigo.PluginBase):
             Advanced schedule actions (RunNewSchedule, PauseSchedule, etc.)
             are not currently supported due to Netro API limitations.
         """
-        # Check if throttle period has expired
-        if self.throttle_next_call and datetime.now() < self.throttle_next_call:
+        # Check if API is throttled
+        if self.api_client.is_throttled:
             self.logger.error(
                 f"API calls have violated rate limit - next connection attempt at "
-                f"{self.throttle_next_call:%H:%M:%S}")
+                f"{self.api_client.throttle_expires:%H:%M:%S}")
             if action.sprinklerAction == indigo.kSprinklerAction.ZoneOn:
                 self._fireTrigger("startZoneFailed", dev.id)
             elif action.sprinklerAction == indigo.kSprinklerAction.AllZonesOff:
                 self._fireTrigger("stopFailed", dev.id)
             return
-        elif self.throttle_next_call:
-            # Throttle period has expired, reset it
-            self.throttle_next_call = None
 
         # ZONE ON #
         if action.sprinklerAction == indigo.kSprinklerAction.ZoneOn:
@@ -1245,7 +923,7 @@ class Plugin(indigo.PluginBase):
                                  else self.maxZoneRunTime),
                 }
                 try:
-                    self._make_api_call(ZONE_START_ENDPOINT, request_method="put", data=data)
+                    self.api_client.make_request(ZONE_START_ENDPOINT, method="put", data=data)
                     self.logger.info(f'sent "{dev.name} - {zoneName}" on')
                     dev.updateStateOnServer("activeZone", action.zoneIndex)
                 except requests.exceptions.RequestException:
@@ -1263,11 +941,8 @@ class Plugin(indigo.PluginBase):
 
         # ALL ZONES OFF #
         elif action.sprinklerAction == indigo.kSprinklerAction.AllZonesOff:
-            data = {
-                "id": dev.states["id"],
-            }
             try:
-                self._make_api_call(DEVICE_STOP_WATER_ENDPOINT, request_method="post", data=data)
+                self.api_client.stop_watering(dev.address)
                 self.logger.info(f'sent "{dev.name}" {"all zones off"}')
                 dev.updateStateOnServer("activeZone", 0)
             except requests.exceptions.RequestException:
@@ -1332,11 +1007,7 @@ class Plugin(indigo.PluginBase):
 
         if dev_dict:
             try:
-                data = {
-                    "key": dev.address,
-                    "days": num_Days,
-                }
-                response = self._make_api_call(DEVICE_NO_WATER_ENDPOINT, request_method="post", data=data)
+                response = self.api_client.set_no_water(dev.address, num_Days)
                 response_status = response["status"]
                 self.logger.debug(response)
                 if response_status == "OK":
@@ -1361,11 +1032,8 @@ class Plugin(indigo.PluginBase):
         """
         try:
             # Set device status: 0 = standby (off), 1 = online (on)
-            data = {
-                "key": dev.address,
-                "status": 0 if pluginAction.props["mode"] else 1,
-            }
-            self._make_api_call(DEVICE_SET_STATUS_ENDPOINT, request_method="post", data=data)
+            status = 0 if pluginAction.props["mode"] else 1
+            self.api_client.set_device_status(dev.address, status)
             mode_status = 'on' if pluginAction.props['mode'] else 'off'
             self.logger.info(f"Standby mode for controller '{dev.name}' turned {mode_status}")
         except Exception:
@@ -1400,30 +1068,20 @@ class Plugin(indigo.PluginBase):
                 self.logger.error(f"Delay must be between 0 and 60 minutes (got {delay})")
                 return
 
-            # Build API request (use device's serial number, not plugin prefs)
-            data = {
-                "key": dev.address,
-                "zones": [
-                    {
-                        "id": zone_id,
-                        "duration": duration
-                    }
-                ]
-            }
+            # Build zones list for API
+            zones = [{"id": zone_id, "duration": duration}]
 
-            # Add optional parameters
-            if delay > 0:
-                data["delay"] = delay
-
+            # Parse start_time if provided
+            start_time_int = None
             if start_time:
                 try:
-                    data["start_time"] = int(start_time)
+                    start_time_int = int(start_time)
                 except ValueError:
                     self.logger.error(f"Invalid start_time format (must be Unix timestamp): {start_time}")
                     return
 
             # Make API call
-            response = self._make_api_call(DEVICE_WATER_ENDPOINT, request_method="post", data=data)
+            response = self.api_client.start_watering(dev.address, zones, delay, start_time_int)
             response_status = response.get("status")
 
             if response_status == "OK":
@@ -1453,9 +1111,8 @@ class Plugin(indigo.PluginBase):
             dev: Sprinkler controller device
         """
         try:
-            # Build weather data payload (use device's serial number, not plugin prefs)
-            data = {
-                "key": dev.address,
+            # Build weather data payload
+            weather_data = {
                 "condition": int(pluginAction.props.get("condition", 0)),
                 "date": pluginAction.props.get("date", "").strip() or date.today().strftime("%Y-%m-%d")
             }
@@ -1478,25 +1135,25 @@ class Plugin(indigo.PluginBase):
                     try:
                         # Convert to appropriate type (float for most, int for humidity/rain_prob)
                         if field in ["humidity", "rain_prob"]:
-                            data[api_key] = int(value)
+                            weather_data[api_key] = int(value)
                         else:
-                            data[api_key] = float(value)
+                            weather_data[api_key] = float(value)
                     except ValueError:
                         self.logger.warning(f"Invalid value for {field}: {value}, skipping")
 
             # Validate required temperature field
-            if "t" not in data:
+            if "t" not in weather_data:
                 self.logger.error("Current temperature is required for weather reporting")
                 return
 
             # Make API call
-            response = self._make_api_call(DEVICE_REPORT_WEATHER_ENDPOINT, request_method="post", data=data)
+            response = self.api_client.report_weather(dev.address, weather_data)
             response_status = response.get("status")
 
             if response_status == "OK":
                 self.logger.info(
-                    f"Weather data reported to Netro for {data['date']}: "
-                    f"{data.get('t')}°F, condition={data['condition']}")
+                    f"Weather data reported to Netro for {weather_data['date']}: "
+                    f"{weather_data.get('t')}F, condition={weather_data['condition']}")
             else:
                 self.logger.error(f"Error reporting weather: {response}")
 
