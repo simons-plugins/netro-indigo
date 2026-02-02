@@ -19,8 +19,8 @@ Note:
 
 import json
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Callable, Dict, Final, List, Optional, Set
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Dict, Final, List, Optional, Set, Union
 
 import requests
 
@@ -112,8 +112,8 @@ class NetroAPIClient:
             "Accept": "application/json"
         }
 
-        # Connection error suppression (log once, then silently retry)
-        self._displayed_connection_error: bool = False
+        # Connection error suppression (log once per error type, then silently retry)
+        self._last_error_type: Optional[str] = None
 
         # Restore state from prefs on initialization
         self._restore_throttle_state()
@@ -131,7 +131,9 @@ class NetroAPIClient:
         """
         if not self._throttle_until:
             return False
-        if datetime.now() >= self._throttle_until:
+        # Ensure timezone-aware comparison
+        now = datetime.now(timezone.utc) if self._throttle_until.tzinfo else datetime.now()
+        if now >= self._throttle_until:
             self._throttle_until = None
             self.logger.info("API throttle period expired - resuming normal operation")
             self._save_throttle_state()
@@ -177,7 +179,7 @@ class NetroAPIClient:
         url: str,
         method: str = "get",
         data: Optional[Dict[str, Any]] = None
-    ) -> Any:
+    ) -> Union[Dict[str, Any], bool]:
         """Make API request with error handling and throttle enforcement.
 
         This is the core method for all API communication. It handles:
@@ -237,38 +239,42 @@ class NetroAPIClient:
             # Handle successful responses
             if response.status_code == 200:
                 result = response.json()
-                self._displayed_connection_error = False
+                self._last_error_type = None  # Clear error state on success
 
                 # Validate response schema (warning only)
                 self._validate_response_schema(result, EXPECTED_INFO_KEYS, url)
 
                 # Update token tracking from meta
                 if "meta" in result:
+                    # Validate meta structure
+                    self._validate_response_schema(result["meta"], EXPECTED_META_KEYS, f"{url}/meta")
                     self._update_token_budget(result["meta"])
 
                 return result
 
             if response.status_code == 204:
-                self._displayed_connection_error = False
+                self._last_error_type = None  # Clear error state on success
                 return True
 
             # Non-success status codes
             response.raise_for_status()
 
         except requests.exceptions.ConnectionError:
-            if not self._displayed_connection_error:
+            # Log once per error type to avoid spam
+            if self._last_error_type != "connection":
                 self.logger.error(
                     "Connection to Netro API failed. Will retry silently."
                 )
-                self._displayed_connection_error = True
+                self._last_error_type = "connection"
             raise
 
         except requests.exceptions.Timeout:
-            if not self._displayed_connection_error:
+            # Log once per error type to avoid spam
+            if self._last_error_type != "timeout":
                 self.logger.error(
                     "Netro API request timed out. Will retry silently."
                 )
-                self._displayed_connection_error = True
+                self._last_error_type = "timeout"
             raise
 
         except requests.exceptions.HTTPError as exc:
@@ -311,7 +317,7 @@ class NetroAPIClient:
 
         # Check for rate limit (error code 3 or HTTP 429)
         if error_code == 3 or status_code == 429:
-            self._throttle_until = datetime.now() + timedelta(minutes=THROTTLE_LIMIT_MINUTES)
+            self._throttle_until = datetime.now(timezone.utc) + timedelta(minutes=THROTTLE_LIMIT_MINUTES)
             self._save_throttle_state()
             self.logger.warning(
                 f"API rate limit exceeded. Throttled until {self._throttle_until:%H:%M:%S}"
@@ -350,9 +356,12 @@ class NetroAPIClient:
             self._token_remaining = int(meta.get("token_remaining", 2000))
             reset_str = meta.get("token_reset", "")
             if reset_str:
-                self._token_reset = datetime.strptime(reset_str, "%Y-%m-%dT%H:%M:%S")
+                # Parse as UTC since API returns UTC timestamps
+                self._token_reset = datetime.strptime(reset_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
         except (ValueError, TypeError) as exc:
             self.logger.warning(f"Could not parse token info from response: {exc}")
+            # Set safe default to trigger proactive pause and prevent exhausting token budget
+            self._token_remaining = TOKEN_PAUSE_THRESHOLD - 1
 
         # Log warnings at thresholds
         if self._token_remaining < TOKEN_WARNING_THRESHOLD:
@@ -381,7 +390,7 @@ class NetroAPIClient:
             "throttle_until": self._throttle_until.isoformat() if self._throttle_until else None,
             "token_remaining": self._token_remaining,
             "token_reset": self._token_reset.isoformat() if self._token_reset else None,
-            "last_saved": datetime.now().isoformat()
+            "last_saved": datetime.now(timezone.utc).isoformat()
         }
 
         try:
@@ -414,7 +423,9 @@ class NetroAPIClient:
             # Restore throttle expiry only if still in future
             if state.get("throttle_until"):
                 throttle_until = datetime.fromisoformat(state["throttle_until"])
-                if throttle_until > datetime.now():
+                # Ensure timezone-aware comparison
+                now = datetime.now(timezone.utc) if throttle_until.tzinfo else datetime.now()
+                if throttle_until > now:
                     self._throttle_until = throttle_until
                     self.logger.info(
                         f"Restored throttle state: paused until {throttle_until:%H:%M:%S}"

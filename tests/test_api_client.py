@@ -6,7 +6,7 @@ These tests do not require Indigo runtime and can run with pytest.
 import sys
 import json
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, MagicMock
 import pytest
 
@@ -215,7 +215,7 @@ class TestProactivePause:
         }
         client._update_token_budget(meta)
         assert client._token_remaining == 750
-        assert client._token_reset == datetime(2026, 2, 2, 0, 0, 0)
+        assert client._token_reset == datetime(2026, 2, 2, 0, 0, 0, tzinfo=timezone.utc)
 
     def test_update_token_budget_logs_warning_below_200(self, client, mock_logger):
         """Logs warning when tokens < 200."""
@@ -247,6 +247,20 @@ class TestProactivePause:
         client._update_token_budget(meta)
 
         assert "throttle_state" in prefs_data
+
+    def test_update_token_budget_sets_safe_default_on_parse_failure(self, client, mock_logger):
+        """Sets safe token count on parsing failure to trigger proactive pause."""
+        # Start with high token count
+        client._token_remaining = 1500
+
+        # Try to parse invalid token data
+        meta = {"token_remaining": "invalid"}
+        client._update_token_budget(meta)
+
+        # Should set to safe default (below pause threshold)
+        assert client._token_remaining == TOKEN_PAUSE_THRESHOLD - 1
+        assert client.should_pause_polling is True
+        mock_logger.warning.assert_called()
 
 
 # =============================================================================
@@ -421,7 +435,7 @@ class TestMakeRequest:
         with patch("api_client.requests.get", return_value=mock_response):
             client.make_request("https://api.test.com/endpoint")
 
-        assert client._displayed_connection_error is False
+        assert client._last_error_type is None
 
 
 # =============================================================================

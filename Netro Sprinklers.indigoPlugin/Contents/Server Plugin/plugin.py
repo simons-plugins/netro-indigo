@@ -249,51 +249,7 @@ class Plugin(indigo.PluginBase):
                             {"key": "token_reset", 'value': reply_dict_device["token_reset"]})
                         update_list.append({"key": "name", "value": reply_dict_device["name"]})
 
-                        # Warn if API tokens are running low - parse defensively
-                        try:
-                            tokens_remaining = int(reply_dict_device.get("token_remaining", 0))
-                        except (ValueError, TypeError):
-                            tokens_remaining = 0
-                            self.logger.warning("Invalid token_remaining value from API - treating as 0 (no tokens available). API may be throttling requests.")
-
-                        try:
-                            token_reset = str(reply_dict_device.get('token_reset', 'unknown'))
-                        except (ValueError, TypeError):
-                            token_reset = 'unknown'
-
-                        # Calculate calls per polling cycle (info + schedules + moistures = 3)
-                        calls_per_cycle = 3
-                        try:
-                            cycles_remaining = tokens_remaining // calls_per_cycle
-                            hours_remaining = (cycles_remaining * self.pollingInterval) / 60
-                        except (ZeroDivisionError, TypeError):
-                            cycles_remaining = 0
-                            hours_remaining = 0.0
-                            self.logger.debug("error calculating token cycle estimates, using defaults")
-
-                        if tokens_remaining <= 0:
-                            self.logger.error(
-                                f"api rate limit exceeded - no tokens remaining until {token_reset}, "
-                                f"increase polling interval to prevent this tomorrow"
-                            )
-                        elif tokens_remaining < 50:
-                            self.logger.error(
-                                f"low api tokens: {tokens_remaining} of 2000 remaining "
-                                f"(~{hours_remaining:.1f} hours), resets at {token_reset}, "
-                                f"recommend increasing polling interval"
-                            )
-                        elif tokens_remaining < 200:
-                            self.logger.warning(
-                                f"api tokens low: {tokens_remaining} of 2000 remaining "
-                                f"(~{hours_remaining:.1f} hours), resets at {token_reset}, "
-                                f"consider increasing polling interval"
-                            )
-                        elif tokens_remaining < 500:
-                            self.logger.info(
-                                f"api tokens: {tokens_remaining} of 2000 remaining today "
-                                f"(~{hours_remaining:.1f} hours at current rate)"
-                            )
-
+                        # Token warnings are now handled by api_client
                         activeScheduleName = None
 
                         # Get the current schedule for the device - it will tell us if it's running or not
