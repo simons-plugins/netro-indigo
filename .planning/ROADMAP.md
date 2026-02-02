@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: Base Modules** - Extract no-dependency modules (constants, exceptions, utils)
 - [x] **Phase 3: API Client** - Extract API layer with throttle management and reliability features
 - [x] **Phase 4: Validators** - Extract configuration validation functions
-- [ ] **Phase 5: Device Handlers** - Extract device update logic, slim plugin.py to coordinator
+- [x] **Phase 5: Device Handlers** - Extract device update logic, slim plugin.py to coordinator
 - [ ] **Phase 6: Testing Expansion** - Expand test coverage to 87%, cover all critical paths
 
 ## Phase Details
@@ -98,8 +98,8 @@ Plans:
 **Plans**: 2 plans in 2 waves
 
 Plans:
-- [ ] 05-01-PLAN.md — Create device_handlers.py with SprinklerHandler and WhispererHandler classes
-- [ ] 05-02-PLAN.md — Update plugin.py to use handlers and add comprehensive tests
+- [x] 05-01-PLAN.md — Create device_handlers.py with SprinklerHandler and WhispererHandler classes
+- [x] 05-02-PLAN.md — Update plugin.py to use handlers and add comprehensive tests
 
 ### Phase 6: Testing Expansion
 **Goal**: Test coverage expanded to 87%, all critical paths tested
@@ -111,10 +111,12 @@ Plans:
   3. Edge cases (unicode names, empty lists, schedule parsing) are tested
   4. Overall test coverage is 87%+ (up from 70%)
   5. Test configuration tracks coverage for all new modules
-**Plans**: TBD
+**Plans**: 3 plans in 1 wave
 
 Plans:
-- [ ] 06-01: TBD
+- [ ] 06-01-PLAN.md — Create shared fixtures and add network error tests (TEST-02, TEST-03)
+- [ ] 06-02-PLAN.md — Add Whisperer sensor and malformed JSON tests (TEST-01, TEST-04)
+- [ ] 06-03-PLAN.md — Add unicode, empty data, schedule, thread safety tests and update coverage config (TEST-05, TEST-06, TEST-07, TEST-08, TEST-09, TEST-10)
 
 ## Progress
 
@@ -127,8 +129,8 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 2. Base Modules | 2/2 | Complete | 2026-02-01 |
 | 3. API Client | 3/3 | Complete | 2026-02-01 |
 | 4. Validators | 2/2 | Complete | 2026-02-01 |
-| 5. Device Handlers | 0/2 | Planned | - |
-| 6. Testing Expansion | 0/TBD | Not started | - |
+| 5. Device Handlers | 2/2 | Complete | 2026-02-02 |
+| 6. Testing Expansion | 0/3 | Planned | - |
 
 ---
 *Roadmap created: 2026-02-01*
@@ -137,4 +139,5 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 *Phase 3 planned: 2026-02-01*
 *Phase 4 planned: 2026-02-01*
 *Phase 5 planned: 2026-02-02*
+*Phase 6 planned: 2026-02-02*
 *Requirements coverage: 47/47 (100%)*
