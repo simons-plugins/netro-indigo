@@ -165,9 +165,21 @@ class NetroAPIClient:
         This is PROACTIVE prevention - the plugin should check this
         before making API calls to avoid exhausting the daily limit.
 
+        Auto-resets token count if past reset time to prevent self-locking.
+
         Returns:
             True if remaining tokens are below pause threshold
         """
+        # Check if we're past the token reset time and should auto-reset
+        if self._token_reset:
+            now = datetime.now(timezone.utc) if self._token_reset.tzinfo else datetime.now()
+            if now >= self._token_reset:
+                # Past reset time - automatically reset to daily limit
+                self._token_remaining = 2000
+                self._token_reset = None
+                self._save_throttle_state()
+                self.logger.info("API token budget has reset to daily limit (2000)")
+
         return self._token_remaining < TOKEN_PAUSE_THRESHOLD
 
     # =========================================================================
@@ -291,9 +303,12 @@ class NetroAPIClient:
     def _handle_http_error(self, exc: requests.exceptions.HTTPError) -> None:
         """Handle HTTP errors, detecting rate limit responses.
 
-        Netro API returns rate limit errors in two ways:
-        1. HTTP 429 status code
-        2. HTTP 200 with error code 3 in response body
+        Netro API returns errors in format:
+        {"status": "ERROR", "errors": [{"code": 3, "message": "..."}], "meta": {...}}
+
+        Error codes:
+        - 1: Invalid device serial number
+        - 3: Rate limit exceeded
 
         When rate limit is detected, sets throttle state and saves to prefs.
 
@@ -303,21 +318,40 @@ class NetroAPIClient:
         response = exc.response
         status_code = response.status_code if response is not None else None
 
-        # Try to parse error response body
+        # Try to parse Netro error response body
         error_code = None
         error_message = str(exc)
+        meta = None
 
         if response is not None:
             try:
                 error_data = response.json()
-                error_code = error_data.get("errors", {}).get("code")
-                error_message = error_data.get("errors", {}).get("message", str(exc))
-            except (ValueError, AttributeError):
+                # Netro returns {"status": "ERROR", "errors": [...], "meta": {...}}
+                if error_data.get("status") == "ERROR":
+                    errors_list = error_data.get("errors", [])
+                    meta = error_data.get("meta", {})
+
+                    # Get first error code and message
+                    if errors_list and isinstance(errors_list, list):
+                        first_error = errors_list[0]
+                        error_code = first_error.get("code")
+                        error_message = first_error.get("message", str(exc))
+            except (ValueError, AttributeError, TypeError):
                 pass  # Response body not JSON or missing expected structure
 
         # Check for rate limit (error code 3 or HTTP 429)
         if error_code == 3 or status_code == 429:
-            self._throttle_until = datetime.now(timezone.utc) + timedelta(minutes=THROTTLE_LIMIT_MINUTES)
+            # Use token_reset from meta if available, otherwise fallback to fixed delay
+            if meta and meta.get("token_reset"):
+                try:
+                    reset_str = meta.get("token_reset")
+                    self._throttle_until = datetime.strptime(reset_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                except (ValueError, TypeError):
+                    # Fallback to fixed delay
+                    self._throttle_until = datetime.now(timezone.utc) + timedelta(minutes=THROTTLE_LIMIT_MINUTES)
+            else:
+                self._throttle_until = datetime.now(timezone.utc) + timedelta(minutes=THROTTLE_LIMIT_MINUTES)
+
             self._save_throttle_state()
             self.logger.warning(
                 f"API rate limit exceeded. Throttled until {self._throttle_until:%H:%M:%S}"
