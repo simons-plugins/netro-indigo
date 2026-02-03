@@ -13,7 +13,7 @@ Extract device update logic from monolithic plugin.py into dedicated handler cla
 <decisions>
 ## Implementation Decisions
 
-### State Update Patterns
+## State Update Patterns
 - **Full state replacement**: Handlers provide complete device state on each update, replacing all values
 - **Error handling**: When state update fails (unexpected API data), handler logs error and marks device as offline, preserving last known good data
 - Device state includes online/offline status as first-class property

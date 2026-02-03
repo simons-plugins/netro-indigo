@@ -167,7 +167,7 @@ pytest tests/test_device_handlers.py -k "unicode or empty or missing or schedule
 - Empty schedules: 2 tests (empty list, missing data key)
 - Empty moistures: 2 tests (empty list, most recent date has no entries)
 - Missing fields: 5 tests (missing meta, device data, status key, all optional fields)
-- Completely empty: 2 tests (completely empty API response, empty serial)
+- Empty: 2 tests (empty API response, empty serial)
 - Null values: 4 tests (null moisture, celsius, battery_level, device key)
 
 **Schedule Parsing Tests (TEST-07):** 12 tests ✓
@@ -191,6 +191,7 @@ pytest tests/ --cov="Netro Sprinklers.indigoPlugin/Contents/Server Plugin" --cov
 **Coverage Results:**
 
 **Testable Modules (plugin.py excluded):**
+
 | Module | Statements | Missed | Coverage |
 |--------|-----------|--------|----------|
 | api_client.py | 198 | 19 | 90% |
@@ -202,6 +203,7 @@ pytest tests/ --cov="Netro Sprinklers.indigoPlugin/Contents/Server Plugin" --cov
 | **Testable Average** | **567** | **29** | **95%** |
 
 **Untestable Module:**
+
 | Module | Statements | Coverage | Reason |
 |--------|-----------|----------|--------|
 | plugin.py | 444 | 0% | Requires Indigo runtime, cannot be unit tested |

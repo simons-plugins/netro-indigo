@@ -15,14 +15,14 @@ For current requirements, see `.planning/REQUIREMENTS.md` (created for next mile
 
 ## v1 Requirements
 
-### Critical Fixes
+## Critical Fixes
 
 - [x] **CRIT-01**: Fix line 827 silent exception handler in runConcurrentThread (polling thread can die silently)
 - [x] **CRIT-02**: Fix incorrect logging levels (using info() for errors, error() for warnings)
 - [x] **CRIT-03**: Add exception logging with full traceback to all bare exception handlers
 - [x] **CRIT-04**: Replace silent `pass` in exception handlers with proper error logging
 
-### Code Quality
+## Code Quality
 
 - [x] **QUAL-01**: Replace bare `except (Exception,):` at line 131 with specific exception types
 - [x] **QUAL-02**: Replace bare `except (Exception,):` at line 827 with specific exception types + logging
@@ -35,7 +35,7 @@ For current requirements, see `.planning/REQUIREMENTS.md` (created for next mile
 - [x] **QUAL-09**: Achieve Pylint score 9.0+ (currently 8.75/10)
 - [x] **QUAL-10**: Add pyproject.toml with Pylint configuration
 
-### Module Organization
+## Module Organization
 
 - [x] **MOD-01**: Extract constants.py (API URLs, defaults, enums) ~80 lines
 - [x] **MOD-02**: Extract exceptions.py (custom exception classes) ~30 lines
@@ -48,7 +48,7 @@ For current requirements, see `.planning/REQUIREMENTS.md` (created for next mile
 - [x] **MOD-09**: Verify no circular import dependencies
 - [x] **MOD-10**: Update test imports for new module structure
 
-### Testing Expansion
+## Testing Expansion
 
 - [x] **TEST-01**: Add 15 Whisperer sensor tests (cover lines 663-690, 735-789)
 - [x] **TEST-02**: Add 8 network timeout error tests (requests.Timeout scenarios)
@@ -61,7 +61,7 @@ For current requirements, see `.planning/REQUIREMENTS.md` (created for next mile
 - [x] **TEST-09**: Update test coverage configuration to track new modules
 - [x] **TEST-10**: Achieve 87% overall test coverage (up from 70%)
 
-### API Reliability
+## API Reliability
 
 - [x] **API-01**: Implement proactive throttle prevention (pause polling when tokens <100)
 - [x] **API-02**: Add token budget tracking and warnings at <200 remaining
@@ -72,7 +72,7 @@ For current requirements, see `.planning/REQUIREMENTS.md` (created for next mile
 - [x] **API-07**: Add version detection for API responses
 - [x] **API-08**: Log warnings when API response format doesn't match schema
 
-### Development Workflow
+## Development Workflow
 
 - [x] **DEV-01**: Create GitHub issues for all major work items
 - [x] **DEV-02**: Structure work into atomic commits tied to issue numbers

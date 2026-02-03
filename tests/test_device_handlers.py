@@ -365,11 +365,14 @@ class TestSprinklerHandlerDeviceInfo:
         mock_logger.error.assert_called()
 
     def test_process_device_info_device_key_is_null(self, sprinkler_handler, mock_logger):
-        """Device key with None value raises AttributeError."""
+        """Device key with None value gracefully returns error state."""
         response = {"status": "OK", "data": {"device": None}}
-        # None has no .get() method, so AttributeError is raised
-        with pytest.raises(AttributeError):
-            sprinkler_handler.process_device_info(response, "ABC123")
+        # None has no .get() method, so handler should catch AttributeError
+        states, is_online, device_data = sprinkler_handler.process_device_info(response, "ABC123")
+
+        assert is_online is False
+        assert device_data == {}
+        mock_logger.error.assert_called()
 
 
 # =============================================================================
@@ -603,11 +606,13 @@ class TestSprinklerHandlerMoistures:
     # -------------------------------------------------------------------------
 
     def test_process_moistures_moistures_is_string(self, sprinkler_handler, mock_logger):
-        """Moistures as string instead of list raises AttributeError."""
+        """Moistures as string instead of list gracefully returns empty list."""
         response = {"status": "OK", "data": {"moistures": "none"}}
-        # String has no .sort() method, so AttributeError is raised
-        with pytest.raises(AttributeError):
-            sprinkler_handler.process_moistures(response)
+        # String has no .sort() method, so handler should catch AttributeError
+        states = sprinkler_handler.process_moistures(response)
+
+        assert states == []
+        mock_logger.error.assert_called()
 
 
 # =============================================================================
@@ -899,11 +904,14 @@ class TestWhispererHandler:
         mock_logger.error.assert_called()
 
     def test_process_sensor_data_typeerror_data_is_string(self, whisperer_handler, mock_logger):
-        """Data as string instead of dict raises AttributeError."""
+        """Data as string instead of dict gracefully returns empty result."""
         response = {"status": "OK", "data": "not a dict", "meta": {}}
-        # String has no .get() method, so AttributeError is raised
-        with pytest.raises(AttributeError):
-            whisperer_handler.process_sensor_data(response, "SENSOR123")
+        # String has no .get() method, so handler should catch AttributeError
+        states, has_readings = whisperer_handler.process_sensor_data(response, "SENSOR123")
+
+        assert has_readings is False
+        assert states == []
+        mock_logger.error.assert_called()
 
     def test_process_sensor_data_typeerror_sensor_data_is_dict(self, whisperer_handler, mock_logger):
         """Sensor_data as dict instead of list treats as empty."""

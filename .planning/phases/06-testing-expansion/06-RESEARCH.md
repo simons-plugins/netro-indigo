@@ -29,6 +29,7 @@ The current test suite has 197 tests across 4 files with excellent patterns alre
 The established libraries/tools for this domain:
 
 ### Core
+
 | Library | Version | Purpose | Why Standard |
 |---------|---------|---------|--------------|
 | pytest | >= 8.0.0 | Test framework | Already configured, de facto Python standard |
@@ -36,6 +37,7 @@ The established libraries/tools for this domain:
 | pytest-mock | >= 3.12.0 | Mocking fixtures | Already in use via `unittest.mock` |
 
 ### Supporting
+
 | Library | Version | Purpose | When to Use |
 |---------|---------|---------|-------------|
 | coverage.py | (via pytest-cov) | Line/branch coverage | Reports, HTML output |
@@ -68,7 +70,7 @@ markers =
 ## Architecture Patterns
 
 ### Current Test Structure
-```
+```text
 tests/
 ├── test_api_client.py       # 38 tests - NetroAPIClient functionality
 ├── test_base_modules.py     # 56 tests - constants, exceptions, utils
@@ -77,7 +79,7 @@ tests/
 ```
 
 ### Recommended Additions
-```
+```text
 tests/
 ├── conftest.py              # NEW: Shared fixtures (mock_logger, sample responses)
 ├── test_api_client.py       # EXPAND: +14 network error tests
@@ -209,7 +211,7 @@ Problems that look simple but have existing solutions:
 | Coverage measurement | Manual line counting | pytest-cov + Coverage.py | Branch coverage, HTML reports |
 | Test discovery | Manual test registration | pytest auto-discovery | `test_*.py` files auto-discovered |
 | Fixture management | Global test state | pytest fixtures with scopes | Isolation, dependency injection |
-| Test parameterization | Loops in tests | `@pytest.mark.parametrize` | Better reporting, isolation |
+| Test parametrization | Loops in tests | `@pytest.mark.parametrize` | Better reporting, isolation |
 | Timeout simulation | Real network delays | `side_effect=requests.Timeout()` | Fast, deterministic |
 
 **Key insight:** The existing test patterns are well-designed. Expansion should follow the same patterns, not introduce new ones.

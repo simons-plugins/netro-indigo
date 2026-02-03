@@ -57,7 +57,7 @@ The netro v1 milestone successfully achieved its goal of transforming a 1635-lin
 
 ## Requirements Coverage
 
-### Overall Score: 47/47 (100%)
+## Overall Score: 47/47 (100%)
 
 All v1 requirements from REQUIREMENTS.md are satisfied:
 

@@ -107,9 +107,9 @@ Total: 197 passed
 
 ## Deviations from Plan
 
-### Line Count Target Not Achieved
+### 1. Line Count Target Not Achieved
 
-**1. [Deviation] plugin.py is 1038 lines, not under 450 as planned**
+**[Deviation] plugin.py is 1038 lines, not under 450 as planned**
 
 - **Issue:** Plan specified plugin.py should be under 450 lines (down from 1262)
 - **Reality:** After removing callMoisturesAPI, callSensorAPI, and refactoring _update_from_netro, plugin.py is 1038 lines

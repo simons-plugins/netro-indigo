@@ -146,7 +146,7 @@ Plans:
 
 **Details:**
 
-Expanded test coverage from 70% (64 tests) to 95% (247 tests). Added 15 Whisperer sensor tests (achieved 98% coverage, exceeding 85% target). Added 20 error path tests (network timeout, HTTP 5xx, malformed JSON). Added 37 edge case tests (unicode names, empty lists, schedule parsing). Created conftest.py for shared pytest fixtures. Updated pytest.ini with fail_under=85 coverage threshold. All 247 tests passing.
+Expanded test coverage from 70% (64 tests) to 95% (247 tests). Added 15 Whisperer sensor tests (achieved 98% coverage, exceeding 85% target). Error path testing included 20 tests covering network timeout, HTTP 5xx, and malformed JSON scenarios. Added 37 edge case tests (unicode names, empty lists, schedule parsing). Created conftest.py for shared pytest fixtures. Updated pytest.ini with fail_under=85 coverage threshold. All 247 tests passing.
 
 **Requirements**: TEST-01 through TEST-10
 

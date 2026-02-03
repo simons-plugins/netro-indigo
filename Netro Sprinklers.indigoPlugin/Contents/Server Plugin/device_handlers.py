@@ -109,7 +109,7 @@ class SprinklerHandler:
 
             return (update_list, is_online, reply_dict_device)
 
-        except (KeyError, TypeError) as exc:
+        except (KeyError, TypeError, AttributeError) as exc:
             self.logger.error(f"Malformed device info for {serial}: {exc}")
             # Return minimal update marking device in error state
             error_states = [
@@ -292,7 +292,7 @@ class SprinklerHandler:
 
             return current_moistures
 
-        except (KeyError, TypeError, IndexError) as exc:
+        except (KeyError, TypeError, IndexError, AttributeError) as exc:
             self.logger.error(f"Error parsing moistures: {exc}")
             return []
 
@@ -447,6 +447,6 @@ class WhispererHandler:
             )
             # Return minimal update
             return ([], False)
-        except TypeError as exc:
+        except (TypeError, AttributeError) as exc:
             self.logger.error(f"Malformed sensor data for {serial}: {exc}")
             return ([], False)
