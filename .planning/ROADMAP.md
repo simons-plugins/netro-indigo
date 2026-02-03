@@ -17,7 +17,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 3: API Client** - Extract API layer with throttle management and reliability features
 - [x] **Phase 4: Validators** - Extract configuration validation functions
 - [x] **Phase 5: Device Handlers** - Extract device update logic, slim plugin.py to coordinator
-- [ ] **Phase 6: Testing Expansion** - Expand test coverage to 87%, cover all critical paths
+- [x] **Phase 6: Testing Expansion** - Expand test coverage to 87%, cover all critical paths
 
 ## Phase Details
 
@@ -114,9 +114,9 @@ Plans:
 **Plans**: 3 plans in 1 wave
 
 Plans:
-- [ ] 06-01-PLAN.md — Create shared fixtures and add network error tests (TEST-02, TEST-03)
-- [ ] 06-02-PLAN.md — Add Whisperer sensor and malformed JSON tests (TEST-01, TEST-04)
-- [ ] 06-03-PLAN.md — Add unicode, empty data, schedule, thread safety tests and update coverage config (TEST-05, TEST-06, TEST-07, TEST-08, TEST-09, TEST-10)
+- [x] 06-01-PLAN.md — Create shared fixtures and add network error tests (TEST-02, TEST-03)
+- [x] 06-02-PLAN.md — Add Whisperer sensor and malformed JSON tests (TEST-01, TEST-04)
+- [x] 06-03-PLAN.md — Add unicode, empty data, schedule, thread safety tests and update coverage config (TEST-05, TEST-06, TEST-07, TEST-08, TEST-09, TEST-10)
 
 ## Progress
 
@@ -130,7 +130,7 @@ Phases execute in numeric order: 1 -> 2 -> 3 -> 4 -> 5 -> 6
 | 3. API Client | 3/3 | Complete | 2026-02-01 |
 | 4. Validators | 2/2 | Complete | 2026-02-01 |
 | 5. Device Handlers | 2/2 | Complete | 2026-02-02 |
-| 6. Testing Expansion | 0/3 | Planned | - |
+| 6. Testing Expansion | 3/3 | Complete | 2026-02-03 |
 
 ---
 *Roadmap created: 2026-02-01*
