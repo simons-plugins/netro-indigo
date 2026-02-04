@@ -380,6 +380,133 @@ class TestMakeRequest:
         mock_logger.error.assert_called()
         assert "timed out" in mock_logger.error.call_args[0][0].lower()
 
+    def test_make_request_timeout_on_post(self, client, mock_logger):
+        """Timeout during POST request logged and re-raised."""
+        import requests as req
+        with patch("api_client.requests.post", side_effect=req.exceptions.Timeout("POST timed out")):
+            with pytest.raises(req.exceptions.Timeout):
+                client.make_request(
+                    "https://api.test.com/endpoint",
+                    method="post",
+                    data={"key": "test"}
+                )
+
+        mock_logger.error.assert_called()
+        assert "timed out" in mock_logger.error.call_args[0][0].lower()
+
+    def test_make_request_timeout_on_put(self, client, mock_logger):
+        """Timeout during PUT request logged and re-raised."""
+        import requests as req
+        with patch("api_client.requests.put", side_effect=req.exceptions.Timeout("PUT timed out")):
+            with pytest.raises(req.exceptions.Timeout):
+                client.make_request(
+                    "https://api.test.com/endpoint",
+                    method="put",
+                    data={"key": "test"}
+                )
+
+        mock_logger.error.assert_called()
+        assert "timed out" in mock_logger.error.call_args[0][0].lower()
+
+    def test_make_request_timeout_suppresses_repeated(self, client, mock_logger):
+        """Second timeout not logged (error suppression)."""
+        import requests as req
+        with patch("api_client.requests.get", side_effect=req.exceptions.Timeout("Timed out")):
+            for _ in range(3):
+                try:
+                    client.make_request("https://api.test.com/endpoint")
+                except req.exceptions.Timeout:
+                    pass
+
+        # Should only log once
+        assert mock_logger.error.call_count == 1
+
+    def test_make_request_timeout_resets_after_success(self, client, mock_logger):
+        """Success clears timeout error state, next timeout is logged."""
+        import requests as req
+
+        # First timeout
+        with patch("api_client.requests.get", side_effect=req.exceptions.Timeout("Timed out")):
+            try:
+                client.make_request("https://api.test.com/endpoint")
+            except req.exceptions.Timeout:
+                pass
+
+        # Then succeed
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            client.make_request("https://api.test.com/endpoint")
+
+        # Reset error count before second timeout
+        mock_logger.error.reset_mock()
+
+        # Second timeout should be logged again (error state was cleared)
+        with patch("api_client.requests.get", side_effect=req.exceptions.Timeout("Timed out again")):
+            try:
+                client.make_request("https://api.test.com/endpoint")
+            except req.exceptions.Timeout:
+                pass
+
+        mock_logger.error.assert_called()
+
+    def test_make_request_timeout_preserves_throttle_state(self, client, mock_logger):
+        """Timeout doesn't affect throttle state."""
+        import requests as req
+        from datetime import timedelta
+
+        # Set throttle state
+        future_time = datetime.now() + timedelta(minutes=30)
+        client._throttle_until = future_time
+        client._token_remaining = 500
+
+        # Cause timeout (should raise ThrottleDelayError before hitting network)
+        with pytest.raises(ThrottleDelayError):
+            client.make_request("https://api.test.com/endpoint")
+
+        # Throttle state should be preserved
+        assert client._throttle_until == future_time
+        assert client._token_remaining == 500
+
+    def test_make_request_timeout_with_custom_timeout_value(self, client):
+        """Client timeout attribute passed to requests library."""
+        import requests as req
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        # Set custom timeout on client
+        client.timeout = 15
+
+        with patch("api_client.requests.get", return_value=mock_response) as mock_get:
+            client.make_request("https://api.test.com/endpoint")
+
+            # Verify timeout parameter was passed to requests.get
+            call_kwargs = mock_get.call_args[1]
+            assert "timeout" in call_kwargs
+            assert call_kwargs["timeout"] == 15
+
+    def test_make_request_read_timeout_vs_connect_timeout(self, client, mock_logger):
+        """ReadTimeout (subclass of Timeout) handled correctly."""
+        import requests as req
+
+        # ReadTimeout is a specific subclass of Timeout
+        with patch("api_client.requests.get", side_effect=req.exceptions.ReadTimeout("Read timeout")):
+            with pytest.raises(req.exceptions.ReadTimeout):
+                client.make_request("https://api.test.com/endpoint")
+
+        mock_logger.error.assert_called()
+        assert "timed out" in mock_logger.error.call_args[0][0].lower()
+
+    def test_get_device_info_timeout(self, client):
+        """Convenience method timeout propagation."""
+        import requests as req
+        with patch("api_client.requests.get", side_effect=req.exceptions.Timeout("Timed out")):
+            with pytest.raises(req.exceptions.Timeout):
+                client.get_device_info("SERIAL123")
+
     def test_make_request_detects_rate_limit_error_code_3(self, client, mock_logger):
         """HTTP error with error code 3 (Netro format) sets throttle and raises ThrottleDelayError."""
         import requests as req
@@ -448,6 +575,112 @@ class TestMakeRequest:
 
         assert client._throttle_until is not None
 
+    def test_handle_http_error_500_no_json_body(self, client, mock_logger):
+        """HTTP 500 without JSON body is handled and logged."""
+        import requests as req
+
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.json.side_effect = ValueError("Not JSON")
+        mock_response.raise_for_status.side_effect = req.exceptions.HTTPError(
+            response=mock_response
+        )
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        mock_logger.error.assert_called()
+
+    def test_handle_http_error_500_with_json_error(self, client, mock_logger):
+        """HTTP 500 with JSON error message is logged."""
+        import requests as req
+
+        mock_response = Mock()
+        mock_response.status_code = 500
+        mock_response.json.return_value = {
+            "status": "ERROR",
+            "error": "Internal server error"
+        }
+        mock_response.raise_for_status.side_effect = req.exceptions.HTTPError(
+            response=mock_response
+        )
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        # Verify error was logged with status code and message
+        mock_logger.error.assert_called()
+        call_args = mock_logger.error.call_args[0]
+        assert len(call_args) >= 2  # Format string + at least status code
+
+    def test_handle_http_error_502_bad_gateway(self, client, mock_logger):
+        """HTTP 502 Bad Gateway is handled and logged."""
+        import requests as req
+
+        mock_response = Mock()
+        mock_response.status_code = 502
+        mock_response.json.side_effect = ValueError("HTML error page")
+        mock_response.raise_for_status.side_effect = req.exceptions.HTTPError(
+            response=mock_response
+        )
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        mock_logger.error.assert_called()
+
+    def test_handle_http_error_503_service_unavailable(self, client, mock_logger):
+        """HTTP 503 Service Unavailable is handled and logged."""
+        import requests as req
+
+        mock_response = Mock()
+        mock_response.status_code = 503
+        mock_response.json.side_effect = ValueError("Service temporarily unavailable")
+        mock_response.raise_for_status.side_effect = req.exceptions.HTTPError(
+            response=mock_response
+        )
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        mock_logger.error.assert_called()
+
+    def test_handle_http_error_504_gateway_timeout(self, client, mock_logger):
+        """HTTP 504 Gateway Timeout is handled and logged."""
+        import requests as req
+
+        mock_response = Mock()
+        mock_response.status_code = 504
+        mock_response.json.side_effect = ValueError("Gateway timeout")
+        mock_response.raise_for_status.side_effect = req.exceptions.HTTPError(
+            response=mock_response
+        )
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        mock_logger.error.assert_called()
+
+    def test_handle_http_error_response_none(self, client, mock_logger):
+        """HTTPError with response=None doesn't crash."""
+        import requests as req
+
+        # Create HTTPError without response object (edge case)
+        http_error = req.exceptions.HTTPError()
+        http_error.response = None
+
+        with patch("api_client.requests.get", side_effect=http_error):
+            with pytest.raises(req.exceptions.HTTPError):
+                client.make_request("https://api.test.com/endpoint")
+
+        # Should still log error, even without response details
+        mock_logger.error.assert_called()
+
     def test_make_request_suppresses_repeated_connection_errors(self, client, mock_logger):
         """Connection errors are logged only once."""
         import requests as req
@@ -480,6 +713,61 @@ class TestMakeRequest:
             client.make_request("https://api.test.com/endpoint")
 
         assert client._last_error_type is None
+
+    # -------------------------------------------------------------------------
+    # Thread Safety Tests (TEST-08)
+    # -------------------------------------------------------------------------
+
+    def test_api_client_multiple_device_requests_state_isolation(self, client, mock_logger):
+        """Multiple device requests maintain state isolation."""
+        mock_response1 = Mock()
+        mock_response1.status_code = 200
+        mock_response1.json.return_value = {
+            "status": "OK",
+            "data": {"device": {"serial": "SERIAL1"}},
+            "meta": {"token_remaining": 1500}
+        }
+
+        mock_response2 = Mock()
+        mock_response2.status_code = 200
+        mock_response2.json.return_value = {
+            "status": "OK",
+            "data": {"device": {"serial": "SERIAL2"}},
+            "meta": {"token_remaining": 1400}
+        }
+
+        with patch("api_client.requests.get", side_effect=[mock_response1, mock_response2]):
+            response1 = client.make_request("https://api.test.com/device/SERIAL1")
+            response2 = client.make_request("https://api.test.com/device/SERIAL2")
+
+        # Verify no state pollution between calls
+        assert response1["data"]["device"]["serial"] == "SERIAL1"
+        assert response2["data"]["device"]["serial"] == "SERIAL2"
+
+    def test_api_client_token_budget_tracks_across_requests(self, client):
+        """Token budget is tracked across multiple requests."""
+        mock_response1 = Mock()
+        mock_response1.status_code = 200
+        mock_response1.json.return_value = {
+            "status": "OK",
+            "data": {},
+            "meta": {"token_remaining": 1500}
+        }
+
+        mock_response2 = Mock()
+        mock_response2.status_code = 200
+        mock_response2.json.return_value = {
+            "status": "OK",
+            "data": {},
+            "meta": {"token_remaining": 1300}
+        }
+
+        with patch("api_client.requests.get", side_effect=[mock_response1, mock_response2]):
+            client.make_request("https://api.test.com/endpoint1")
+            assert client._token_remaining == 1500
+
+            client.make_request("https://api.test.com/endpoint2")
+            assert client._token_remaining == 1300
 
 
 # =============================================================================

@@ -2,102 +2,48 @@
 
 ## Project Reference
 
-See: .planning/PROJECT.md (updated 2026-02-01)
+See: .planning/PROJECT.md (updated 2026-02-03)
 
 **Core value:** Maintain reliable, maintainable Indigo plugin for Netro smart irrigation control with clean, testable code
-**Current focus:** Phase 3 - API Client (COMPLETE)
+**Current focus:** v1.0 milestone complete - ready for next milestone planning
 
 ## Current Position
 
-Phase: 3 of 6 (API Client)
-Plan: 4 of 4 in current phase (03-01, 03-02, 03-03 complete)
-Status: Phase complete
-Last activity: 2026-02-01 - Completed 03-02-PLAN.md (Plugin API Client Integration)
+Phase: v1.0 complete (6 of 6 phases shipped)
+Plan: All 15 plans complete
+Status: Milestone shipped
+Last activity: 2026-02-03 - v1.0 milestone archived
 
-Progress: [████████░░] 60%
+Progress: [██████████] 100%
 
-## Performance Metrics
+## Milestone v1.0 Summary
 
-**Velocity:**
-- Total plans completed: 10
-- Average duration: 3 min
-- Total execution time: 0.52 hours
+**Delivered:** Modular architecture with 95% test coverage
+**Phases:** 1-6 (15 plans)
+**Duration:** 2 days (Feb 1-3, 2026)
+**Results:**
+- 247 tests (up from 64)
+- 95% coverage (up from 70%)
+- Pylint 9.90 avg (up from 8.75)
+- 7 focused modules (from 1635-line monolith)
+- All E2E flows verified
 
-**By Phase:**
+## Archived
 
-| Phase | Plans | Total | Avg/Plan |
-|-------|-------|-------|----------|
-| 01-foundation | 3 | 8 min | 2.7 min |
-| 02-base-modules | 2 | 7 min | 3.5 min |
-| 03-api-client | 3 | 11 min | 3.7 min |
-| 04-validators | 2 | 6 min | 3.0 min |
+**Milestone archives:**
+- `.planning/milestones/v1-ROADMAP.md` - Full phase details
+- `.planning/milestones/v1-REQUIREMENTS.md` - All 47 requirements (100% complete)
+- `.planning/milestones/v1-MILESTONE-AUDIT.md` - Integration verification
 
-**Recent Trend:**
-- Last 5 plans: 04-02 (3 min), 03-01 (3 min), 03-03 (4 min), 03-02 (4 min)
-- Trend: Stable (fast execution)
+## Next Steps
 
-*Updated after each plan completion*
+Use `/gsd:new-milestone` to:
+1. Define v2.0 goals through questioning
+2. Research domain ecosystem
+3. Create requirements specification
+4. Generate roadmap
 
-## Accumulated Context
-
-### Decisions
-
-Decisions are logged in PROJECT.md Key Decisions table.
-Recent decisions affecting current work:
-
-- (Init): Comprehensive refactoring approach chosen over conservative fixes
-- (Init): Breaking changes allowed for clean architecture
-- (Init): Python 3.10+ features OK (Indigo 2023.2+ requirement)
-- (Init): GitHub issues for tracking (ties code to issues)
-- (01-01): StopThread must be caught and re-raised for clean Indigo shutdown
-- (01-01): Use logger.exception() for automatic traceback logging
-- (01-01): Handle ThrottleDelayError separately from network errors
-- (01-02): Use pyproject.toml for Pylint config (modern standard)
-- (01-02): Disabled invalid-name rule for Indigo camelCase callbacks
-- (01-02): fail-under = 9.0 enforces quality threshold
-- (01-03): Use Closes keyword for GitHub auto-close consistency
-- (01-03): Single commit to close all Phase 1 issues (code already committed)
-- (02-01): Use typing.Final for constant immutability
-- (02-01): Create exception hierarchy with NetroError base class
-- (02-01): Add units to constant names (_SECONDS, _MINUTES suffixes)
-- (02-01): Use frozenset for immutable event sets
-- (02-02): Remove unused imports from plugin.py (convert_timestamp)
-- (02-02): Update .gitignore to allow tests/ directory
-- (03-01): Use callback injection for logger and prefs to avoid circular imports
-- (03-01): Re-export TOKEN_PAUSE_THRESHOLD and TOKEN_WARNING_THRESHOLD from api_client
-- (03-01): Accept too-many-branches warning in make_request method
-- (03-02): Use api_client convenience methods for most API calls
-- (03-02): Keep ZONE_START_ENDPOINT import for direct make_request call
-- (03-02): Log warning once per poll cycle when paused
-- (03-03): Use requests.exceptions.ConnectionError not built-in ConnectionError
-- (03-03): Group tests by functional area matching api_client internal organization
-- (04-01): Use 3-tuple ValidationResult for Indigo callback compatibility
-- (04-01): Pure validation functions with no Indigo dependencies
-- (04-01): Use dataclass for prefs field specs to reduce arguments
-- (04-02): Convert indigo.Dict to dict at validators boundary
-- (04-02): Keep debug logging in plugin.py, not validators
-- (04-02): Thin wrapper pattern for validation callbacks
-
-### Pending Todos
-
-None yet.
-
-### Blockers/Concerns
-
-None - Phase 3 complete with full integration. Ready for Phase 5 (Device Handlers).
-
-## Session Continuity
-
-Last session: 2026-02-01 23:30 UTC
-Stopped at: Completed 03-02-PLAN.md (Plugin API Client Integration) - Phase 3 complete
-Resume file: None
-
-## Test Suite Status
-
-```
-tests/test_api_client.py: 35 passed
-tests/test_base_modules.py: 56 passed
-tests/test_validators.py: 53 passed
------------------------------------
-Total: 144 passed
-```
+Or continue development with optional improvements:
+- Remove unused exception classes
+- Further extract plugin.py handlers
+- Add explicit API version tracking
