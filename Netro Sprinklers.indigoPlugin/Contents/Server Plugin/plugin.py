@@ -797,6 +797,37 @@ class Plugin(indigo.PluginBase):
                 self._fireTrigger("setNoWater", dev.id)
 
     ########################################
+    def setMoisture(self, pluginAction, dev):
+        """Override moisture level for a specific zone.
+
+        Sends a manual moisture override to the Netro API for the selected
+        zone. This affects smart scheduling decisions.
+
+        Args:
+            pluginAction: Action parameters containing zone and moisture
+            dev: Sprinkler controller device
+        """
+        zone = int(pluginAction.props["zone"])
+        moisture = int(pluginAction.props["moisture"])
+
+        try:
+            response = self.api_client.set_moisture(dev.address, zone, moisture)
+            response_status = response["status"]
+            self.logger.debug(response)
+            if response_status == "OK":
+                self.logger.info(
+                    f"Moisture for zone {zone} on '{dev.name}' set to {moisture}%"
+                )
+            else:
+                self.logger.error(
+                    f"Error setting moisture for zone {zone}: {response_status}"
+                )
+        except Exception:
+            self.logger.error(f"Could not set moisture for zone {zone}")
+            self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+            self._fireTrigger("setMoistureFailed", dev.id)
+
+    ########################################
     def setStandbyMode(self, pluginAction, dev):
         """Set controller standby mode on/off.
 

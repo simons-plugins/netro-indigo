@@ -14,6 +14,7 @@
 					<Option value="startZoneFailed">Zone Change Failed (start or stop)</Option>
 					<Option value="stopFailed">Stop Sprinkler Failed</Option>
 					<Option value="setStandbyFailed">Set Standby Mode Failed</Option>
+					<Option value="setMoistureFailed">Set Moisture Override Failed</Option>
 				</List>
 			</Field>
 		</ConfigUI>

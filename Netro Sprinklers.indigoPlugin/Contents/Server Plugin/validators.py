@@ -391,6 +391,35 @@ def _validate_report_weather_action(
         errors["date"] = error
 
 
+def _validate_set_moisture_action(
+    values: Dict[str, Any],
+    sanitized: Dict[str, Any],
+    errors: Dict[str, str],
+) -> None:
+    """Validate setMoisture action parameters.
+
+    Args:
+        values: Input values dict
+        sanitized: Dict to store sanitized values (modified in place)
+        errors: Dict to store error messages (modified in place)
+    """
+    # Validate zone is selected
+    zone = values.get("zone", "")
+    if not zone:
+        errors["zone"] = "You must select a zone"
+
+    # Validate moisture is an integer 0-100
+    moisture_str = values.get("moisture", "")
+    try:
+        moisture = int(moisture_str)
+        if moisture < 0 or moisture > 100:
+            errors["moisture"] = "Moisture must be between 0 and 100"
+        else:
+            sanitized["moisture"] = moisture
+    except (ValueError, TypeError):
+        errors["moisture"] = "Moisture must be a whole number (0-100)"
+
+
 def validate_action_config(
     values: Dict[str, Any],
     type_id: str,
@@ -413,6 +442,8 @@ def validate_action_config(
         _validate_start_zone_action(values, sanitized, errors)
     elif type_id == "reportWeather":
         _validate_report_weather_action(values, sanitized, errors)
+    elif type_id == "setMoisture":
+        _validate_set_moisture_action(values, sanitized, errors)
 
     return (len(errors) == 0, sanitized, errors)
 

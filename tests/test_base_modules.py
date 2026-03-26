@@ -148,8 +148,8 @@ class TestConstants:
         assert "setStandbyFailed" in OPERATIONAL_ERROR_EVENTS
 
     def test_operational_error_events_count(self):
-        """OPERATIONAL_ERROR_EVENTS should have exactly 3 events."""
-        assert len(OPERATIONAL_ERROR_EVENTS) == 3
+        """OPERATIONAL_ERROR_EVENTS should have exactly 4 events."""
+        assert len(OPERATIONAL_ERROR_EVENTS) == 4
 
     def test_comm_error_events_immutable(self):
         """COMM_ERROR_EVENTS should be a frozenset."""

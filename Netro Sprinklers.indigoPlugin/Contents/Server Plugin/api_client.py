@@ -31,6 +31,7 @@ from constants import (
     DEVICE_NO_WATER_ENDPOINT,
     DEVICE_REPORT_WEATHER_ENDPOINT,
     DEVICE_SCHEDULES_ENDPOINT,
+    DEVICE_SET_MOISTURE_ENDPOINT,
     DEVICE_SENSOR_DATA_ENDPOINT,
     DEVICE_SET_STATUS_ENDPOINT,
     DEVICE_STOP_WATER_ENDPOINT,
@@ -641,4 +642,24 @@ class NetroAPIClient:
             DEVICE_REPORT_WEATHER_ENDPOINT,
             method="post",
             data=data
+        )
+
+    def set_moisture(self, serial: str, zone: int, moisture: int) -> Dict[str, Any]:
+        """Override moisture level for a specific zone.
+
+        Args:
+            serial: Device serial number
+            zone: Zone number (1-based)
+            moisture: Moisture percentage (0-100)
+
+        Returns:
+            API response confirming moisture override
+        """
+        return self.make_request(
+            DEVICE_SET_MOISTURE_ENDPOINT,
+            method="post",
+            data={
+                "key": serial,
+                "moistures": [{"zone": zone, "moisture": moisture}],
+            }
         )
