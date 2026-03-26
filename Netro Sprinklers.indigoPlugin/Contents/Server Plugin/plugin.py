@@ -807,12 +807,11 @@ class Plugin(indigo.PluginBase):
             pluginAction: Action parameters containing zone and moisture
             dev: Sprinkler controller device
         """
-        zone = int(pluginAction.props["zone"])
-        moisture = int(pluginAction.props["moisture"])
-
         try:
+            zone = int(pluginAction.props["zone"])
+            moisture = int(pluginAction.props["moisture"])
             response = self.api_client.set_moisture(dev.address, zone, moisture)
-            response_status = response["status"]
+            response_status = response.get("status", "UNKNOWN")
             self.logger.debug(response)
             if response_status == "OK":
                 self.logger.info(
@@ -822,8 +821,9 @@ class Plugin(indigo.PluginBase):
                 self.logger.error(
                     f"Error setting moisture for zone {zone}: {response_status}"
                 )
+                self._fireTrigger("setMoistureFailed", dev.id)
         except Exception:
-            self.logger.error(f"Could not set moisture for zone {zone}")
+            self.logger.error(f"Could not set moisture override on '{dev.name}'")
             self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
             self._fireTrigger("setMoistureFailed", dev.id)
 

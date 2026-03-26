@@ -403,10 +403,15 @@ def _validate_set_moisture_action(
         sanitized: Dict to store sanitized values (modified in place)
         errors: Dict to store error messages (modified in place)
     """
-    # Validate zone is selected
-    zone = values.get("zone", "")
-    if not zone:
+    # Validate zone is selected and is a valid integer
+    zone_str = values.get("zone", "")
+    if not zone_str:
         errors["zone"] = "You must select a zone"
+    else:
+        try:
+            sanitized["zone"] = int(zone_str)
+        except (ValueError, TypeError):
+            errors["zone"] = "Zone must be a valid number"
 
     # Validate moisture is an integer 0-100
     moisture_str = values.get("moisture", "")

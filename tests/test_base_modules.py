@@ -25,6 +25,7 @@ from constants import (
     DEVICE_SET_STATUS_ENDPOINT,
     DEVICE_NO_WATER_ENDPOINT,
     DEVICE_REPORT_WEATHER_ENDPOINT,
+    DEVICE_SET_MOISTURE_ENDPOINT,
     ZONE_START_ENDPOINT,
     MAX_ZONE_DURATION_SECONDS,
     DEFAULT_API_TIMEOUT_SECONDS,
@@ -107,6 +108,11 @@ class TestConstants:
         assert DEVICE_REPORT_WEATHER_ENDPOINT.startswith(API_URL)
         assert "report_weather.json" in DEVICE_REPORT_WEATHER_ENDPOINT
 
+    def test_device_set_moisture_endpoint(self):
+        """DEVICE_SET_MOISTURE_ENDPOINT should be full URL."""
+        assert DEVICE_SET_MOISTURE_ENDPOINT.startswith(API_URL)
+        assert "set_moisture.json" in DEVICE_SET_MOISTURE_ENDPOINT
+
     def test_zone_start_endpoint(self):
         """ZONE_START_ENDPOINT should be full URL."""
         assert ZONE_START_ENDPOINT.startswith(API_URL)
@@ -146,6 +152,7 @@ class TestConstants:
         assert "startZoneFailed" in OPERATIONAL_ERROR_EVENTS
         assert "stopFailed" in OPERATIONAL_ERROR_EVENTS
         assert "setStandbyFailed" in OPERATIONAL_ERROR_EVENTS
+        assert "setMoistureFailed" in OPERATIONAL_ERROR_EVENTS
 
     def test_operational_error_events_count(self):
         """OPERATIONAL_ERROR_EVENTS should have exactly 4 events."""
