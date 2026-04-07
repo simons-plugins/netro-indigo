@@ -152,4 +152,20 @@
             </Field>
         </ConfigUI>
     </Action>
+
+    <Action id="setZoneMoisture" deviceFilter="self.zone" uiPath="DeviceActions">
+        <Name>Set Zone Moisture Override</Name>
+        <CallbackMethod>setZoneMoisture</CallbackMethod>
+        <ConfigUI>
+            <Field type="label" id="zone_moisture_warning_label" fontColor="orange">
+                <Label>Warning: Overriding moisture levels affects Netro's smart scheduling. Use with caution.</Label>
+            </Field>
+            <Field type="textfield" id="moisture" defaultValue="50">
+                <Label>Moisture Level (%):</Label>
+            </Field>
+            <Field type="label" id="zone_moisture_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
+                <Label>Moisture percentage (0-100). This overrides Netro's calculated moisture for this zone.</Label>
+            </Field>
+        </ConfigUI>
+    </Action>
 </Actions>
