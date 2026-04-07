@@ -1210,6 +1210,51 @@ class Plugin(indigo.PluginBase):
             self._fireTrigger("setMoistureFailed", dev.id)
 
     ########################################
+    def setZoneMoisture(self, pluginAction, dev):
+        """Override moisture for this zone device.
+
+        Looks up the parent controller's auth credentials and calls
+        set_moisture API for this zone.
+
+        Args:
+            pluginAction: Action parameters containing moisture value
+            dev: Zone device
+        """
+        try:
+            zone_num = int(dev.pluginProps.get("zoneNumber", 0))
+            parent_id = int(dev.pluginProps.get("parentDeviceId", 0))
+            parent_dev = indigo.devices[parent_id]
+
+            moisture_raw = self.substitute(pluginAction.props.get("moisture", ""))
+            try:
+                moisture = int(float(moisture_raw))
+            except (ValueError, TypeError):
+                self.logger.error(
+                    f"Moisture value '{moisture_raw}' is not a valid number"
+                )
+                return
+
+            if moisture < 0 or moisture > 100:
+                self.logger.error(f"Moisture value {moisture} is out of range (0-100)")
+                return
+
+            key, api_version = self._get_device_auth(parent_dev)
+            response = self.api_client.set_moisture(key, zone_num, moisture, api_version=api_version)
+            if response.get("status") == "OK":
+                self.logger.info(f"Moisture for '{dev.name}' set to {moisture}%")
+                dev.updateStateOnServer("moisture", moisture)
+            else:
+                self.logger.error(f"Error setting moisture for '{dev.name}': {response.get('status')}")
+        except KeyError:
+            self.logger.error(
+                f"Parent controller (ID {dev.pluginProps.get('parentDeviceId')}) "
+                f"not found for zone '{dev.name}'"
+            )
+        except Exception:
+            self.logger.error(f"Could not set moisture for '{dev.name}'")
+            self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+
+    ########################################
     def setStandbyMode(self, pluginAction, dev):
         """Set controller standby mode on/off.
 
