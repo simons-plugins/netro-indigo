@@ -428,22 +428,29 @@ class Plugin(indigo.PluginBase):
                     continue
 
                 states = []
-                states.extend(self.zone_handler.extract_zone_states(zones, zone_num))
+                zone_states = self.zone_handler.extract_zone_states(zones, zone_num)
+                states.extend(zone_states)
 
-                if schedule_response:
-                    states.extend(
-                        self.zone_handler.process_zone_schedules(
-                            schedule_response, zone_num, api_version=api_version
+                # Check if zone is enabled
+                is_enabled = next(
+                    (s["value"] for s in zone_states if s["key"] == "enabled"), False
+                )
+
+                if is_enabled:
+                    zone_dev.setErrorStateOnServer('')
+                    if schedule_response:
+                        states.extend(
+                            self.zone_handler.process_zone_schedules(
+                                schedule_response, zone_num, api_version=api_version
+                            )
                         )
-                    )
 
-                if moisture_response:
-                    states.extend(
-                        self.zone_handler.process_zone_moisture(moisture_response, zone_num)
-                    )
-
-                if states:
-                    zone_dev.updateStatesOnServer(states)
+                    if moisture_response:
+                        states.extend(
+                            self.zone_handler.process_zone_moisture(moisture_response, zone_num)
+                        )
+                else:
+                    zone_dev.setErrorStateOnServer('disabled')
             except Exception as exc:
                 self.logger.error(f"Error updating zone device '{zone_dev.name}': {exc}")
                 self.logger.debug(f"Zone update error: \n{traceback.format_exc(10)}")
