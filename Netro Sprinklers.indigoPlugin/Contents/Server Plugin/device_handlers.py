@@ -719,7 +719,7 @@ class ZoneHandler:
 
         except (KeyError, TypeError, IndexError) as exc:
             self.logger.error(f"Error parsing zone moisture: {exc}")
-            return [{"key": "moisture", "value": 0}]
+            return [{"key": "moisture", "value": 0, "uiValue": "0%"}]
 
     def extract_zone_states(self, zones, zone_number):
         """Extract enabled and smartMode for a single zone from info data.

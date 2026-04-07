@@ -377,7 +377,13 @@ class Plugin(indigo.PluginBase):
                         f"Zone renamed: '{zone_dev.name}' -> '{expected_name}'"
                     )
                     zone_dev.name = expected_name
-                    zone_dev.replaceOnServer()
+                    try:
+                        zone_dev.replaceOnServer()
+                    except Exception as exc:
+                        self.logger.error(
+                            f"Could not rename zone device '{zone_dev.name}' "
+                            f"to '{expected_name}': {exc}"
+                        )
             else:
                 try:
                     props = {
@@ -416,27 +422,31 @@ class Plugin(indigo.PluginBase):
         zones = device_data.get("zones", [])
 
         for zone_dev in zone_devs.values():
-            zone_num = int(zone_dev.pluginProps.get("zoneNumber", 0))
-            if zone_num == 0:
-                continue
+            try:
+                zone_num = int(zone_dev.pluginProps.get("zoneNumber", 0))
+                if zone_num == 0:
+                    continue
 
-            states = []
-            states.extend(self.zone_handler.extract_zone_states(zones, zone_num))
+                states = []
+                states.extend(self.zone_handler.extract_zone_states(zones, zone_num))
 
-            if schedule_response:
-                states.extend(
-                    self.zone_handler.process_zone_schedules(
-                        schedule_response, zone_num, api_version=api_version
+                if schedule_response:
+                    states.extend(
+                        self.zone_handler.process_zone_schedules(
+                            schedule_response, zone_num, api_version=api_version
+                        )
                     )
-                )
 
-            if moisture_response:
-                states.extend(
-                    self.zone_handler.process_zone_moisture(moisture_response, zone_num)
-                )
+                if moisture_response:
+                    states.extend(
+                        self.zone_handler.process_zone_moisture(moisture_response, zone_num)
+                    )
 
-            if states:
-                zone_dev.updateStatesOnServer(states)
+                if states:
+                    zone_dev.updateStatesOnServer(states)
+            except Exception as exc:
+                self.logger.error(f"Error updating zone device '{zone_dev.name}': {exc}")
+                self.logger.debug(f"Zone update error: \n{traceback.format_exc(10)}")
 
     ########################################
     def _update_from_netro(self):
@@ -535,6 +545,7 @@ class Plugin(indigo.PluginBase):
             try:
                 moisture_dict = self.api_client.get_moistures(key, api_version=api_version)
             except Exception:
+                self.logger.warning(f"Moisture API unavailable for '{dev.name}' - zone moisture states may be stale")
                 self.logger.debug(f"Moisture API error: \n{traceback.format_exc(10)}")
 
             # Auto-create and update zone devices
@@ -1041,7 +1052,8 @@ class Plugin(indigo.PluginBase):
             mapping_json = dev.pluginProps.get("zoneVariableMap", "{}")
             try:
                 zone_var_map = json.loads(mapping_json)
-            except (json.JSONDecodeError, TypeError):
+            except (json.JSONDecodeError, TypeError) as exc:
+                self.logger.warning(f"Invalid zoneVariableMap on '{dev.name}': {exc}")
                 continue
 
             for zone_num, var_info in zone_var_map.items():
@@ -1248,7 +1260,14 @@ class Plugin(indigo.PluginBase):
         try:
             zone_num = int(dev.pluginProps.get("zoneNumber", 0))
             parent_id = int(dev.pluginProps.get("parentDeviceId", 0))
-            parent_dev = indigo.devices[parent_id]
+            try:
+                parent_dev = indigo.devices[parent_id]
+            except KeyError:
+                self.logger.error(
+                    f"Parent controller (ID {parent_id}) "
+                    f"not found for zone '{dev.name}'"
+                )
+                return
 
             moisture_raw = self.substitute(pluginAction.props.get("moisture", ""))
             try:
@@ -1270,11 +1289,6 @@ class Plugin(indigo.PluginBase):
                 dev.updateStateOnServer("moisture", moisture, uiValue=f"{moisture}%")
             else:
                 self.logger.error(f"Error setting moisture for '{dev.name}': {response.get('status')}")
-        except KeyError:
-            self.logger.error(
-                f"Parent controller (ID {dev.pluginProps.get('parentDeviceId')}) "
-                f"not found for zone '{dev.name}'"
-            )
         except Exception:
             self.logger.error(f"Could not set moisture for '{dev.name}'")
             self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
