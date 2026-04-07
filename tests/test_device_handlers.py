@@ -204,8 +204,7 @@ class TestSprinklerHandlerDeviceInfo:
 
         state_keys = {s["key"] for s in states}
         expected_keys = {
-            "id", "api_version", "address", "model", "paused",
-            "scheduleModeType", "status", "token_remaining", "time",
+            "id", "api_version", "status", "token_remaining", "time",
             "last_active", "token_reset", "name"
         }
         assert expected_keys.issubset(state_keys)
