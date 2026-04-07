@@ -902,3 +902,11 @@ class TestMoistureWithSubstitution:
         assert is_valid is False
         assert "moisture" in errors
         assert "%%v:" in errors["moisture"]
+
+
+def test_zone_device_config_always_valid():
+    is_valid, sanitized, errors = validate_device_config(
+        {"parentDeviceId": "123", "zoneNumber": "1"}, "zone"
+    )
+    assert is_valid is True
+    assert errors == {}

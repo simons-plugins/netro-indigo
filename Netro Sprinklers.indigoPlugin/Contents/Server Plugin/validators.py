@@ -324,6 +324,9 @@ def validate_device_config(
         sanitized_values contains the input values with any modifications.
         errors_dict maps field names to error messages.
     """
+    if type_id == "zone":
+        return (True, values, {})
+
     sanitized: Dict[str, Any] = dict(values)
     errors: Dict[str, str] = {}
 
