@@ -240,28 +240,31 @@ class Plugin(indigo.PluginBase):
             for zone in zones_data:
                 zone_num = str(zone["id"])
                 zone_name = zone.get("name", f"Zone {zone_num}")
-                var_name = f"netro_{dev_slug}_zone_{zone_num}_moisture"
+                zone_slug = self._slugify(zone_name)
+                var_name = f"netro_{dev_slug}_{zone_slug}_moisture"
 
                 if zone_num in zone_var_map:
                     # Variable already mapped — check if zone was renamed
                     var_id = zone_var_map[zone_num].get("var_id")
                     old_name = zone_var_map[zone_num].get("zone_name", "")
                     if var_id and old_name != zone_name:
-                        # Zone renamed — update the variable name
+                        # Zone renamed — rename the Indigo variable
                         try:
                             var = indigo.variables[int(var_id)]
-                            new_var_name = f"netro_{dev_slug}_zone_{zone_num}_moisture"
-                            if var.name != new_var_name:
-                                var.name = new_var_name
+                            old_var_name = var.name
+                            if var.name != var_name:
+                                var.name = var_name
                                 var.replaceOnServer()
                             zone_var_map[zone_num]["zone_name"] = zone_name
+                            zone_var_map[zone_num]["var_name"] = var_name
                             changed = True
                             self.logger.info(
-                                f"Zone renamed: updated variable for zone {zone_num} "
-                                f"'{old_name}' → '{zone_name}'"
+                                f"Zone renamed: variable '{old_var_name}' → "
+                                f"'{var_name}' (zone {zone_num}: "
+                                f"'{old_name}' → '{zone_name}')"
                             )
                         except (KeyError, ValueError):
-                            # Variable was deleted — recreate
+                            # Variable was deleted — recreate below
                             del zone_var_map[zone_num]
 
                 if zone_num not in zone_var_map:
@@ -411,9 +414,6 @@ class Plugin(indigo.PluginBase):
                 props["ScheduledZoneDurations"] = active_schedule_name
             dev.replacePluginPropsOnServer(props)
 
-            # Ensure Indigo variables exist for each zone (for variable substitution)
-            self._ensure_zone_variables(dev, zones_data)
-
             # Update moisture levels per zone
             try:
                 moisture_dict = self.api_client.get_moistures(key, api_version=api_version)
@@ -424,6 +424,10 @@ class Plugin(indigo.PluginBase):
                     dev.updateStatesOnServer(moisture_states)
             except Exception:
                 self.logger.debug(f"Moisture API error: \n{traceback.format_exc(10)}")
+
+            # Ensure Indigo variables exist for each zone (for variable substitution)
+            # Must be after replacePluginPropsOnServer to avoid props overwrite race
+            self._ensure_zone_variables(dev, zones_data)
 
             # Poll device events (v2 only)
             if api_version == "2":
