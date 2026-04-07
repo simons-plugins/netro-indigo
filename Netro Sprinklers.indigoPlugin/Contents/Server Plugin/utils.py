@@ -11,7 +11,61 @@ Note:
     It has no dependencies on other plugin modules to prevent circular imports.
 """
 
-from typing import Any
+from typing import Any, Dict
+
+
+def fahrenheit_to_celsius(f: float) -> float:
+    """Convert Fahrenheit to Celsius."""
+    return (f - 32) * 5 / 9
+
+
+def inches_to_mm(inches: float) -> float:
+    """Convert inches to millimeters."""
+    return inches * 25.4
+
+
+def mph_to_ms(mph: float) -> float:
+    """Convert miles per hour to meters per second."""
+    return mph * 0.44704
+
+
+def inhg_to_hpa(inhg: float) -> float:
+    """Convert inches of mercury to hectopascals."""
+    return inhg * 33.8639
+
+
+def convert_weather_us_to_metric(weather_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert weather data from US units to metric for API v2.
+
+    V1 API expects US units (°F, inches, mph, inHg).
+    V2 API expects metric (°C, mm, m/s, hPa).
+
+    Args:
+        weather_data: Weather dict with US-unit values
+
+    Returns:
+        New dict with values converted to metric units
+    """
+    converted = dict(weather_data)
+
+    # Temperature fields: °F → °C
+    for temp_key in ("t", "t_max", "t_min"):
+        if temp_key in converted and converted[temp_key] is not None:
+            converted[temp_key] = round(fahrenheit_to_celsius(float(converted[temp_key])), 1)
+
+    # Rainfall: inches → mm
+    if "rain" in converted and converted["rain"] is not None:
+        converted["rain"] = round(inches_to_mm(float(converted["rain"])), 1)
+
+    # Wind speed: mph → m/s
+    if "wind_speed" in converted and converted["wind_speed"] is not None:
+        converted["wind_speed"] = round(mph_to_ms(float(converted["wind_speed"])), 1)
+
+    # Pressure: inHg → hPa
+    if "pressure" in converted and converted["pressure"] is not None:
+        converted["pressure"] = round(inhg_to_hpa(float(converted["pressure"])), 1)
+
+    return converted
 
 
 def get_key_from_dict(key: str, data: dict, default: Any = None) -> Any:

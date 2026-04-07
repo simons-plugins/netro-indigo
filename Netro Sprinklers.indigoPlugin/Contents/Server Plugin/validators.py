@@ -200,6 +200,47 @@ def validate_optional_float(
     return (True, float_value, None)
 
 
+def validate_api_key(
+    api_key: Any,
+) -> Tuple[bool, str, Optional[str]]:
+    """Validate an optional API key for Netro API v2.
+
+    An empty key is valid — it means v1 mode (serial number auth).
+    A non-empty key must be a reasonable length string.
+
+    Args:
+        api_key: The API key to validate (typically string)
+
+    Returns:
+        Tuple of (is_valid, sanitized_key, error_message).
+        If is_valid is True, error_message is None.
+    """
+    # Handle None
+    if api_key is None:
+        return (True, "", None)
+
+    # Strip whitespace
+    sanitized = str(api_key).strip()
+
+    # Empty is valid (means v1 mode)
+    if not sanitized:
+        return (True, "", None)
+
+    # Validate minimum length — API keys are typically 32+ chars
+    if len(sanitized) < 16:
+        return (False, sanitized, "API key appears too short")
+
+    # Validate maximum length
+    if len(sanitized) > 128:
+        return (False, sanitized, "API key appears too long — paste only the key value")
+
+    # Validate characters — keys are alphanumeric with hyphens and underscores
+    if not all(c.isalnum() or c in '-_' for c in sanitized):
+        return (False, sanitized, "API key contains invalid characters")
+
+    return (True, sanitized, None)
+
+
 def validate_date_format(
     date_str: Any,
     format_str: str = "%Y-%m-%d",
@@ -274,6 +315,13 @@ def validate_device_config(
         elif error:
             errors["address"] = error
 
+        # Validate optional API key (v2)
+        is_valid, api_key, error = validate_api_key(values.get("apiKey", ""))
+        if is_valid:
+            sanitized["apiKey"] = api_key
+        elif error:
+            errors["apiKey"] = error
+
     elif type_id == "Whisperer":
         is_valid, serial, error = validate_serial_number(
             values.get("address", ""),
@@ -287,6 +335,13 @@ def validate_device_config(
                 errors["address"] = "Serial number appears too short"
             else:
                 errors["address"] = error
+
+        # Validate optional API key (v2)
+        is_valid, api_key, error = validate_api_key(values.get("apiKey", ""))
+        if is_valid:
+            sanitized["apiKey"] = api_key
+        elif error:
+            errors["apiKey"] = error
 
         # Set sensor capabilities regardless of validation result
         sanitized["SupportsBatteryLevel"] = True

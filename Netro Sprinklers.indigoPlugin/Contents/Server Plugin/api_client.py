@@ -36,6 +36,17 @@ from constants import (
     DEVICE_SET_STATUS_ENDPOINT,
     DEVICE_STOP_WATER_ENDPOINT,
     DEVICE_WATER_ENDPOINT,
+    DEVICE_INFO_V2_ENDPOINT,
+    DEVICE_MOISTURES_V2_ENDPOINT,
+    DEVICE_NO_WATER_V2_ENDPOINT,
+    DEVICE_REPORT_WEATHER_V2_ENDPOINT,
+    DEVICE_SCHEDULES_V2_ENDPOINT,
+    DEVICE_SET_MOISTURE_V2_ENDPOINT,
+    DEVICE_SENSOR_DATA_V2_ENDPOINT,
+    DEVICE_SET_STATUS_V2_ENDPOINT,
+    DEVICE_STOP_WATER_V2_ENDPOINT,
+    DEVICE_WATER_V2_ENDPOINT,
+    DEVICE_EVENTS_V2_ENDPOINT,
     THROTTLE_LIMIT_MINUTES,
     TOKEN_PAUSE_THRESHOLD,
     TOKEN_WARNING_THRESHOLD,
@@ -54,7 +65,12 @@ EXPECTED_INFO_KEYS: Final[Set[str]] = {"status", "data", "meta"}
 """Expected top-level keys in device info response."""
 
 EXPECTED_META_KEYS: Final[Set[str]] = {"time", "token_remaining", "token_reset", "last_active"}
-"""Expected keys in response meta section."""
+"""Expected keys in v1 response meta section."""
+
+EXPECTED_META_KEYS_V2: Final[Set[str]] = {
+    "time", "tid", "version", "token_limit", "token_remaining", "token_reset", "last_active"
+}
+"""Expected keys in v2 response meta section."""
 
 
 class NetroAPIClient:
@@ -224,7 +240,9 @@ class NetroAPIClient:
             )
 
         try:
-            self.logger.debug(f"API call: {method.upper()} {url}")
+            # Mask the key value in debug logs to avoid exposing API keys
+            masked_url = url.split("key=")[0] + "key=***" if "key=" in url else url
+            self.logger.debug(f"API call: {method.upper()} {masked_url}")
 
             # Select HTTP method
             if method == "put":
@@ -346,7 +364,7 @@ class NetroAPIClient:
             if meta and meta.get("token_reset"):
                 try:
                     reset_str = meta.get("token_reset")
-                    self._throttle_until = datetime.strptime(reset_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                    self._throttle_until = datetime.fromisoformat(reset_str).replace(tzinfo=timezone.utc)
                 except (ValueError, TypeError):
                     # Fallback to fixed delay
                     self._throttle_until = datetime.now(timezone.utc) + timedelta(minutes=THROTTLE_LIMIT_MINUTES)
@@ -384,6 +402,8 @@ class NetroAPIClient:
         Parses token_remaining and token_reset from the response meta
         section, logs warnings at thresholds, and saves state.
 
+        Handles both v1 (strptime) and v2 (fromisoformat) timestamp formats.
+
         Args:
             meta: Response meta dict containing token info
         """
@@ -391,8 +411,7 @@ class NetroAPIClient:
             self._token_remaining = int(meta.get("token_remaining", 2000))
             reset_str = meta.get("token_reset", "")
             if reset_str:
-                # Parse as UTC since API returns UTC timestamps
-                self._token_reset = datetime.strptime(reset_str, "%Y-%m-%dT%H:%M:%S").replace(tzinfo=timezone.utc)
+                self._token_reset = datetime.fromisoformat(reset_str).replace(tzinfo=timezone.utc)
         except (ValueError, TypeError) as exc:
             self.logger.warning(f"Could not parse token info from response: {exc}")
             # Set safe default to trigger proactive pause and prevent exhausting token budget
@@ -508,158 +527,239 @@ class NetroAPIClient:
             )
 
     # =========================================================================
+    # Endpoint Selection
+    # =========================================================================
+
+    # Maps (endpoint_name, api_version) to the correct URL constant.
+    # v1 endpoints use serial number auth, v2 use API key auth.
+    _ENDPOINT_MAP: Dict[str, Dict[str, str]] = {
+        "info": {"1": DEVICE_INFO_ENDPOINT, "2": DEVICE_INFO_V2_ENDPOINT},
+        "schedules": {"1": DEVICE_SCHEDULES_ENDPOINT, "2": DEVICE_SCHEDULES_V2_ENDPOINT},
+        "moistures": {"1": DEVICE_MOISTURES_ENDPOINT, "2": DEVICE_MOISTURES_V2_ENDPOINT},
+        "sensor_data": {"1": DEVICE_SENSOR_DATA_ENDPOINT, "2": DEVICE_SENSOR_DATA_V2_ENDPOINT},
+        "water": {"1": DEVICE_WATER_ENDPOINT, "2": DEVICE_WATER_V2_ENDPOINT},
+        "stop_water": {"1": DEVICE_STOP_WATER_ENDPOINT, "2": DEVICE_STOP_WATER_V2_ENDPOINT},
+        "set_status": {"1": DEVICE_SET_STATUS_ENDPOINT, "2": DEVICE_SET_STATUS_V2_ENDPOINT},
+        "no_water": {"1": DEVICE_NO_WATER_ENDPOINT, "2": DEVICE_NO_WATER_V2_ENDPOINT},
+        "report_weather": {"1": DEVICE_REPORT_WEATHER_ENDPOINT, "2": DEVICE_REPORT_WEATHER_V2_ENDPOINT},
+        "set_moisture": {"1": DEVICE_SET_MOISTURE_ENDPOINT, "2": DEVICE_SET_MOISTURE_V2_ENDPOINT},
+    }
+
+    def _endpoint(self, name: str, api_version: str = "1") -> str:
+        """Get the endpoint URL for the given name and API version.
+
+        Args:
+            name: Endpoint name (e.g. "info", "schedules")
+            api_version: "1" or "2"
+
+        Returns:
+            Full endpoint URL
+        """
+        versions = self._ENDPOINT_MAP[name]
+        if api_version not in versions:
+            self.logger.warning(
+                f"Unknown API version '{api_version}' for endpoint '{name}', falling back to v1"
+            )
+            api_version = "1"
+        return versions[api_version]
+
+    # =========================================================================
     # Convenience Methods for Endpoints
     # =========================================================================
 
-    def get_device_info(self, serial: str) -> Dict[str, Any]:
+    def get_device_info(self, key: str, api_version: str = "1") -> Dict[str, Any]:
         """Get device information from Netro API.
 
         Args:
-            serial: Device serial number
+            key: Device serial number (v1) or API key (v2)
+            api_version: API version to use ("1" or "2")
 
         Returns:
             API response containing device info
         """
-        return self.make_request(f"{DEVICE_INFO_ENDPOINT}?key={serial}")
+        return self.make_request(f"{self._endpoint('info', api_version)}?key={key}")
 
-    def get_schedules(self, serial: str) -> Dict[str, Any]:
+    def get_schedules(self, key: str, api_version: str = "1") -> Dict[str, Any]:
         """Get device schedules from Netro API.
 
         Args:
-            serial: Device serial number
+            key: Device serial number (v1) or API key (v2)
+            api_version: API version to use ("1" or "2")
 
         Returns:
             API response containing schedules
         """
-        return self.make_request(f"{DEVICE_SCHEDULES_ENDPOINT}?key={serial}")
+        return self.make_request(f"{self._endpoint('schedules', api_version)}?key={key}")
 
-    def get_moistures(self, serial: str) -> Dict[str, Any]:
+    def get_moistures(self, key: str, api_version: str = "1") -> Dict[str, Any]:
         """Get moisture levels from Netro API.
 
         Args:
-            serial: Device serial number
+            key: Device serial number (v1) or API key (v2)
+            api_version: API version to use ("1" or "2")
 
         Returns:
             API response containing moisture data
         """
-        return self.make_request(f"{DEVICE_MOISTURES_ENDPOINT}?key={serial}")
+        return self.make_request(f"{self._endpoint('moistures', api_version)}?key={key}")
 
-    def get_sensor_data(self, serial: str) -> Dict[str, Any]:
+    def get_sensor_data(self, key: str, api_version: str = "1") -> Dict[str, Any]:
         """Get Whisperer sensor data from Netro API.
 
         Args:
-            serial: Whisperer sensor serial number
+            key: Sensor serial number (v1) or API key (v2)
+            api_version: API version to use ("1" or "2")
 
         Returns:
             API response containing sensor readings
         """
-        return self.make_request(f"{DEVICE_SENSOR_DATA_ENDPOINT}?key={serial}")
+        return self.make_request(f"{self._endpoint('sensor_data', api_version)}?key={key}")
+
+    def get_events(
+        self,
+        key: str,
+        event_type: Optional[int] = None,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Get device events from Netro API (v2 only).
+
+        Args:
+            key: API key (v2 only)
+            event_type: Optional filter — 1=offline, 2=online, 3=schedule start, 4=schedule end
+            start_date: Optional start date (YYYY-MM-DD)
+            end_date: Optional end date (YYYY-MM-DD)
+
+        Returns:
+            API response containing device events
+        """
+        url = f"{DEVICE_EVENTS_V2_ENDPOINT}?key={key}"
+        if event_type is not None:
+            url += f"&event={event_type}"
+        if start_date:
+            url += f"&start_date={start_date}"
+        if end_date:
+            url += f"&end_date={end_date}"
+        return self.make_request(url)
 
     def start_watering(
         self,
-        serial: str,
+        key: str,
         zones: List[Dict[str, Any]],
         delay: int = 0,
-        start_time: Optional[int] = None
+        start_time: Optional[int] = None,
+        api_version: str = "1"
     ) -> Dict[str, Any]:
         """Start watering with optional delay.
 
         Args:
-            serial: Device serial number
+            key: Device serial number (v1) or API key (v2)
             zones: List of zone dicts with id and duration
             delay: Delay in minutes before starting (default 0)
             start_time: Optional epoch timestamp for scheduled start
+            api_version: API version to use ("1" or "2")
 
         Returns:
             API response confirming watering started
         """
-        data: Dict[str, Any] = {"key": serial, "zones": zones}
+        data: Dict[str, Any] = {"key": key, "zones": zones}
         if delay > 0:
             data["delay"] = delay
         if start_time:
             data["start_time"] = start_time
-        return self.make_request(DEVICE_WATER_ENDPOINT, method="post", data=data)
+        return self.make_request(
+            self._endpoint("water", api_version), method="post", data=data
+        )
 
-    def stop_watering(self, serial: str) -> Dict[str, Any]:
+    def stop_watering(self, key: str, api_version: str = "1") -> Dict[str, Any]:
         """Stop all active watering on device.
 
         Args:
-            serial: Device serial number
+            key: Device serial number (v1) or API key (v2)
+            api_version: API version to use ("1" or "2")
 
         Returns:
             API response confirming watering stopped
         """
         return self.make_request(
-            DEVICE_STOP_WATER_ENDPOINT,
+            self._endpoint("stop_water", api_version),
             method="post",
-            data={"key": serial}
+            data={"key": key}
         )
 
-    def set_device_status(self, serial: str, status: int) -> Dict[str, Any]:
+    def set_device_status(self, key: str, status: int, api_version: str = "1") -> Dict[str, Any]:
         """Set device status (online/standby).
 
         Args:
-            serial: Device serial number
+            key: Device serial number (v1) or API key (v2)
             status: 1 for online, 0 for standby
+            api_version: API version to use ("1" or "2")
 
         Returns:
             API response confirming status change
         """
         return self.make_request(
-            DEVICE_SET_STATUS_ENDPOINT,
+            self._endpoint("set_status", api_version),
             method="post",
-            data={"key": serial, "status": status}
+            data={"key": key, "status": status}
         )
 
-    def set_no_water(self, serial: str, days: int) -> Dict[str, Any]:
+    def set_no_water(self, key: str, days: int, api_version: str = "1") -> Dict[str, Any]:
         """Set rain delay (no watering for N days).
 
         Args:
-            serial: Device serial number
+            key: Device serial number (v1) or API key (v2)
             days: Number of days to skip watering (0 to cancel)
+            api_version: API version to use ("1" or "2")
 
         Returns:
             API response confirming rain delay set
         """
         return self.make_request(
-            DEVICE_NO_WATER_ENDPOINT,
+            self._endpoint("no_water", api_version),
             method="post",
-            data={"key": serial, "days": days}
+            data={"key": key, "days": days}
         )
 
-    def report_weather(self, serial: str, weather_data: Dict[str, Any]) -> Dict[str, Any]:
+    def report_weather(
+        self, key: str, weather_data: Dict[str, Any], api_version: str = "1"
+    ) -> Dict[str, Any]:
         """Report local weather data to improve scheduling.
 
         Args:
-            serial: Device serial number
+            key: Device serial number (v1) or API key (v2)
             weather_data: Weather data dict (temperature, humidity, etc.)
+            api_version: API version to use ("1" or "2")
 
         Returns:
             API response confirming weather report received
         """
-        data = {"key": serial, **weather_data}
+        data = {"key": key, **weather_data}
         return self.make_request(
-            DEVICE_REPORT_WEATHER_ENDPOINT,
+            self._endpoint("report_weather", api_version),
             method="post",
             data=data
         )
 
-    def set_moisture(self, serial: str, zone: int, moisture: int) -> Dict[str, Any]:
+    def set_moisture(
+        self, key: str, zone: int, moisture: int, api_version: str = "1"
+    ) -> Dict[str, Any]:
         """Override moisture level for a specific zone.
 
         Args:
-            serial: Device serial number
+            key: Device serial number (v1) or API key (v2)
             zone: Zone number (1-based)
             moisture: Moisture percentage (0-100)
+            api_version: API version to use ("1" or "2")
 
         Returns:
             API response confirming moisture override
         """
         return self.make_request(
-            DEVICE_SET_MOISTURE_ENDPOINT,
+            self._endpoint("set_moisture", api_version),
             method="post",
             data={
-                "key": serial,
+                "key": key,
                 "moistures": [{"zone": zone, "moisture": moisture}],
             }
         )

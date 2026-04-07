@@ -24,17 +24,23 @@ from typing import Final
 # =============================================================================
 
 NETRO_API_VERSION: Final[str] = "1"
-"""Current Netro API version."""
+"""Current default Netro API version."""
+
+NETRO_API_V2_VERSION: Final[str] = "2"
+"""Netro API version 2 (API key authentication)."""
 
 API_BASE_URL: Final[str] = "https://api.netrohome.com/npa/v{apiVersion}/"
 """Base URL template for Netro API (requires apiVersion formatting)."""
 
 API_URL: Final[str] = API_BASE_URL.format(apiVersion=NETRO_API_VERSION)
-"""Formatted base URL for current API version."""
+"""Formatted base URL for API v1."""
+
+API_V2_URL: Final[str] = API_BASE_URL.format(apiVersion=NETRO_API_V2_VERSION)
+"""Formatted base URL for API v2."""
 
 
 # =============================================================================
-# API Endpoints
+# API v1 Endpoints (serial number authentication)
 # =============================================================================
 
 DEVICE_INFO_ENDPOINT: Final[str] = API_URL + "info.json"
@@ -72,6 +78,44 @@ ZONE_START_ENDPOINT: Final[str] = API_URL + "zone/start"
 
 
 # =============================================================================
+# API v2 Endpoints (API key authentication)
+# =============================================================================
+
+DEVICE_INFO_V2_ENDPOINT: Final[str] = API_V2_URL + "info.json"
+"""Get device information and status (v2)."""
+
+DEVICE_SCHEDULES_V2_ENDPOINT: Final[str] = API_V2_URL + "schedules.json"
+"""Get device watering schedules (v2)."""
+
+DEVICE_MOISTURES_V2_ENDPOINT: Final[str] = API_V2_URL + "moistures.json"
+"""Get moisture levels for all zones (v2)."""
+
+DEVICE_SENSOR_DATA_V2_ENDPOINT: Final[str] = API_V2_URL + "sensor_data.json"
+"""Get Whisperer sensor readings (v2)."""
+
+DEVICE_WATER_V2_ENDPOINT: Final[str] = API_V2_URL + "water.json"
+"""Start watering with parameters (v2)."""
+
+DEVICE_STOP_WATER_V2_ENDPOINT: Final[str] = API_V2_URL + "stop_water.json"
+"""Stop all active watering (v2)."""
+
+DEVICE_SET_STATUS_V2_ENDPOINT: Final[str] = API_V2_URL + "set_status.json"
+"""Set device status (v2)."""
+
+DEVICE_NO_WATER_V2_ENDPOINT: Final[str] = API_V2_URL + "no_water.json"
+"""Set rain delay (v2)."""
+
+DEVICE_REPORT_WEATHER_V2_ENDPOINT: Final[str] = API_V2_URL + "report_weather.json"
+"""Report local weather data (v2)."""
+
+DEVICE_SET_MOISTURE_V2_ENDPOINT: Final[str] = API_V2_URL + "set_moisture.json"
+"""Override moisture level for a specific zone (v2)."""
+
+DEVICE_EVENTS_V2_ENDPOINT: Final[str] = API_V2_URL + "events.json"
+"""Get device events - online/offline/schedule changes (v2 only)."""
+
+
+# =============================================================================
 # Default Values
 # =============================================================================
 
@@ -98,6 +142,17 @@ TOKEN_PAUSE_THRESHOLD: Final[int] = 100
 
 TOKEN_WARNING_THRESHOLD: Final[int] = 200
 """Token count below which warnings are logged."""
+
+
+# =============================================================================
+# V2 Online Status Values
+# =============================================================================
+
+V2_ONLINE_STATUSES: Final[frozenset] = frozenset({
+    "ONLINE",
+    "WATERING",
+})
+"""Device status values that indicate the device is online in API v2."""
 
 
 # =============================================================================

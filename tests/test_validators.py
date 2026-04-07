@@ -22,6 +22,14 @@ from validators import (
     validate_action_config,
     validate_event_config,
     validate_prefs_config,
+    validate_api_key,
+)
+from utils import (
+    convert_weather_us_to_metric,
+    fahrenheit_to_celsius,
+    inches_to_mm,
+    mph_to_ms,
+    inhg_to_hpa,
 )
 
 
@@ -618,3 +626,175 @@ class TestEdgeCases:
         values = {"pollingInterval": "1440"}
         is_valid, _, _ = validate_prefs_config(values)
         assert is_valid is True
+
+
+# =============================================================================
+# V2 API Key Validation Tests
+# =============================================================================
+
+class TestAPIKeyValidation:
+    """Tests for validate_api_key function."""
+
+    def test_empty_key_is_valid(self):
+        """Empty API key means v1 mode — should be valid."""
+        is_valid, sanitized, error = validate_api_key("")
+        assert is_valid is True
+        assert sanitized == ""
+        assert error is None
+
+    def test_none_key_is_valid(self):
+        """None API key means v1 mode — should be valid."""
+        is_valid, sanitized, error = validate_api_key(None)
+        assert is_valid is True
+        assert sanitized == ""
+        assert error is None
+
+    def test_valid_api_key(self):
+        """Valid 32-char API key should pass."""
+        key = "AgMJSwGyNpi1YXXfCcQ4qpxcPo-hif0o"
+        is_valid, sanitized, error = validate_api_key(key)
+        assert is_valid is True
+        assert sanitized == key
+        assert error is None
+
+    def test_key_too_short(self):
+        """Short API key should fail."""
+        is_valid, sanitized, error = validate_api_key("abc123")
+        assert is_valid is False
+        assert "too short" in error
+
+    def test_whitespace_stripped(self):
+        """Whitespace should be stripped from API key."""
+        key = "  AgMJSwGyNpi1YXXfCcQ4qpxcPo-hif0o  "
+        is_valid, sanitized, error = validate_api_key(key)
+        assert is_valid is True
+        assert sanitized == key.strip()
+
+    def test_whitespace_only_is_v1(self):
+        """Whitespace-only key should be treated as empty (v1 mode)."""
+        is_valid, sanitized, error = validate_api_key("   ")
+        assert is_valid is True
+        assert sanitized == ""
+
+
+class TestDeviceConfigV2:
+    """Tests for device config validation with API key."""
+
+    def test_sprinkler_with_valid_api_key(self):
+        """Sprinkler with both serial and API key should validate."""
+        values = {
+            "address": "a4cf12b8d5e2",
+            "apiKey": "AgMJSwGyNpi1YXXfCcQ4qpxcPo-hif0o"
+        }
+        is_valid, sanitized, errors = validate_device_config(values, "sprinkler")
+        assert is_valid is True
+        assert sanitized["apiKey"] == "AgMJSwGyNpi1YXXfCcQ4qpxcPo-hif0o"
+
+    def test_sprinkler_with_empty_api_key(self):
+        """Sprinkler with empty API key should validate (v1 mode)."""
+        values = {"address": "a4cf12b8d5e2", "apiKey": ""}
+        is_valid, sanitized, errors = validate_device_config(values, "sprinkler")
+        assert is_valid is True
+        assert sanitized["apiKey"] == ""
+
+    def test_sprinkler_with_short_api_key_fails(self):
+        """Sprinkler with too-short API key should fail validation."""
+        values = {"address": "a4cf12b8d5e2", "apiKey": "abc"}
+        is_valid, sanitized, errors = validate_device_config(values, "sprinkler")
+        assert is_valid is False
+        assert "apiKey" in errors
+
+    def test_whisperer_with_valid_api_key(self):
+        """Whisperer with API key should validate."""
+        values = {
+            "address": "sensor12345678",
+            "apiKey": "AgMJSwGyNpi1YXXfCcQ4qpxcPo-hif0o"
+        }
+        is_valid, sanitized, errors = validate_device_config(values, "Whisperer")
+        assert is_valid is True
+        assert sanitized["apiKey"] == "AgMJSwGyNpi1YXXfCcQ4qpxcPo-hif0o"
+
+    def test_whisperer_with_no_api_key_field(self):
+        """Whisperer without apiKey field should validate (v1 mode)."""
+        values = {"address": "sensor12345678"}
+        is_valid, sanitized, errors = validate_device_config(values, "Whisperer")
+        assert is_valid is True
+        assert sanitized.get("apiKey", "") == ""
+
+
+# =============================================================================
+# Weather Unit Conversion Tests
+# =============================================================================
+
+class TestWeatherConversion:
+    """Tests for weather unit conversion (US to metric)."""
+
+    def test_fahrenheit_to_celsius_freezing(self):
+        """32°F = 0°C."""
+        assert fahrenheit_to_celsius(32) == pytest.approx(0, abs=0.01)
+
+    def test_fahrenheit_to_celsius_boiling(self):
+        """212°F = 100°C."""
+        assert fahrenheit_to_celsius(212) == pytest.approx(100, abs=0.01)
+
+    def test_fahrenheit_to_celsius_body_temp(self):
+        """98.6°F = 37°C."""
+        assert fahrenheit_to_celsius(98.6) == pytest.approx(37, abs=0.01)
+
+    def test_inches_to_mm(self):
+        """1 inch = 25.4 mm."""
+        assert inches_to_mm(1) == pytest.approx(25.4, abs=0.01)
+
+    def test_mph_to_ms(self):
+        """1 mph = 0.44704 m/s."""
+        assert mph_to_ms(1) == pytest.approx(0.44704, abs=0.001)
+
+    def test_inhg_to_hpa(self):
+        """29.92 inHg ≈ 1013.25 hPa (standard atmosphere)."""
+        assert inhg_to_hpa(29.92) == pytest.approx(1013.25, abs=0.5)
+
+    def test_convert_weather_full(self):
+        """Full weather data conversion from US to metric."""
+        us_data = {
+            "t": 75.0,
+            "t_max": 85.0,
+            "t_min": 65.0,
+            "rain": 0.5,
+            "wind_speed": 10.0,
+            "pressure": 30.0,
+            "humidity": 60,
+            "condition": 0,
+            "date": "2026-04-07"
+        }
+        metric = convert_weather_us_to_metric(us_data)
+
+        # Temperature conversions
+        assert metric["t"] == pytest.approx(23.9, abs=0.1)
+        assert metric["t_max"] == pytest.approx(29.4, abs=0.1)
+        assert metric["t_min"] == pytest.approx(18.3, abs=0.1)
+
+        # Other conversions
+        assert metric["rain"] == pytest.approx(12.7, abs=0.1)
+        assert metric["wind_speed"] == pytest.approx(4.5, abs=0.1)
+        assert metric["pressure"] == pytest.approx(1015.9, abs=0.5)
+
+        # Non-converted fields unchanged
+        assert metric["humidity"] == 60
+        assert metric["condition"] == 0
+        assert metric["date"] == "2026-04-07"
+
+    def test_convert_weather_partial(self):
+        """Partial weather data (only temperature) converts correctly."""
+        us_data = {"t": 32.0, "condition": 2, "date": "2026-04-07"}
+        metric = convert_weather_us_to_metric(us_data)
+        assert metric["t"] == pytest.approx(0.0, abs=0.1)
+        # No rain/wind/pressure keys — should not fail
+        assert "rain" not in metric
+
+    def test_convert_weather_zero_values(self):
+        """Zero values should convert correctly."""
+        us_data = {"t": 0.0, "rain": 0.0, "wind_speed": 0.0}
+        metric = convert_weather_us_to_metric(us_data)
+        assert metric["t"] == pytest.approx(-17.8, abs=0.1)  # 0°F = -17.8°C
+        assert metric["rain"] == 0.0
+        assert metric["wind_speed"] == 0.0

@@ -25,10 +25,11 @@ Example:
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from operator import itemgetter
 from typing import Any, Dict, List, Optional, Tuple
 
+from constants import V2_ONLINE_STATUSES
 from utils import get_key_from_dict
 
 
@@ -63,21 +64,28 @@ class SprinklerHandler:
     def process_device_info(
         self,
         api_response: Dict[str, Any],
-        serial: str
+        serial: str,
+        api_version: str = "1"
     ) -> Tuple[List[Dict[str, Any]], bool, Dict[str, Any]]:
         """Process device info API response.
 
         Transforms the device info API response into a list of state updates
         for Indigo. Extracts device status, token info, and basic properties.
 
+        Handles both v1 and v2 response formats:
+        - v1: status is ONLINE/OFFLINE, version is integer
+        - v2: status includes WATERING/SLEEPING/POWEROFF, version is string "2.0",
+              adds sw_version and battery_level fields
+
         Args:
             api_response: Response from api_client.get_device_info()
             serial: Device serial for logging context
+            api_version: API version ("1" or "2")
 
         Returns:
             Tuple of:
             - List of state update dicts for updateStatesOnServer()
-            - is_online: True if device reports ONLINE status
+            - is_online: True if device reports an online status
             - device_data: Raw device dict for zone processing
         """
         try:
@@ -85,13 +93,20 @@ class SprinklerHandler:
             reply_dict_device = reply_dict_data["device"]
             reply_dict_meta = api_response.get("meta", {})
 
-            # Determine online status
-            is_online = reply_dict_device.get("status") == "ONLINE"
+            # Determine online status — v2 has expanded status values
+            device_status = reply_dict_device.get("status", "")
+            if api_version == "2":
+                is_online = device_status in V2_ONLINE_STATUSES
+            else:
+                is_online = device_status == "ONLINE"
+
+            # API version value — v1 returns integer, v2 returns string like "2.0"
+            api_ver_value = str(reply_dict_device.get("version", "0"))
 
             # Build update list for device states
             update_list = [
                 {"key": "id", "value": reply_dict_device.get("serial", serial)},
-                {"key": "api_version", "value": reply_dict_device.get("version", 0)},
+                {"key": "api_version", "value": api_ver_value},
                 {"key": "address", "value": get_key_from_dict("macAddress", reply_dict_device)},
                 {"key": "model", "value": get_key_from_dict("model", reply_dict_device)},
                 {"key": "paused", "value": get_key_from_dict("paused", reply_dict_device)},
@@ -107,6 +122,12 @@ class SprinklerHandler:
                 {"key": "name", "value": reply_dict_device.get("name", "Unknown")},
             ]
 
+            # V2 adds sw_version (firmware) field
+            if api_version == "2" and "sw_version" in reply_dict_device:
+                update_list.append(
+                    {"key": "sw_version", "value": reply_dict_device["sw_version"]}
+                )
+
             return (update_list, is_online, reply_dict_device)
 
         except (KeyError, TypeError, AttributeError) as exc:
@@ -120,15 +141,21 @@ class SprinklerHandler:
 
     def process_schedules(
         self,
-        api_response: Dict[str, Any]
+        api_response: Dict[str, Any],
+        api_version: str = "1"
     ) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """Process schedules API response.
 
         Transforms the schedules API response into state updates for active
         and upcoming schedules.
 
+        Handles both v1 and v2 timestamp formats:
+        - v1: start_time is millisecond Unix timestamp (number or string)
+        - v2: start_time is ISO 8601 string, has local_start_time/local_end_time
+
         Args:
             api_response: Response from api_client.get_schedules()
+            api_version: API version ("1" or "2")
 
         Returns:
             Tuple of:
@@ -152,16 +179,9 @@ class SprinklerHandler:
                     current_schedule_dict = sch_dict
                 # Find next valid (upcoming) schedule with earliest start time
                 elif sch_dict.get("status") == "VALID":
-                    start_time_raw = sch_dict.get("start_time", 0)
-                    try:
-                        start_time = (
-                            float(start_time_raw)
-                            if isinstance(start_time_raw, str)
-                            else start_time_raw
-                        )
-                    except (ValueError, TypeError):
-                        start_time = 0
-
+                    start_time = self._parse_schedule_sort_key(
+                        sch_dict.get("start_time", 0), api_version
+                    )
                     if earliest_start_time is None or start_time < earliest_start_time:
                         earliest_start_time = start_time
                         next_schedule_dict = sch_dict
@@ -179,7 +199,9 @@ class SprinklerHandler:
 
             # Update next schedule states
             if next_schedule_dict:
-                update_list.extend(self._format_next_schedule(next_schedule_dict))
+                update_list.extend(
+                    self._format_next_schedule(next_schedule_dict, api_version)
+                )
             else:
                 update_list.extend(self._no_upcoming_schedule())
 
@@ -192,32 +214,71 @@ class SprinklerHandler:
                 None
             )
 
+    @staticmethod
+    def _parse_schedule_sort_key(raw_value: Any, api_version: str = "1") -> float:
+        """Parse a schedule timestamp into a sortable float value.
+
+        Args:
+            raw_value: Timestamp — ms integer/string (v1) or ISO 8601 string (v2)
+            api_version: API version ("1" or "2")
+
+        Returns:
+            Float timestamp for sorting (Unix seconds)
+        """
+        try:
+            if api_version == "2":
+                # V2: ISO 8601 string → Unix timestamp for sorting
+                dt = datetime.fromisoformat(str(raw_value))
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt.timestamp()
+            else:
+                # V1: Millisecond timestamp (may be string)
+                return float(raw_value) if isinstance(raw_value, str) else float(raw_value)
+        except (ValueError, TypeError):
+            return float('inf')  # Unparseable schedules sort last (never "next")
+
     def _format_next_schedule(
         self,
-        schedule_dict: Dict[str, Any]
+        schedule_dict: Dict[str, Any],
+        api_version: str = "1"
     ) -> List[Dict[str, Any]]:
         """Format next schedule info as state updates.
 
         Args:
             schedule_dict: Schedule dict from API response
+            api_version: API version ("1" or "2")
 
         Returns:
             List of state update dicts for next schedule
         """
         updates: List[Dict[str, Any]] = []
 
-        # Convert timestamp to readable format
-        start_time_raw = schedule_dict.get("start_time", 0)
-        try:
-            start_time_ms = (
-                float(start_time_raw)
-                if isinstance(start_time_raw, str)
-                else start_time_raw
-            )
-            start_time_dt = datetime.fromtimestamp(start_time_ms / 1000.0)
-            start_time_str = start_time_dt.strftime("%Y-%m-%d %H:%M:%S")
-        except (ValueError, TypeError, OSError):
-            start_time_str = "Invalid timestamp"
+        if api_version == "2":
+            # V2: Use local_start_time if available, otherwise parse ISO 8601
+            local_start = schedule_dict.get("local_start_time")
+            local_date = schedule_dict.get("local_date", "")
+            if local_start and local_date:
+                start_time_str = f"{local_date} {local_start}"
+            else:
+                try:
+                    start_dt = datetime.fromisoformat(str(schedule_dict.get("start_time", "")))
+                    start_time_str = start_dt.strftime("%Y-%m-%d %H:%M:%S")
+                except (ValueError, TypeError):
+                    start_time_str = "Invalid timestamp"
+        else:
+            # V1: Convert millisecond timestamp to readable format
+            start_time_raw = schedule_dict.get("start_time", 0)
+            try:
+                start_time_ms = (
+                    float(start_time_raw)
+                    if isinstance(start_time_raw, str)
+                    else start_time_raw
+                )
+                start_time_dt = datetime.fromtimestamp(start_time_ms / 1000.0)
+                start_time_str = start_time_dt.strftime("%Y-%m-%d %H:%M:%S")
+            except (ValueError, TypeError, OSError):
+                start_time_str = "Invalid timestamp"
 
         updates.append({"key": "nextScheduleTime", "value": start_time_str})
         updates.append({
@@ -229,12 +290,40 @@ class SprinklerHandler:
             "value": schedule_dict.get("source", "Unknown").title()
         })
 
-        # Duration is in seconds, convert to minutes
-        duration_sec = schedule_dict.get("duration") or 0
-        duration_min = int(duration_sec / 60)
+        # Duration: v1 has duration in seconds, v2 needs calculation from start/end
+        if api_version == "2":
+            duration_min = self._calc_v2_duration(schedule_dict)
+        else:
+            duration_sec = schedule_dict.get("duration") or 0
+            duration_min = int(duration_sec / 60)
         updates.append({"key": "nextScheduleDuration", "value": duration_min})
 
         return updates
+
+    def _calc_v2_duration(self, schedule_dict: Dict[str, Any]) -> int:
+        """Calculate schedule duration in minutes from v2 start/end times.
+
+        Args:
+            schedule_dict: V2 schedule dict with ISO 8601 start_time and end_time
+
+        Returns:
+            Duration in minutes, or 0 if calculation fails
+        """
+        try:
+            start_str = schedule_dict.get("start_time", "")
+            end_str = schedule_dict.get("end_time", "")
+            if start_str and end_str:
+                start_dt = datetime.fromisoformat(str(start_str))
+                end_dt = datetime.fromisoformat(str(end_str))
+                delta = end_dt - start_dt
+                return max(0, int(delta.total_seconds() / 60))
+        except (ValueError, TypeError) as exc:
+            self.logger.warning(
+                f"Could not calculate v2 schedule duration from "
+                f"start='{schedule_dict.get('start_time')}' "
+                f"end='{schedule_dict.get('end_time')}': {exc}"
+            )
+        return 0
 
     def _no_upcoming_schedule(self) -> List[Dict[str, Any]]:
         """Return state updates for no upcoming schedule.
@@ -251,7 +340,8 @@ class SprinklerHandler:
 
     def process_moistures(
         self,
-        api_response: Dict[str, Any]
+        api_response: Dict[str, Any],
+        api_version: str = "1"
     ) -> List[Dict[str, Any]]:
         """Process moistures API response.
 
@@ -372,7 +462,8 @@ class WhispererHandler:
     def process_sensor_data(
         self,
         api_response: Dict[str, Any],
-        serial: str
+        serial: str,
+        api_version: str = "1"
     ) -> Tuple[List[Dict[str, Any]], bool]:
         """Process sensor data API response.
 
