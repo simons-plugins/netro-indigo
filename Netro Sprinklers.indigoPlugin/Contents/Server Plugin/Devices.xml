@@ -149,66 +149,6 @@
                 <TriggerLabel>Status</TriggerLabel>
                 <ControlPageLabel>Status</ControlPageLabel>
             </State>
-            <State id="zone_1_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
-            <State id="zone_2_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
-            <State id="zone_3_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
-            <State id="zone_4_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
-            <State id="zone_5_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
-            <State id="zone_6_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
-            <State id="zone_7_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
-            <State id="zone_8_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
-            <State id="zone_9_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
-            <State id="zone_10_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
-            <State id="zone_11_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
-            <State id="zone_12_moisture">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Status</TriggerLabel>
-                <ControlPageLabel>Status</ControlPageLabel>
-            </State>
         </States>
     </Device>
     <Device type="sensor" subType="kSensorDeviceSubType.Humidity, ui=Plant Moisture Sensor"  id="Whisperer">
@@ -333,5 +273,74 @@
             </State>
         </States>
         <UiDisplayStateId>soilMoisture</UiDisplayStateId>
+    </Device>
+    <Device type="custom" id="zone">
+        <Name>Netro Zone</Name>
+        <ConfigUI>
+            <Field id="parentDeviceId" type="textfield" hidden="true">
+                <Label/>
+            </Field>
+            <Field id="zoneNumber" type="textfield" hidden="true">
+                <Label/>
+            </Field>
+        </ConfigUI>
+        <States>
+            <State id="moisture">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Moisture Level (%)</TriggerLabel>
+                <ControlPageLabel>Moisture Level (%)</ControlPageLabel>
+            </State>
+            <State id="enabled">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>Zone Enabled</TriggerLabel>
+                <ControlPageLabel>Zone Enabled</ControlPageLabel>
+            </State>
+            <State id="smartMode">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Smart Mode</TriggerLabel>
+                <ControlPageLabel>Smart Mode</ControlPageLabel>
+            </State>
+            <State id="isIrrigating">
+                <ValueType>Boolean</ValueType>
+                <TriggerLabel>Currently Irrigating</TriggerLabel>
+                <ControlPageLabel>Currently Irrigating</ControlPageLabel>
+            </State>
+            <State id="lastWateringStart">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Last Watering Start</TriggerLabel>
+                <ControlPageLabel>Last Watering Start</ControlPageLabel>
+            </State>
+            <State id="lastWateringEnd">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Last Watering End</TriggerLabel>
+                <ControlPageLabel>Last Watering End</ControlPageLabel>
+            </State>
+            <State id="lastWateringSource">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Last Watering Source</TriggerLabel>
+                <ControlPageLabel>Last Watering Source</ControlPageLabel>
+            </State>
+            <State id="lastWateringStatus">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Last Watering Status</TriggerLabel>
+                <ControlPageLabel>Last Watering Status</ControlPageLabel>
+            </State>
+            <State id="nextWateringStart">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Next Watering Start</TriggerLabel>
+                <ControlPageLabel>Next Watering Start</ControlPageLabel>
+            </State>
+            <State id="nextWateringEnd">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Next Watering End</TriggerLabel>
+                <ControlPageLabel>Next Watering End</ControlPageLabel>
+            </State>
+            <State id="nextWateringSource">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Next Watering Source</TriggerLabel>
+                <ControlPageLabel>Next Watering Source</ControlPageLabel>
+            </State>
+        </States>
+        <UiDisplayStateId>moisture</UiDisplayStateId>
     </Device>
 </Devices>
