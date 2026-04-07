@@ -455,7 +455,7 @@ class SprinklerHandler:
             events_data = api_response.get("data", {})
             events = events_data.get("events", [])
 
-            if not events:
+            if not events or not isinstance(events, list):
                 return ([], last_event_id)
 
             # Filter to events newer than last seen

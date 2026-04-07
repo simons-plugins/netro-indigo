@@ -249,7 +249,7 @@ class Plugin(indigo.PluginBase):
                     zone_name = zone_name or dev.name
                 else:
                     zone_slug = self._slugify(zone_name)
-                    var_name = f"zone_moisture_{zone_slug}"
+                    var_name = f"zone_moisture_{dev_slug}_{zone_slug}"
 
                 if zone_num in zone_var_map:
                     var_id = zone_var_map[zone_num].get("var_id")
@@ -440,22 +440,33 @@ class Plugin(indigo.PluginBase):
                 try:
                     today = date.today().strftime("%Y-%m-%d")
                     events_dict = self.api_client.get_events(key, start_date=today)
+                    first_run = dev.id not in self._last_event_ids
                     last_id = self._last_event_ids.get(dev.id, 0)
                     new_events, highest_id = self.sprinkler_handler.process_events(
                         events_dict, last_event_id=last_id
                     )
                     self._last_event_ids[dev.id] = highest_id
 
-                    for event in new_events:
-                        event_code = event.get("event", 0)
-                        event_name = DEVICE_EVENT_TYPES.get(event_code, f"unknown({event_code})")
-                        self.logger.info(
-                            f"Device event: '{dev.name}' {event_name} "
-                            f"at {event.get('time', 'unknown')}"
+                    # Skip firing triggers on first poll after startup to avoid
+                    # replaying today's events as duplicate triggers
+                    if first_run:
+                        self.logger.debug(
+                            f"Events catch-up for '{dev.name}': "
+                            f"skipped {len(new_events)} existing events"
                         )
-                        self._fireTrigger(
-                            f"deviceEvent_{event_code}", dev.id
-                        )
+                    else:
+                        for event in new_events:
+                            event_code = event.get("event", 0)
+                            event_name = DEVICE_EVENT_TYPES.get(
+                                event_code, f"unknown({event_code})"
+                            )
+                            self.logger.info(
+                                f"Device event: '{dev.name}' {event_name} "
+                                f"at {event.get('time', 'unknown')}"
+                            )
+                            self._fireTrigger(
+                                f"deviceEvent_{event_code}", dev.id
+                            )
                 except Exception:
                     self.logger.debug(f"Events API error: \n{traceback.format_exc(10)}")
 
