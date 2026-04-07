@@ -21,6 +21,7 @@ Note:
     to prevent circular imports and maintain testability.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -241,6 +242,10 @@ def validate_api_key(
     return (True, sanitized, None)
 
 
+_INDIGO_SUB_RE = re.compile(r'^%%[vd]:\d+(?::[a-zA-Z_]\w*)?%%$')
+"""Regex matching valid Indigo substitution patterns: %%v:ID%% or %%d:ID:state%%."""
+
+
 def is_indigo_substitution(value: Any) -> bool:
     """Check if a value is an Indigo variable/device state substitution.
 
@@ -251,12 +256,11 @@ def is_indigo_substitution(value: Any) -> bool:
         value: The value to check
 
     Returns:
-        True if value contains an Indigo substitution pattern
+        True if value matches a valid Indigo substitution pattern
     """
     if not isinstance(value, str):
         return False
-    stripped = value.strip()
-    return stripped.startswith("%%") and stripped.endswith("%%")
+    return bool(_INDIGO_SUB_RE.match(value.strip()))
 
 
 def validate_date_format(

@@ -272,6 +272,7 @@ class Plugin(indigo.PluginBase):
                     except (KeyError, ValueError):
                         # Variable was deleted — recreate below
                         del zone_var_map[zone_num]
+                        changed = True
 
                 if zone_num not in zone_var_map:
                     # Create new variable for this zone
@@ -287,7 +288,7 @@ class Plugin(indigo.PluginBase):
                             f"Created moisture variable '{var_name}' for "
                             f"zone {zone_num} ({zone_name}) on '{dev.name}'"
                         )
-                    except Exception:
+                    except Exception as create_exc:
                         # Variable may already exist (name conflict)
                         try:
                             var = indigo.variables[var_name]
@@ -299,7 +300,8 @@ class Plugin(indigo.PluginBase):
                             changed = True
                         except KeyError:
                             self.logger.warning(
-                                f"Could not create variable '{var_name}' for zone {zone_num}"
+                                f"Could not create variable '{var_name}' "
+                                f"for zone {zone_num}: {create_exc}"
                             )
 
             # Save updated mapping back to pluginProps
@@ -308,7 +310,10 @@ class Plugin(indigo.PluginBase):
                 dev.replacePluginPropsOnServer(props)
 
         except Exception:
-            self.logger.debug(f"Error managing zone variables: \n{traceback.format_exc(10)}")
+            self.logger.warning(
+                f"Could not manage zone variables for '{dev.name}': "
+                f"\n{traceback.format_exc(10)}"
+            )
 
     @staticmethod
     def _get_device_auth(dev):
@@ -468,7 +473,7 @@ class Plugin(indigo.PluginBase):
                                 f"deviceEvent_{event_code}", dev.id
                             )
                 except Exception:
-                    self.logger.debug(f"Events API error: \n{traceback.format_exc(10)}")
+                    self.logger.warning(f"Events API error for '{dev.name}': \n{traceback.format_exc(10)}")
 
         except ThrottleDelayError:
             # Already logged detailed error in api_client, just skip this device
@@ -860,8 +865,11 @@ class Plugin(indigo.PluginBase):
                                 event_code = event.split("_", 1)[1]
                                 if trigger_event_type == "all" or trigger_event_type == event_code:
                                     indigo.trigger.execute(trigger)
-                        except (ValueError, KeyError):
-                            pass
+                        except (ValueError, KeyError) as exc:
+                            self.logger.warning(
+                                f"Skipping deviceEvent trigger {trigger.id}: "
+                                f"invalid config — {exc}"
+                            )
                 elif trigger.pluginTypeId == event:
                     # an update is available, just fire the trigger since there's nothing else to look at
                     indigo.trigger.execute(trigger)
@@ -1061,7 +1069,7 @@ class Plugin(indigo.PluginBase):
             # Resolve Indigo variable substitution (%%v:ID%%) at runtime
             moisture_raw = self.substitute(pluginAction.props.get("moisture", ""))
             try:
-                moisture = int(moisture_raw)
+                moisture = int(float(moisture_raw))
             except (ValueError, TypeError):
                 self.logger.error(
                     f"Moisture value '{moisture_raw}' is not a valid number "

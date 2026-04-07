@@ -859,6 +859,18 @@ class TestIndigoSubstitution:
         """Whitespace around pattern should still be detected."""
         assert is_indigo_substitution("  %%v:123%%  ") is True
 
+    def test_rejects_arbitrary_text(self):
+        """Arbitrary text between %% delimiters should be rejected."""
+        assert is_indigo_substitution("%%hello world%%") is False
+
+    def test_rejects_empty_substitution(self):
+        """Empty substitution %%%% should be rejected."""
+        assert is_indigo_substitution("%%%%") is False
+
+    def test_rejects_missing_id(self):
+        """%%v:%% without ID should be rejected."""
+        assert is_indigo_substitution("%%v:%%") is False
+
 
 class TestMoistureWithSubstitution:
     """Tests for setMoisture validation with variable substitution."""
