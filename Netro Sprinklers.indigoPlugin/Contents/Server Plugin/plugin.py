@@ -705,6 +705,9 @@ class Plugin(indigo.PluginBase):
             auth_type = "API key" if api_version == "2" else "serial number"
             self.logger.info(f"Device '{dev.name}' using API v{api_version} ({auth_type} auth)")
 
+        # Subscribe to variable changes for zone moisture auto-link
+        indigo.variables.subscribeToChanges()
+
     ########################################
     def shutdown(self):
         """Called when plugin is disabled or Indigo quits.
@@ -1017,6 +1020,76 @@ class Plugin(indigo.PluginBase):
             # Trigger wasn't in dict - already removed or never added
             self.logger.debug(f"Trigger {trigger.id} not found in triggerDict")
         self.logger.debug(f"Stop trigger processing list: {str(self.triggerDict)}")
+
+    def variableUpdated(self, origVar, newVar):
+        """Called when any subscribed variable changes.
+
+        Checks if the variable is a zone moisture variable. If so,
+        calls set_moisture API for the corresponding zone.
+
+        Args:
+            origVar: Variable before change
+            newVar: Variable after change
+        """
+        # Only act on value changes
+        if origVar.value == newVar.value:
+            return
+
+        # Search all sprinkler devices for a zone variable mapping that matches
+        for dev in indigo.devices.iter(filter="self.sprinkler"):
+            mapping_json = dev.pluginProps.get("zoneVariableMap", "{}")
+            try:
+                zone_var_map = json.loads(mapping_json)
+            except (json.JSONDecodeError, TypeError):
+                continue
+
+            for zone_num, var_info in zone_var_map.items():
+                if str(var_info.get("var_id")) == str(newVar.id):
+                    # Found the matching zone — call set_moisture
+                    try:
+                        moisture = int(float(newVar.value))
+                    except (ValueError, TypeError):
+                        self.logger.warning(
+                            f"Zone moisture variable '{newVar.name}' has "
+                            f"non-numeric value '{newVar.value}', ignoring"
+                        )
+                        return
+
+                    if moisture < 0 or moisture > 100:
+                        self.logger.warning(
+                            f"Zone moisture variable '{newVar.name}' value "
+                            f"{moisture} out of range (0-100), ignoring"
+                        )
+                        return
+
+                    key, api_version = self._get_device_auth(dev)
+                    try:
+                        response = self.api_client.set_moisture(
+                            key, int(zone_num), moisture, api_version=api_version
+                        )
+                        if response.get("status") == "OK":
+                            self.logger.info(
+                                f"Auto-set moisture for zone {zone_num} on "
+                                f"'{dev.name}' to {moisture}% "
+                                f"(from variable '{newVar.name}')"
+                            )
+                            # Update the zone device state too
+                            zone_devs = self._get_zone_devices(dev.id)
+                            if int(zone_num) in zone_devs:
+                                zone_devs[int(zone_num)].updateStateOnServer(
+                                    "moisture", moisture
+                                )
+                        else:
+                            self.logger.error(
+                                f"Error auto-setting moisture for zone {zone_num}: "
+                                f"{response.get('status')}"
+                            )
+                    except Exception:
+                        self.logger.error(
+                            f"API error auto-setting moisture for zone {zone_num}"
+                        )
+                        self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+                    return  # Found match, stop searching
 
     ########################################
     # Sprinkler Control Action callback
