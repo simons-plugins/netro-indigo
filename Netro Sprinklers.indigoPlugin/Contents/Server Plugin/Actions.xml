@@ -9,7 +9,7 @@
      backlightBrightness state added to Devices.xml.
 -->
 <Actions>
-    <Action id="setStandbyMode" deviceFilter="self" uiPath="DeviceActions">
+    <Action id="setStandbyMode" deviceFilter="self.sprinkler" uiPath="DeviceActions">
         <Name>Set Standby Mode</Name>
         <CallbackMethod>setStandbyMode</CallbackMethod>
         <ConfigUI>
@@ -23,7 +23,7 @@
         </ConfigUI>
     </Action>
 
-    <Action id="setNoWater" deviceFilter="self" uiPath="DeviceActions">
+    <Action id="setNoWater" deviceFilter="self.sprinkler" uiPath="DeviceActions">
         <Name>Set Rain Delay for x days</Name>
         <CallbackMethod>setNoWater</CallbackMethod>
         <ConfigUI>
@@ -36,7 +36,7 @@
         </ConfigUI>
     </Action>
 
-    <Action id="startZoneWithDelay" deviceFilter="self" uiPath="DeviceActions">
+    <Action id="startZoneWithDelay" deviceFilter="self.sprinkler" uiPath="DeviceActions">
         <Name>Start Zone with Delay</Name>
         <CallbackMethod>startZoneWithDelay</CallbackMethod>
         <ConfigUI>
@@ -68,7 +68,7 @@
         </ConfigUI>
     </Action>
 
-    <Action id="setMoisture" deviceFilter="self" uiPath="DeviceActions">
+    <Action id="setMoisture" deviceFilter="self.sprinkler" uiPath="DeviceActions">
         <Name>Set Moisture Override</Name>
         <CallbackMethod>setMoisture</CallbackMethod>
         <ConfigUI>
@@ -88,7 +88,7 @@
         </ConfigUI>
     </Action>
 
-    <Action id="reportWeather" deviceFilter="self" uiPath="DeviceActions">
+    <Action id="reportWeather" deviceFilter="self.sprinkler" uiPath="DeviceActions">
         <Name>Report Local Weather to Netro</Name>
         <CallbackMethod>reportWeather</CallbackMethod>
         <ConfigUI>
