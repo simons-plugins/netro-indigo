@@ -107,13 +107,6 @@ class SprinklerHandler:
             update_list = [
                 {"key": "id", "value": reply_dict_device.get("serial", serial)},
                 {"key": "api_version", "value": api_ver_value},
-                {"key": "address", "value": get_key_from_dict("macAddress", reply_dict_device)},
-                {"key": "model", "value": get_key_from_dict("model", reply_dict_device)},
-                {"key": "paused", "value": get_key_from_dict("paused", reply_dict_device)},
-                {
-                    "key": "scheduleModeType",
-                    "value": get_key_from_dict("scheduleModeType", reply_dict_device)
-                },
                 {"key": "status", "value": get_key_from_dict("status", reply_dict_device)},
                 {"key": "token_remaining", "value": reply_dict_meta.get("token_remaining", 0)},
                 {"key": "time", "value": reply_dict_meta.get("time", "unknown")},

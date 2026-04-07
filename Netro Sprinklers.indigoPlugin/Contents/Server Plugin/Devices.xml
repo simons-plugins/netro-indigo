@@ -109,16 +109,6 @@
                 <TriggerLabel>Next Schedule Duration (minutes)</TriggerLabel>
                 <ControlPageLabel>Next Schedule Duration (minutes)</ControlPageLabel>
             </State>
-            <State id="address">
-                <ValueType>String</ValueType>
-                <TriggerLabel>MAC Address</TriggerLabel>
-                <ControlPageLabel>MAC Address</ControlPageLabel>
-            </State>
-            <State id="model">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Model</TriggerLabel>
-                <ControlPageLabel>Model</ControlPageLabel>
-            </State>
             <State id="name">
                 <ValueType>String</ValueType>
                 <TriggerLabel>Name</TriggerLabel>
@@ -128,16 +118,6 @@
                 <ValueType>Boolean</ValueType>
                 <TriggerLabel>In Standby Mode</TriggerLabel>
                 <ControlPageLabel>In Standby Mode</ControlPageLabel>
-            </State>
-            <State id="paused">
-                <ValueType>Boolean</ValueType>
-                <TriggerLabel>Paused</TriggerLabel>
-                <ControlPageLabel>Paused</ControlPageLabel>
-            </State>
-            <State id="scheduleModeType">
-                <ValueType>String</ValueType>
-                <TriggerLabel>Schedule Mode Type</TriggerLabel>
-                <ControlPageLabel>Schedule Mode Type</ControlPageLabel>
             </State>
             <State id="serialNumber">
                 <ValueType>String</ValueType>
