@@ -237,11 +237,19 @@ class Plugin(indigo.PluginBase):
                 zone_var_map = {}
 
             changed = False
+            single_zone = len(zones_data) == 1
             for zone in zones_data:
                 zone_num = str(zone["id"])
-                zone_name = zone.get("name", f"Zone {zone_num}")
-                zone_slug = self._slugify(zone_name)
-                var_name = f"netro_{dev_slug}_{zone_slug}_moisture"
+                zone_name = zone.get("name", "").strip()
+
+                # For single-zone devices (e.g. Pixie) or zones without names,
+                # use the device name only. For multi-zone, use zone name.
+                if single_zone or not zone_name:
+                    var_name = f"netro_{dev_slug}_moisture"
+                    zone_name = zone_name or dev.name
+                else:
+                    zone_slug = self._slugify(zone_name)
+                    var_name = f"netro_{dev_slug}_{zone_slug}_moisture"
 
                 if zone_num in zone_var_map:
                     # Variable already mapped — check if zone was renamed
