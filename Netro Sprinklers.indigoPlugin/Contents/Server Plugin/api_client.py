@@ -755,11 +755,14 @@ class NetroAPIClient:
         Returns:
             API response confirming moisture override
         """
+        if api_version == "2":
+            # V2: flat format with zones array and moisture value
+            data = {"key": key, "zones": [zone], "moisture": moisture}
+        else:
+            # V1: nested moistures array
+            data = {"key": key, "moistures": [{"zone": zone, "moisture": moisture}]}
         return self.make_request(
             self._endpoint("set_moisture", api_version),
             method="post",
-            data={
-                "key": key,
-                "moistures": [{"zone": zone, "moisture": moisture}],
-            }
+            data=data
         )
