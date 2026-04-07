@@ -64,6 +64,9 @@ DEVICE_NO_WATER_ENDPOINT: Final[str] = API_URL + "no_water.json"
 DEVICE_REPORT_WEATHER_ENDPOINT: Final[str] = API_URL + "report_weather.json"
 """Report local weather data to improve scheduling."""
 
+DEVICE_SET_MOISTURE_ENDPOINT: Final[str] = API_URL + "set_moisture.json"
+"""Override moisture level for a specific zone."""
+
 ZONE_START_ENDPOINT: Final[str] = API_URL + "zone/start"
 """Start a specific zone directly (legacy endpoint)."""
 
@@ -105,6 +108,7 @@ OPERATIONAL_ERROR_EVENTS: Final[frozenset] = frozenset({
     "startZoneFailed",
     "stopFailed",
     "setStandbyFailed",
+    "setMoistureFailed",
 })
 """Events indicating operational errors (device control failures)."""
 

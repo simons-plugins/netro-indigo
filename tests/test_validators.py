@@ -328,6 +328,72 @@ class TestActionConfigValidation:
         assert is_valid is True
         assert errors == {}
 
+    # setMoisture tests
+    def test_set_moisture_valid(self):
+        """Valid zone and moisture passes."""
+        values = {"zone": "3", "moisture": "75"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is True
+        assert sanitized["zone"] == 3
+        assert sanitized["moisture"] == 75
+        assert errors == {}
+
+    def test_set_moisture_boundary_zero(self):
+        """Moisture 0 is valid."""
+        values = {"zone": "1", "moisture": "0"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is True
+        assert sanitized["moisture"] == 0
+
+    def test_set_moisture_boundary_hundred(self):
+        """Moisture 100 is valid."""
+        values = {"zone": "1", "moisture": "100"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is True
+        assert sanitized["moisture"] == 100
+
+    def test_set_moisture_over_hundred(self):
+        """Moisture over 100 errors."""
+        values = {"zone": "1", "moisture": "101"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is False
+        assert "moisture" in errors
+
+    def test_set_moisture_negative(self):
+        """Negative moisture errors."""
+        values = {"zone": "1", "moisture": "-5"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is False
+        assert "moisture" in errors
+
+    def test_set_moisture_non_numeric(self):
+        """Non-numeric moisture errors."""
+        values = {"zone": "1", "moisture": "wet"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is False
+        assert "moisture" in errors
+
+    def test_set_moisture_empty_moisture(self):
+        """Empty moisture errors."""
+        values = {"zone": "1", "moisture": ""}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is False
+        assert "moisture" in errors
+
+    def test_set_moisture_missing_zone(self):
+        """Missing zone errors."""
+        values = {"moisture": "50"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is False
+        assert "zone" in errors
+
+    def test_set_moisture_invalid_zone(self):
+        """Non-numeric zone errors."""
+        values = {"zone": "abc", "moisture": "50"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is False
+        assert "zone" in errors
+
 
 class TestEventConfigValidation:
     """Tests for validate_event_config function."""
