@@ -432,6 +432,47 @@ class SprinklerHandler:
 
         return (zone_names, max_durations, zones_data)
 
+    def process_events(
+        self,
+        api_response: Dict[str, Any],
+        last_event_id: int = 0
+    ) -> Tuple[List[Dict[str, Any]], int]:
+        """Process events API response (v2 only).
+
+        Parses the events array and filters to only events newer than
+        the last seen event ID.
+
+        Args:
+            api_response: Response from api_client.get_events()
+            last_event_id: ID of the last event we processed (0 = first run)
+
+        Returns:
+            Tuple of:
+            - List of new event dicts: {"id": int, "event": int, "time": str, "message": str}
+            - highest_event_id: The highest event ID seen (for tracking)
+        """
+        try:
+            events_data = api_response.get("data", {})
+            events = events_data.get("events", [])
+
+            if not events or not isinstance(events, list):
+                return ([], last_event_id)
+
+            # Filter to events newer than last seen
+            new_events = [e for e in events if e.get("id", 0) > last_event_id]
+
+            # Find highest event ID
+            highest_id = max(
+                (e.get("id", 0) for e in events),
+                default=last_event_id
+            )
+
+            return (new_events, highest_id)
+
+        except (KeyError, TypeError, AttributeError) as exc:
+            self.logger.error(f"Error parsing events: {exc}")
+            return ([], last_event_id)
+
 
 # pylint: disable=too-few-public-methods
 class WhispererHandler:

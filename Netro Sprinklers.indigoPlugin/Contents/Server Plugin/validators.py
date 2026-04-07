@@ -21,6 +21,7 @@ Note:
     to prevent circular imports and maintain testability.
 """
 
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -239,6 +240,27 @@ def validate_api_key(
         return (False, sanitized, "API key contains invalid characters")
 
     return (True, sanitized, None)
+
+
+_INDIGO_SUB_RE = re.compile(r'^%%[vd]:\d+(?::[a-zA-Z_]\w*)?%%$')
+"""Regex matching valid Indigo substitution patterns: %%v:ID%% or %%d:ID:state%%."""
+
+
+def is_indigo_substitution(value: Any) -> bool:
+    """Check if a value is an Indigo variable/device state substitution.
+
+    Indigo supports %%v:ID%% (variable) and %%d:ID:state%% (device state)
+    patterns that are resolved at action execution time, not config time.
+
+    Args:
+        value: The value to check
+
+    Returns:
+        True if value matches a valid Indigo substitution pattern
+    """
+    if not isinstance(value, str):
+        return False
+    return bool(_INDIGO_SUB_RE.match(value.strip()))
 
 
 def validate_date_format(
@@ -468,16 +490,20 @@ def _validate_set_moisture_action(
         except (ValueError, TypeError):
             errors["zone"] = "Zone must be a valid number"
 
-    # Validate moisture is an integer 0-100
+    # Validate moisture — allow integer 0-100 or Indigo variable substitution
     moisture_str = values.get("moisture", "")
-    try:
-        moisture = int(moisture_str)
-        if moisture < 0 or moisture > 100:
-            errors["moisture"] = "Moisture must be between 0 and 100"
-        else:
-            sanitized["moisture"] = moisture
-    except (ValueError, TypeError):
-        errors["moisture"] = "Moisture must be a whole number (0-100)"
+    if is_indigo_substitution(moisture_str):
+        # Variable substitution — resolved at runtime, skip numeric validation
+        sanitized["moisture"] = moisture_str.strip()
+    else:
+        try:
+            moisture = int(moisture_str)
+            if moisture < 0 or moisture > 100:
+                errors["moisture"] = "Moisture must be between 0 and 100"
+            else:
+                sanitized["moisture"] = moisture
+        except (ValueError, TypeError):
+            errors["moisture"] = "Moisture must be a whole number (0-100) or %%v:variableID%%"
 
 
 def validate_action_config(
@@ -528,6 +554,11 @@ def validate_event_config(
         serial = values.get("serial", "")
         if not serial:
             errors["serial"] = "You must select a Netro Sprinkler device."
+
+    elif type_id == "deviceEvent":
+        device_id = values.get("id", "")
+        if not device_id:
+            errors["id"] = "You must select a device."
 
     return (len(errors) == 0, sanitized, errors)
 

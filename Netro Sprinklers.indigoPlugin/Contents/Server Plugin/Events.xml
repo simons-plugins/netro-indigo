@@ -31,6 +31,28 @@
 			</Field>
 		</ConfigUI>
 	</Event>
+	<Event id="deviceEvent">
+		<Name>Device Event (v2 only)</Name>
+		<ConfigUI>
+			<Field type="menu" id="id" defaultValue="">
+				<Label>Device:</Label>
+				<List class="self" method="sprinklerList"/>
+			</Field>
+			<Field id="eventType" type="menu" defaultValue="all">
+				<Label>Event type:</Label>
+				<List>
+					<Option value="all">All Events</Option>
+					<Option value="1">Device Offline</Option>
+					<Option value="2">Device Online</Option>
+					<Option value="3">Schedule Started</Option>
+					<Option value="4">Schedule Ended</Option>
+				</List>
+			</Field>
+			<Field type="label" id="event_help" fontSize="small" fontColor="darkgray" alignWithControl="true">
+				<Label>Requires API v2 (API key configured on the device). Events are checked each poll cycle.</Label>
+			</Field>
+		</ConfigUI>
+	</Event>
 	<Event id="updateAvailable">
 		<Name>Plugin Update Available</Name>
 	</Event>
