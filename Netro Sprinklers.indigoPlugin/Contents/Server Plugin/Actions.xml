@@ -93,7 +93,7 @@
         <CallbackMethod>reportWeather</CallbackMethod>
         <ConfigUI>
             <Field type="label" id="weather_info_label">
-                <Label>Report local weather data to help Netro optimize watering schedules. All values are in US units (Fahrenheit, inches, mph, inHg).</Label>
+                <Label>Report local weather data to help Netro optimize watering schedules. Enter values matching your device's Display Units setting (US or Metric). The plugin converts automatically for the API.</Label>
             </Field>
             <Field type="menu" id="condition" defaultValue="0">
                 <Label>Weather Condition:</Label>
@@ -106,13 +106,13 @@
                 </List>
             </Field>
             <Field type="textfield" id="temperature" defaultValue="">
-                <Label>Current Temperature (°F):</Label>
+                <Label>Current Temperature:</Label>
             </Field>
             <Field type="textfield" id="t_max" defaultValue="">
-                <Label>Max Temperature (°F):</Label>
+                <Label>Max Temperature:</Label>
             </Field>
             <Field type="textfield" id="t_min" defaultValue="">
-                <Label>Min Temperature (°F):</Label>
+                <Label>Min Temperature:</Label>
             </Field>
             <Field type="textfield" id="humidity" defaultValue="">
                 <Label>Humidity (%):</Label>
@@ -121,10 +121,10 @@
                 <Label>Humidity percentage (0-100)</Label>
             </Field>
             <Field type="textfield" id="rain" defaultValue="0">
-                <Label>Rainfall (inches):</Label>
+                <Label>Rainfall:</Label>
             </Field>
             <Field type="label" id="rain_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
-                <Label>Rainfall amount in inches. Default: 0</Label>
+                <Label>Rainfall amount (inches for US, mm for Metric). Default: 0</Label>
             </Field>
             <Field type="textfield" id="rain_prob" defaultValue="">
                 <Label>Rain Probability (%):</Label>
@@ -133,16 +133,16 @@
                 <Label>Probability of rain (0-100). Optional.</Label>
             </Field>
             <Field type="textfield" id="wind_speed" defaultValue="">
-                <Label>Wind Speed (mph):</Label>
+                <Label>Wind Speed:</Label>
             </Field>
             <Field type="label" id="wind_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
-                <Label>Wind speed in miles per hour. Optional.</Label>
+                <Label>Wind speed (mph for US, m/s for Metric). Optional.</Label>
             </Field>
             <Field type="textfield" id="pressure" defaultValue="">
-                <Label>Pressure (inHg):</Label>
+                <Label>Pressure:</Label>
             </Field>
             <Field type="label" id="pressure_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
-                <Label>Atmospheric pressure in inches of mercury. Optional.</Label>
+                <Label>Atmospheric pressure (inHg for US, hPa for Metric). Optional.</Label>
             </Field>
             <Field type="textfield" id="date" defaultValue="">
                 <Label>Date (YYYY-MM-DD):</Label>

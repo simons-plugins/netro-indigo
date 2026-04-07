@@ -1429,3 +1429,99 @@ class TestWhispererHandlerV2:
         )
         token = next(s for s in states if s["key"] == "token_remaining")
         assert token["value"] == 1848
+
+
+# =============================================================================
+# V2 Event Processing Tests
+# =============================================================================
+
+@pytest.mark.handlers
+class TestSprinklerHandlerV2Events:
+    """Tests for V2 event processing."""
+
+    def test_process_events_happy_path(self, mock_logger):
+        """New events should be returned with updated highest ID."""
+        handler = SprinklerHandler(logger=mock_logger)
+        response = {
+            "status": "OK",
+            "data": {
+                "events": [
+                    {"id": 100, "event": 2, "time": "2026-04-07T08:00:00", "message": "online"},
+                    {"id": 101, "event": 3, "time": "2026-04-07T08:15:00", "message": "schedule started"},
+                ]
+            }
+        }
+        new_events, highest_id = handler.process_events(response, last_event_id=0)
+        assert len(new_events) == 2
+        assert highest_id == 101
+
+    def test_process_events_filters_old(self, mock_logger):
+        """Events with ID <= last_event_id should be filtered out."""
+        handler = SprinklerHandler(logger=mock_logger)
+        response = {
+            "status": "OK",
+            "data": {
+                "events": [
+                    {"id": 100, "event": 2, "time": "2026-04-07T08:00:00", "message": "online"},
+                    {"id": 101, "event": 3, "time": "2026-04-07T08:15:00", "message": "started"},
+                    {"id": 102, "event": 4, "time": "2026-04-07T08:30:00", "message": "ended"},
+                ]
+            }
+        }
+        new_events, highest_id = handler.process_events(response, last_event_id=100)
+        assert len(new_events) == 2
+        assert new_events[0]["id"] == 101
+        assert highest_id == 102
+
+    def test_process_events_empty(self, mock_logger):
+        """Empty events list should return empty with same last_event_id."""
+        handler = SprinklerHandler(logger=mock_logger)
+        response = {"status": "OK", "data": {"events": []}}
+        new_events, highest_id = handler.process_events(response, last_event_id=50)
+        assert len(new_events) == 0
+        assert highest_id == 50
+
+    def test_process_events_no_data(self, mock_logger):
+        """Missing data key should return empty safely."""
+        handler = SprinklerHandler(logger=mock_logger)
+        response = {"status": "OK"}
+        new_events, highest_id = handler.process_events(response, last_event_id=0)
+        assert len(new_events) == 0
+        assert highest_id == 0
+
+    def test_process_events_malformed(self, mock_logger):
+        """Malformed response should return empty and log error."""
+        handler = SprinklerHandler(logger=mock_logger)
+        response = {"status": "OK", "data": {"events": "not a list"}}
+        new_events, highest_id = handler.process_events(response, last_event_id=0)
+        assert len(new_events) == 0
+
+    def test_process_events_first_run(self, mock_logger):
+        """First run (last_event_id=0) should return all events."""
+        handler = SprinklerHandler(logger=mock_logger)
+        response = {
+            "status": "OK",
+            "data": {
+                "events": [
+                    {"id": 500, "event": 1, "time": "2026-04-07T10:00:00", "message": "offline"},
+                ]
+            }
+        }
+        new_events, highest_id = handler.process_events(response, last_event_id=0)
+        assert len(new_events) == 1
+        assert highest_id == 500
+
+    def test_process_events_no_new(self, mock_logger):
+        """When all events are old, should return empty list."""
+        handler = SprinklerHandler(logger=mock_logger)
+        response = {
+            "status": "OK",
+            "data": {
+                "events": [
+                    {"id": 50, "event": 2, "time": "2026-04-07T08:00:00", "message": "online"},
+                ]
+            }
+        }
+        new_events, highest_id = handler.process_events(response, last_event_id=50)
+        assert len(new_events) == 0
+        assert highest_id == 50

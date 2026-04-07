@@ -16,7 +16,7 @@ Note:
     to prevent circular imports. It only imports from Python standard library.
 """
 
-from typing import Final
+from typing import Dict, Final
 
 
 # =============================================================================
@@ -153,6 +153,19 @@ V2_ONLINE_STATUSES: Final[frozenset] = frozenset({
     "WATERING",
 })
 """Device status values that indicate the device is online in API v2."""
+
+
+# =============================================================================
+# V2 Device Event Types
+# =============================================================================
+
+DEVICE_EVENT_TYPES: Final[Dict[int, str]] = {
+    1: "offline",
+    2: "online",
+    3: "schedule_started",
+    4: "schedule_ended",
+}
+"""V2 API event type codes mapped to human-readable names."""
 
 
 # =============================================================================

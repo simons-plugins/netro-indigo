@@ -23,6 +23,7 @@ from validators import (
     validate_event_config,
     validate_prefs_config,
     validate_api_key,
+    is_indigo_substitution,
 )
 from utils import (
     convert_weather_us_to_metric,
@@ -798,3 +799,94 @@ class TestWeatherConversion:
         assert metric["t"] == pytest.approx(-17.8, abs=0.1)  # 0°F = -17.8°C
         assert metric["rain"] == 0.0
         assert metric["wind_speed"] == 0.0
+
+
+class TestDeviceEventValidation:
+    """Tests for deviceEvent trigger config validation."""
+
+    def test_device_event_valid(self):
+        """Device event with device ID should validate."""
+        values = {"id": "12345", "eventType": "all"}
+        is_valid, _, errors = validate_event_config(values, "deviceEvent")
+        assert is_valid is True
+
+    def test_device_event_missing_device(self):
+        """Device event without device ID should fail."""
+        values = {"id": "", "eventType": "all"}
+        is_valid, _, errors = validate_event_config(values, "deviceEvent")
+        assert is_valid is False
+        assert "id" in errors
+
+    def test_device_event_specific_type(self):
+        """Device event with specific event type should validate."""
+        values = {"id": "12345", "eventType": "2"}
+        is_valid, _, errors = validate_event_config(values, "deviceEvent")
+        assert is_valid is True
+
+
+# =============================================================================
+# Indigo Variable Substitution Tests
+# =============================================================================
+
+class TestIndigoSubstitution:
+    """Tests for is_indigo_substitution helper."""
+
+    def test_variable_substitution(self):
+        """%%v:ID%% should be detected as substitution."""
+        assert is_indigo_substitution("%%v:1064264616%%") is True
+
+    def test_device_state_substitution(self):
+        """%%d:ID:state%% should be detected as substitution."""
+        assert is_indigo_substitution("%%d:123456:temperature%%") is True
+
+    def test_plain_number(self):
+        """Plain numbers should not be detected."""
+        assert is_indigo_substitution("75") is False
+
+    def test_empty_string(self):
+        """Empty string should not be detected."""
+        assert is_indigo_substitution("") is False
+
+    def test_none(self):
+        """None should not be detected."""
+        assert is_indigo_substitution(None) is False
+
+    def test_partial_pattern(self):
+        """Incomplete pattern should not be detected."""
+        assert is_indigo_substitution("%%v:123") is False
+
+    def test_whitespace_around(self):
+        """Whitespace around pattern should still be detected."""
+        assert is_indigo_substitution("  %%v:123%%  ") is True
+
+
+class TestMoistureWithSubstitution:
+    """Tests for setMoisture validation with variable substitution."""
+
+    def test_moisture_with_variable(self):
+        """Moisture with %%v:ID%% should pass validation."""
+        values = {"zone": "1", "moisture": "%%v:1064264616%%"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is True
+        assert sanitized["moisture"] == "%%v:1064264616%%"
+
+    def test_moisture_with_device_state(self):
+        """Moisture with %%d:ID:state%% should pass validation."""
+        values = {"zone": "1", "moisture": "%%d:123456:humidity%%"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is True
+
+    def test_moisture_plain_number_still_works(self):
+        """Plain number moisture should still validate normally."""
+        values = {"zone": "1", "moisture": "75"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is True
+        assert sanitized["moisture"] == 75
+
+    def test_moisture_invalid_string_fails(self):
+        """Non-substitution string should fail."""
+        values = {"zone": "1", "moisture": "abc"}
+        is_valid, sanitized, errors = validate_action_config(values, "setMoisture")
+        assert is_valid is False
+        assert "moisture" in errors
+        assert "%%v:" in errors["moisture"]

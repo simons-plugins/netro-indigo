@@ -51,6 +51,7 @@ from constants import (
     ZONE_START_ENDPOINT,
     OPERATIONAL_ERROR_EVENTS,
     COMM_ERROR_EVENTS,
+    DEVICE_EVENT_TYPES,
 )
 from exceptions import ThrottleDelayError
 from validators import (
@@ -129,6 +130,9 @@ class Plugin(indigo.PluginBase):
         self.sprinkler_handler = SprinklerHandler(self.logger)
         self.whisperer_handler = WhispererHandler(self.logger)
 
+        # Track last seen event ID per device for v2 event polling
+        self._last_event_ids = {}
+
     ########################################
     # Internal helper methods
     ########################################
@@ -163,6 +167,139 @@ class Plugin(indigo.PluginBase):
             if len(zone_list):
                 return zone_list[0]
         return None
+
+    def _get_or_create_folder(self, folder_name):
+        """Get or create an Indigo variable folder by name.
+
+        Args:
+            folder_name: Name of the folder to find or create
+
+        Returns:
+            Folder ID (int)
+        """
+        # Check if folder ID is cached in pluginPrefs
+        cached_id = self.pluginPrefs.get("zoneFolderId", 0)
+        if cached_id:
+            try:
+                # Verify folder still exists
+                folder = indigo.variables.folders[int(cached_id)]
+                return folder.id
+            except (KeyError, ValueError):
+                pass  # Folder was deleted, recreate
+
+        # Search existing folders
+        for folder in indigo.variables.folders:
+            if folder.name == folder_name:
+                self.pluginPrefs["zoneFolderId"] = folder.id
+                return folder.id
+
+        # Create new folder
+        folder = indigo.variables.folder.create(folder_name)
+        self.pluginPrefs["zoneFolderId"] = folder.id
+        self.logger.info(f"Created variable folder '{folder_name}'")
+        return folder.id
+
+    @staticmethod
+    def _slugify(name):
+        """Convert a device/zone name to a safe variable name slug.
+
+        Args:
+            name: Human-readable name
+
+        Returns:
+            Lowercase alphanumeric string with underscores
+        """
+        import re
+        slug = re.sub(r'[^a-zA-Z0-9]+', '_', name.lower()).strip('_')
+        return slug
+
+    def _ensure_zone_variables(self, dev, zones_data):
+        """Ensure Indigo variables exist for each zone's moisture level.
+
+        Creates variables in a "Netro" folder. Tracks the mapping
+        of zone number → variable ID in device pluginProps. Handles
+        zone renames by renaming the variable.
+
+        Args:
+            dev: Indigo sprinkler device
+            zones_data: List of zone dicts from extract_zone_info
+        """
+        try:
+            folder_id = self._get_or_create_folder("Netro")
+            dev_slug = self._slugify(dev.name)
+
+            # Load existing zone→variable mapping from pluginProps
+            props = copy.deepcopy(dev.pluginProps)
+            mapping_json = props.get("zoneVariableMap", "{}")
+            try:
+                zone_var_map = json.loads(mapping_json)
+            except (json.JSONDecodeError, TypeError):
+                zone_var_map = {}
+
+            changed = False
+            for zone in zones_data:
+                zone_num = str(zone["id"])
+                zone_name = zone.get("name", f"Zone {zone_num}")
+                var_name = f"netro_{dev_slug}_zone_{zone_num}_moisture"
+
+                if zone_num in zone_var_map:
+                    # Variable already mapped — check if zone was renamed
+                    var_id = zone_var_map[zone_num].get("var_id")
+                    old_name = zone_var_map[zone_num].get("zone_name", "")
+                    if var_id and old_name != zone_name:
+                        # Zone renamed — update the variable name
+                        try:
+                            var = indigo.variables[int(var_id)]
+                            new_var_name = f"netro_{dev_slug}_zone_{zone_num}_moisture"
+                            if var.name != new_var_name:
+                                var.name = new_var_name
+                                var.replaceOnServer()
+                            zone_var_map[zone_num]["zone_name"] = zone_name
+                            changed = True
+                            self.logger.info(
+                                f"Zone renamed: updated variable for zone {zone_num} "
+                                f"'{old_name}' → '{zone_name}'"
+                            )
+                        except (KeyError, ValueError):
+                            # Variable was deleted — recreate
+                            del zone_var_map[zone_num]
+
+                if zone_num not in zone_var_map:
+                    # Create new variable for this zone
+                    try:
+                        var = indigo.variable.create(var_name, value="0", folder=folder_id)
+                        zone_var_map[zone_num] = {
+                            "var_id": var.id,
+                            "var_name": var_name,
+                            "zone_name": zone_name,
+                        }
+                        changed = True
+                        self.logger.info(
+                            f"Created moisture variable '{var_name}' for "
+                            f"zone {zone_num} ({zone_name}) on '{dev.name}'"
+                        )
+                    except Exception:
+                        # Variable may already exist (name conflict)
+                        try:
+                            var = indigo.variables[var_name]
+                            zone_var_map[zone_num] = {
+                                "var_id": var.id,
+                                "var_name": var_name,
+                                "zone_name": zone_name,
+                            }
+                            changed = True
+                        except KeyError:
+                            self.logger.warning(
+                                f"Could not create variable '{var_name}' for zone {zone_num}"
+                            )
+
+            # Save updated mapping back to pluginProps
+            if changed:
+                props["zoneVariableMap"] = json.dumps(zone_var_map)
+                dev.replacePluginPropsOnServer(props)
+
+        except Exception:
+            self.logger.debug(f"Error managing zone variables: \n{traceback.format_exc(10)}")
 
     @staticmethod
     def _get_device_auth(dev):
@@ -274,6 +411,9 @@ class Plugin(indigo.PluginBase):
                 props["ScheduledZoneDurations"] = active_schedule_name
             dev.replacePluginPropsOnServer(props)
 
+            # Ensure Indigo variables exist for each zone (for variable substitution)
+            self._ensure_zone_variables(dev, zones_data)
+
             # Update moisture levels per zone
             try:
                 moisture_dict = self.api_client.get_moistures(key, api_version=api_version)
@@ -284,6 +424,30 @@ class Plugin(indigo.PluginBase):
                     dev.updateStatesOnServer(moisture_states)
             except Exception:
                 self.logger.debug(f"Moisture API error: \n{traceback.format_exc(10)}")
+
+            # Poll device events (v2 only)
+            if api_version == "2":
+                try:
+                    today = date.today().strftime("%Y-%m-%d")
+                    events_dict = self.api_client.get_events(key, start_date=today)
+                    last_id = self._last_event_ids.get(dev.id, 0)
+                    new_events, highest_id = self.sprinkler_handler.process_events(
+                        events_dict, last_event_id=last_id
+                    )
+                    self._last_event_ids[dev.id] = highest_id
+
+                    for event in new_events:
+                        event_code = event.get("event", 0)
+                        event_name = DEVICE_EVENT_TYPES.get(event_code, f"unknown({event_code})")
+                        self.logger.info(
+                            f"Device event: '{dev.name}' {event_name} "
+                            f"at {event.get('time', 'unknown')}"
+                        )
+                        self._fireTrigger(
+                            f"deviceEvent_{event_code}", dev.id
+                        )
+                except Exception:
+                    self.logger.debug(f"Events API error: \n{traceback.format_exc(10)}")
 
         except ThrottleDelayError:
             # Already logged detailed error in api_client, just skip this device
@@ -666,6 +830,17 @@ class Plugin(indigo.PluginBase):
                     # then we fire if the event specifically matches the trigger type
                     if trigger_type == event:
                         indigo.trigger.execute(trigger)
+                elif trigger.pluginTypeId == "deviceEvent":
+                    # V2 device events — match device ID and event type
+                    if event.startswith("deviceEvent_") and dev_id is not None:
+                        try:
+                            if int(trigger.pluginProps["id"]) == dev_id:
+                                trigger_event_type = trigger.pluginProps.get("eventType", "all")
+                                event_code = event.split("_", 1)[1]
+                                if trigger_event_type == "all" or trigger_event_type == event_code:
+                                    indigo.trigger.execute(trigger)
+                        except (ValueError, KeyError):
+                            pass
                 elif trigger.pluginTypeId == event:
                     # an update is available, just fire the trigger since there's nothing else to look at
                     indigo.trigger.execute(trigger)
@@ -861,7 +1036,24 @@ class Plugin(indigo.PluginBase):
         """
         try:
             zone = int(pluginAction.props["zone"])
-            moisture = int(pluginAction.props["moisture"])
+
+            # Resolve Indigo variable substitution (%%v:ID%%) at runtime
+            moisture_raw = self.substitute(pluginAction.props.get("moisture", ""))
+            try:
+                moisture = int(moisture_raw)
+            except (ValueError, TypeError):
+                self.logger.error(
+                    f"Moisture value '{moisture_raw}' is not a valid number "
+                    f"(resolved from '{pluginAction.props.get('moisture', '')}')"
+                )
+                self._fireTrigger("setMoistureFailed", dev.id)
+                return
+
+            if moisture < 0 or moisture > 100:
+                self.logger.error(f"Moisture value {moisture} is out of range (0-100)")
+                self._fireTrigger("setMoistureFailed", dev.id)
+                return
+
             key, api_version = self._get_device_auth(dev)
             response = self.api_client.set_moisture(key, zone, moisture, api_version=api_version)
             response_status = response.get("status", "UNKNOWN")
