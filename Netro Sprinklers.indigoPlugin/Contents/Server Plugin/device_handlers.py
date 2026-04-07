@@ -598,6 +598,98 @@ class ZoneHandler:
     def __init__(self, logger=None):
         self.logger = logger or logging.getLogger(__name__)
 
+    def process_zone_schedules(self, api_response, zone_number, api_version="1"):
+        """Process schedules response for a single zone.
+
+        Extracts isIrrigating, last watering, and next watering states
+        for the given zone number.
+
+        Args:
+            api_response: Response from api_client.get_schedules()
+            zone_number: Zone ith number (1-based)
+            api_version: API version ("1" or "2")
+
+        Returns:
+            List of state update dicts for updateStatesOnServer()
+        """
+        is_irrigating = False
+        last_schedule = None
+        next_schedule = None
+        next_start_sort = None
+
+        try:
+            schedules = api_response["data"]["schedules"]
+            zone_schedules = [s for s in schedules if s.get("zone") == zone_number]
+
+            for sch in zone_schedules:
+                status = sch.get("status", "")
+                if status == "EXECUTING":
+                    is_irrigating = True
+                elif status in ("EXECUTED", "CANCELLED"):
+                    if last_schedule is None or sch.get("id", 0) > last_schedule.get("id", 0):
+                        last_schedule = sch
+                elif status == "VALID":
+                    sort_key = SprinklerHandler._parse_schedule_sort_key(
+                        sch.get("start_time", 0), api_version
+                    )
+                    if next_start_sort is None or sort_key < next_start_sort:
+                        next_start_sort = sort_key
+                        next_schedule = sch
+
+        except (KeyError, TypeError) as exc:
+            self.logger.error(f"Error parsing zone schedules: {exc}")
+
+        states = [{"key": "isIrrigating", "value": is_irrigating}]
+        states.extend(self._format_last_watering(last_schedule, api_version))
+        states.extend(self._format_next_watering(next_schedule, api_version))
+        return states
+
+    def _format_last_watering(self, schedule, api_version="1"):
+        """Format last watering states from a schedule dict."""
+        if not schedule:
+            return [
+                {"key": "lastWateringStart", "value": ""},
+                {"key": "lastWateringEnd", "value": ""},
+                {"key": "lastWateringSource", "value": ""},
+                {"key": "lastWateringStatus", "value": ""},
+            ]
+        return [
+            {"key": "lastWateringStart", "value": self._format_timestamp(schedule.get("start_time"), api_version)},
+            {"key": "lastWateringEnd", "value": self._format_timestamp(schedule.get("end_time"), api_version)},
+            {"key": "lastWateringSource", "value": schedule.get("source", "Unknown").title()},
+            {"key": "lastWateringStatus", "value": schedule.get("status", "Unknown").title()},
+        ]
+
+    def _format_next_watering(self, schedule, api_version="1"):
+        """Format next watering states from a schedule dict."""
+        if not schedule:
+            return [
+                {"key": "nextWateringStart", "value": ""},
+                {"key": "nextWateringEnd", "value": ""},
+                {"key": "nextWateringSource", "value": ""},
+            ]
+        return [
+            {"key": "nextWateringStart", "value": self._format_timestamp(schedule.get("start_time"), api_version)},
+            {"key": "nextWateringEnd", "value": self._format_timestamp(schedule.get("end_time"), api_version)},
+            {"key": "nextWateringSource", "value": schedule.get("source", "Unknown").title()},
+        ]
+
+    @staticmethod
+    def _format_timestamp(raw_value, api_version="1"):
+        """Format a timestamp for display."""
+        if not raw_value:
+            return ""
+        try:
+            if api_version == "2":
+                dt = datetime.fromisoformat(str(raw_value))
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+            else:
+                ms = float(raw_value) if isinstance(raw_value, str) else float(raw_value)
+                dt = datetime.fromtimestamp(ms / 1000.0)
+                return dt.strftime("%Y-%m-%d %H:%M:%S")
+        except (ValueError, TypeError, OSError):
+            return ""
+
     def extract_zone_states(self, zones, zone_number):
         """Extract enabled and smartMode for a single zone from info data.
 
