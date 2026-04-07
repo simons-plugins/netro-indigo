@@ -320,6 +320,19 @@ class Plugin(indigo.PluginBase):
                 else:
                     dev.setErrorStateOnServer('')
 
+                # Skip state update if the reading hasn't changed — this keeps
+                # Indigo's lastChanged reflecting when new sensor data arrived,
+                # not when we last polled the API
+                new_reading_id = next(
+                    (s["value"] for s in states if s["key"] == "readingID"), None
+                )
+                current_reading_id = dev.states.get("readingID", None)
+                if new_reading_id is not None and new_reading_id == current_reading_id:
+                    self.logger.debug(
+                        f"Sensor '{dev.name}' reading unchanged (ID {new_reading_id}), skipping update"
+                    )
+                    return
+
                 # Update states with onOffState handling
                 if dev.onState is not None:
                     states.append({'key': 'onOffState', 'value': not dev.onState})
