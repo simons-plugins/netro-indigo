@@ -408,7 +408,7 @@ class Plugin(indigo.PluginBase):
                         f"on '{parent_dev.name}': {exc}"
                     )
 
-    def _update_zone_devices(self, parent_dev, device_data, schedule_response, moisture_response, api_version):
+    def _update_zone_devices(self, parent_dev, device_data, schedule_response, moisture_response, api_version, controller_online=True):
         """Update all zone devices for a parent controller.
 
         Args:
@@ -417,6 +417,7 @@ class Plugin(indigo.PluginBase):
             schedule_response: Raw schedules API response (or None)
             moisture_response: Raw moistures API response (or None)
             api_version: "1" or "2"
+            controller_online: True if parent controller is online
         """
         zone_devs = self._get_zone_devices(parent_dev.id)
         zones = device_data.get("zones", [])
@@ -436,7 +437,11 @@ class Plugin(indigo.PluginBase):
                     (s["value"] for s in zone_states if s["key"] == "enabled"), False
                 )
 
-                if is_enabled:
+                if not controller_online:
+                    zone_dev.setErrorStateOnServer('standby')
+                elif not is_enabled:
+                    zone_dev.setErrorStateOnServer('disabled')
+                else:
                     zone_dev.setErrorStateOnServer('')
                     if schedule_response:
                         states.extend(
@@ -449,8 +454,6 @@ class Plugin(indigo.PluginBase):
                         states.extend(
                             self.zone_handler.process_zone_moisture(moisture_response, zone_num)
                         )
-                else:
-                    zone_dev.setErrorStateOnServer('disabled')
             except Exception as exc:
                 self.logger.error(f"Error updating zone device '{zone_dev.name}': {exc}")
                 self.logger.debug(f"Zone update error: \n{traceback.format_exc(10)}")
@@ -558,7 +561,8 @@ class Plugin(indigo.PluginBase):
             # Auto-create and update zone devices
             self._ensure_zone_devices(dev, zones_data)
             self._update_zone_devices(
-                dev, device_data, schedule_dict, moisture_dict, api_version
+                dev, device_data, schedule_dict, moisture_dict, api_version,
+                controller_online=is_online
             )
 
             # Ensure Indigo variables exist for each zone (for variable substitution)
