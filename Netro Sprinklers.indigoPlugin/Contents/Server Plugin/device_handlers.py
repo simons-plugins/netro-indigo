@@ -33,7 +33,7 @@ from constants import V2_ONLINE_STATUSES
 from utils import get_key_from_dict
 
 
-__all__ = ["SprinklerHandler", "WhispererHandler"]
+__all__ = ["SprinklerHandler", "WhispererHandler", "ZoneHandler"]
 
 
 class SprinklerHandler:
@@ -582,3 +582,39 @@ class WhispererHandler:
         except (TypeError, AttributeError) as exc:
             self.logger.error(f"Malformed sensor data for {serial}: {exc}")
             return ([], False)
+
+
+class ZoneHandler:
+    """Handles state transformation for individual zone devices.
+
+    Transforms Netro API responses into per-zone Indigo state updates.
+    All data comes from the parent controller's API calls — no extra
+    API requests needed.
+
+    Attributes:
+        logger: Logger instance for error/debug output
+    """
+
+    def __init__(self, logger=None):
+        self.logger = logger or logging.getLogger(__name__)
+
+    def extract_zone_states(self, zones, zone_number):
+        """Extract enabled and smartMode for a single zone from info data.
+
+        Args:
+            zones: List of zone dicts from device_data["zones"]
+            zone_number: Zone ith number (1-based)
+
+        Returns:
+            List of state update dicts for updateStatesOnServer()
+        """
+        for zone in zones:
+            if zone.get("ith") == zone_number:
+                return [
+                    {"key": "enabled", "value": zone.get("enabled", False)},
+                    {"key": "smartMode", "value": zone.get("smart", "Unknown")},
+                ]
+        return [
+            {"key": "enabled", "value": False},
+            {"key": "smartMode", "value": "Unknown"},
+        ]
