@@ -851,3 +851,182 @@ class TestConvenienceMethods:
             parsed_data = json.loads(called_data)
             assert parsed_data["key"] == "SERIAL123"
             assert parsed_data["zones"] == [{"id": 1, "duration": 10}]
+
+
+# =============================================================================
+# TestAPIClientV2 - API v2 endpoint selection and credential routing
+# =============================================================================
+
+@pytest.mark.api
+class TestAPIClientV2:
+    """Tests for API v2 support in NetroAPIClient."""
+
+    def test_get_device_info_v2_uses_v2_endpoint(self, client):
+        """V2 get_device_info should use /npa/v2/ endpoint."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.get", return_value=mock_response) as mock_get:
+            client.get_device_info("MY_API_KEY_123", api_version="2")
+            called_url = mock_get.call_args[0][0]
+            assert "/npa/v2/" in called_url
+            assert "info.json" in called_url
+            assert "MY_API_KEY_123" in called_url
+
+    def test_get_device_info_v1_uses_v1_endpoint(self, client):
+        """V1 get_device_info should use /npa/v1/ endpoint (default)."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.get", return_value=mock_response) as mock_get:
+            client.get_device_info("SERIAL123")
+            called_url = mock_get.call_args[0][0]
+            assert "/npa/v1/" in called_url
+
+    def test_get_schedules_v2_uses_v2_endpoint(self, client):
+        """V2 get_schedules should use v2 endpoint."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.get", return_value=mock_response) as mock_get:
+            client.get_schedules("API_KEY", api_version="2")
+            called_url = mock_get.call_args[0][0]
+            assert "/npa/v2/schedules.json" in called_url
+
+    def test_stop_watering_v2_posts_api_key(self, client):
+        """V2 stop_watering should POST with API key, not serial."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.post", return_value=mock_response) as mock_post:
+            client.stop_watering("MY_V2_KEY", api_version="2")
+            called_url = mock_post.call_args[0][0]
+            assert "/npa/v2/" in called_url
+            called_data = json.loads(mock_post.call_args[1]["data"])
+            assert called_data["key"] == "MY_V2_KEY"
+
+    def test_start_watering_v2_uses_v2_endpoint(self, client):
+        """V2 start_watering should use v2 endpoint and API key."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.post", return_value=mock_response) as mock_post:
+            client.start_watering("API_KEY_V2", [{"id": 1, "duration": 10}], api_version="2")
+            called_url = mock_post.call_args[0][0]
+            assert "/npa/v2/water.json" in called_url
+            called_data = json.loads(mock_post.call_args[1]["data"])
+            assert called_data["key"] == "API_KEY_V2"
+
+    def test_get_events_uses_v2_endpoint(self, client):
+        """get_events should always use v2 endpoint."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.get", return_value=mock_response) as mock_get:
+            client.get_events("API_KEY")
+            called_url = mock_get.call_args[0][0]
+            assert "/npa/v2/events.json" in called_url
+            assert "API_KEY" in called_url
+
+    def test_get_events_with_filters(self, client):
+        """get_events should add query params for filters."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.get", return_value=mock_response) as mock_get:
+            client.get_events("KEY", event_type=2, start_date="2026-04-01", end_date="2026-04-07")
+            called_url = mock_get.call_args[0][0]
+            assert "event=2" in called_url
+            assert "start_date=2026-04-01" in called_url
+            assert "end_date=2026-04-07" in called_url
+
+    def test_report_weather_v2_uses_v2_endpoint(self, client):
+        """V2 report_weather should use v2 endpoint."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.post", return_value=mock_response) as mock_post:
+            client.report_weather("API_KEY", {"t": 22, "date": "2026-04-07"}, api_version="2")
+            called_url = mock_post.call_args[0][0]
+            assert "/npa/v2/report_weather.json" in called_url
+
+    def test_set_moisture_v2_uses_v2_endpoint(self, client):
+        """V2 set_moisture should use v2 endpoint."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.post", return_value=mock_response) as mock_post:
+            client.set_moisture("API_KEY", 1, 75, api_version="2")
+            called_url = mock_post.call_args[0][0]
+            assert "/npa/v2/set_moisture.json" in called_url
+
+    def test_debug_log_masks_key(self, client, mock_logger):
+        """Debug log should mask the key parameter in URL."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.get", return_value=mock_response):
+            client.get_device_info("SECRET_API_KEY_12345")
+            debug_call = mock_logger.debug.call_args_list[0][0][0]
+            assert "SECRET_API_KEY_12345" not in debug_call
+            assert "key=***" in debug_call
+
+    def test_default_api_version_is_v1(self, client):
+        """All methods should default to v1 when api_version not specified."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.get", return_value=mock_response) as mock_get:
+            client.get_device_info("SERIAL123")
+            called_url = mock_get.call_args[0][0]
+            assert "/npa/v1/" in called_url
+
+    def test_all_v2_get_methods_use_v2_url(self, client):
+        """All GET convenience methods should use v2 URL when api_version='2'."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        methods = [
+            ("get_device_info", ["KEY"]),
+            ("get_schedules", ["KEY"]),
+            ("get_moistures", ["KEY"]),
+            ("get_sensor_data", ["KEY"]),
+        ]
+
+        for method_name, args in methods:
+            with patch("api_client.requests.get", return_value=mock_response) as mock_get:
+                getattr(client, method_name)(*args, api_version="2")
+                called_url = mock_get.call_args[0][0]
+                assert "/npa/v2/" in called_url, f"{method_name} did not use v2 URL"
+
+    def test_all_v2_post_methods_use_v2_url(self, client):
+        """All POST convenience methods should use v2 URL when api_version='2'."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        methods = [
+            ("stop_watering", ["KEY"]),
+            ("set_device_status", ["KEY", 1]),
+            ("set_no_water", ["KEY", 3]),
+            ("report_weather", ["KEY", {"t": 22, "date": "2026-04-07"}]),
+            ("set_moisture", ["KEY", 1, 75]),
+        ]
+
+        for method_name, args in methods:
+            with patch("api_client.requests.post", return_value=mock_response) as mock_post:
+                getattr(client, method_name)(*args, api_version="2")
+                called_url = mock_post.call_args[0][0]
+                assert "/npa/v2/" in called_url, f"{method_name} did not use v2 URL"

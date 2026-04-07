@@ -61,6 +61,7 @@ from validators import (
 )
 from api_client import NetroAPIClient
 from device_handlers import SprinklerHandler, WhispererHandler
+from utils import convert_weather_us_to_metric
 
 
 ################################################################################
@@ -163,6 +164,25 @@ class Plugin(indigo.PluginBase):
                 return zone_list[0]
         return None
 
+    @staticmethod
+    def _get_device_auth(dev):
+        """Get API authentication key and version for a device.
+
+        If the device has an API key configured, uses v2 authentication.
+        Otherwise falls back to v1 serial number authentication.
+
+        Args:
+            dev: Indigo device with pluginProps
+
+        Returns:
+            Tuple of (key, api_version) where key is the auth credential
+            and api_version is "1" or "2"
+        """
+        api_key = dev.pluginProps.get("apiKey", "").strip()
+        if api_key:
+            return (api_key, "2")
+        return (dev.address, "1")
+
     ########################################
     def _update_from_netro(self):
         """Update all Indigo devices from Netro API data.
@@ -199,12 +219,15 @@ class Plugin(indigo.PluginBase):
             dev: Indigo sprinkler device to update
         """
         try:
-            # Get device info using serial number from device address
-            reply_dict = self.api_client.get_device_info(dev.address)
+            # Get auth credentials (API key for v2, serial for v1)
+            key, api_version = self._get_device_auth(dev)
+
+            # Get device info
+            reply_dict = self.api_client.get_device_info(key, api_version=api_version)
 
             # Delegate state transformation to handler
             update_list, is_online, device_data = self.sprinkler_handler.process_device_info(
-                reply_dict, dev.address
+                reply_dict, dev.address, api_version=api_version
             )
 
             # Update person/netro_devices for legacy compatibility
@@ -223,9 +246,9 @@ class Plugin(indigo.PluginBase):
             # Get schedule info
             active_schedule_name = None
             try:
-                schedule_dict = self.api_client.get_schedules(netro_serial)
+                schedule_dict = self.api_client.get_schedules(key, api_version=api_version)
                 schedule_states, active_schedule_name = self.sprinkler_handler.process_schedules(
-                    schedule_dict
+                    schedule_dict, api_version=api_version
                 )
                 update_list.extend(schedule_states)
             except Exception:
@@ -253,8 +276,10 @@ class Plugin(indigo.PluginBase):
 
             # Update moisture levels per zone
             try:
-                moisture_dict = self.api_client.get_moistures(netro_serial)
-                moisture_states = self.sprinkler_handler.process_moistures(moisture_dict)
+                moisture_dict = self.api_client.get_moistures(key, api_version=api_version)
+                moisture_states = self.sprinkler_handler.process_moistures(
+                    moisture_dict, api_version=api_version
+                )
                 if moisture_states:
                     dev.updateStatesOnServer(moisture_states)
             except Exception:
@@ -278,14 +303,15 @@ class Plugin(indigo.PluginBase):
             dev: Indigo Whisperer device to update
         """
         try:
-            self.logger.debug(f"Device ID: {dev.address}")
-            serial = str(dev.address)
+            # Get auth credentials (API key for v2, serial for v1)
+            key, api_version = self._get_device_auth(dev)
+            self.logger.debug(f"Device ID: {dev.address} (API v{api_version})")
 
             if dev.sensorValue is not None:
                 # Get sensor data and delegate transformation to handler
-                sensor_dict = self.api_client.get_sensor_data(serial)
+                sensor_dict = self.api_client.get_sensor_data(key, api_version=api_version)
                 states, has_readings = self.whisperer_handler.process_sensor_data(
-                    sensor_dict, serial
+                    sensor_dict, dev.address, api_version=api_version
                 )
 
                 # Set error state based on readings availability
@@ -353,9 +379,16 @@ class Plugin(indigo.PluginBase):
     def startup(self):
         """Called when plugin is first enabled.
 
-        Logs startup message. Main initialization happens in __init__().
+        Logs startup message and API version info per device.
+        Main initialization happens in __init__().
         """
         self.logger.info("Netro Sprinklers Started")
+
+        # Log API version for each enabled device
+        for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled]:
+            _, api_version = self._get_device_auth(dev)
+            auth_type = "API key" if api_version == "2" else "serial number"
+            self.logger.info(f"Device '{dev.name}' using API v{api_version} ({auth_type} auth)")
 
     ########################################
     def shutdown(self):
@@ -719,7 +752,8 @@ class Plugin(indigo.PluginBase):
         # ALL ZONES OFF #
         elif action.sprinklerAction == indigo.kSprinklerAction.AllZonesOff:
             try:
-                self.api_client.stop_watering(dev.address)
+                key, api_version = self._get_device_auth(dev)
+                self.api_client.stop_watering(key, api_version=api_version)
                 self.logger.info(f'sent "{dev.name}" {"all zones off"}')
                 dev.updateStateOnServer("activeZone", 0)
             except requests.exceptions.RequestException:
@@ -784,7 +818,8 @@ class Plugin(indigo.PluginBase):
 
         if dev_dict:
             try:
-                response = self.api_client.set_no_water(dev.address, num_Days)
+                key, api_version = self._get_device_auth(dev)
+                response = self.api_client.set_no_water(key, num_Days, api_version=api_version)
                 response_status = response["status"]
                 self.logger.debug(response)
                 if response_status == "OK":
@@ -810,7 +845,8 @@ class Plugin(indigo.PluginBase):
         try:
             zone = int(pluginAction.props["zone"])
             moisture = int(pluginAction.props["moisture"])
-            response = self.api_client.set_moisture(dev.address, zone, moisture)
+            key, api_version = self._get_device_auth(dev)
+            response = self.api_client.set_moisture(key, zone, moisture, api_version=api_version)
             response_status = response.get("status", "UNKNOWN")
             self.logger.debug(response)
             if response_status == "OK":
@@ -841,7 +877,8 @@ class Plugin(indigo.PluginBase):
         try:
             # Set device status: 0 = standby (off), 1 = online (on)
             status = 0 if pluginAction.props["mode"] else 1
-            self.api_client.set_device_status(dev.address, status)
+            key, api_version = self._get_device_auth(dev)
+            self.api_client.set_device_status(key, status, api_version=api_version)
             mode_status = 'on' if pluginAction.props['mode'] else 'off'
             self.logger.info(f"Standby mode for controller '{dev.name}' turned {mode_status}")
         except Exception:
@@ -889,7 +926,10 @@ class Plugin(indigo.PluginBase):
                     return
 
             # Make API call
-            response = self.api_client.start_watering(dev.address, zones, delay, start_time_int)
+            key, api_version = self._get_device_auth(dev)
+            response = self.api_client.start_watering(
+                key, zones, delay, start_time_int, api_version=api_version
+            )
             response_status = response.get("status")
 
             if response_status == "OK":
@@ -954,14 +994,24 @@ class Plugin(indigo.PluginBase):
                 self.logger.error("Current temperature is required for weather reporting")
                 return
 
+            # Get auth credentials and convert units if needed
+            key, api_version = self._get_device_auth(dev)
+
+            # V2 API expects metric units — convert from US if needed
+            if api_version == "2":
+                weather_data = convert_weather_us_to_metric(weather_data)
+
             # Make API call
-            response = self.api_client.report_weather(dev.address, weather_data)
+            response = self.api_client.report_weather(
+                key, weather_data, api_version=api_version
+            )
             response_status = response.get("status")
 
             if response_status == "OK":
+                unit_label = "C" if api_version == "2" else "F"
                 self.logger.info(
                     f"Weather data reported to Netro for {weather_data['date']}: "
-                    f"{weather_data.get('t')}F, condition={weather_data['condition']}")
+                    f"{weather_data.get('t')}{unit_label}, condition={weather_data['condition']}")
             else:
                 self.logger.error(f"Error reporting weather: {response}")
 

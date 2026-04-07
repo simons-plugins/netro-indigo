@@ -1244,3 +1244,188 @@ class TestHandlerInstantiation:
         """WhispererHandler accepts custom logger."""
         handler = WhispererHandler(logger=mock_logger)
         assert handler.logger is mock_logger
+
+
+# =============================================================================
+# V2 Device Handler Tests
+# =============================================================================
+
+@pytest.mark.handlers
+class TestSprinklerHandlerV2DeviceInfo:
+    """Tests for V2 device info processing."""
+
+    def test_watering_status_is_online(self, mock_logger, sample_v2_device_info):
+        """V2 WATERING status should be treated as online."""
+        handler = SprinklerHandler(logger=mock_logger)
+        states, is_online, device_data = handler.process_device_info(
+            sample_v2_device_info, "ABC123", api_version="2"
+        )
+        assert is_online is True
+
+    def test_sleeping_status_is_offline(self, mock_logger):
+        """V2 SLEEPING status should be treated as offline."""
+        handler = SprinklerHandler(logger=mock_logger)
+        response = {
+            "status": "OK",
+            "data": {
+                "device": {
+                    "serial": "ABC123", "status": "SLEEPING", "version": "2.0",
+                    "name": "Test", "zones": []
+                }
+            },
+            "meta": {"token_remaining": 1900, "token_reset": "2026-04-08T00:00:00"}
+        }
+        _, is_online, _ = handler.process_device_info(response, "ABC123", api_version="2")
+        assert is_online is False
+
+    def test_v2_version_stored_as_string(self, mock_logger, sample_v2_device_info):
+        """V2 version field ('2.0') should be stored as string."""
+        handler = SprinklerHandler(logger=mock_logger)
+        states, _, _ = handler.process_device_info(
+            sample_v2_device_info, "ABC123", api_version="2"
+        )
+        api_ver_state = next(s for s in states if s["key"] == "api_version")
+        assert api_ver_state["value"] == "2.0"
+        assert isinstance(api_ver_state["value"], str)
+
+    def test_v2_sw_version_included(self, mock_logger, sample_v2_device_info):
+        """V2 response with sw_version should include it in states."""
+        handler = SprinklerHandler(logger=mock_logger)
+        states, _, _ = handler.process_device_info(
+            sample_v2_device_info, "ABC123", api_version="2"
+        )
+        sw_ver_state = next((s for s in states if s["key"] == "sw_version"), None)
+        assert sw_ver_state is not None
+        assert sw_ver_state["value"] == "3.1.0"
+
+    def test_v1_no_sw_version(self, mock_logger, sample_v2_device_info):
+        """V1 mode should not include sw_version even if present in response."""
+        handler = SprinklerHandler(logger=mock_logger)
+        states, _, _ = handler.process_device_info(
+            sample_v2_device_info, "ABC123", api_version="1"
+        )
+        sw_ver_state = next((s for s in states if s["key"] == "sw_version"), None)
+        assert sw_ver_state is None
+
+    def test_v2_online_status_is_online(self, mock_logger):
+        """V2 ONLINE status should be treated as online."""
+        handler = SprinklerHandler(logger=mock_logger)
+        response = {
+            "status": "OK",
+            "data": {
+                "device": {
+                    "serial": "ABC123", "status": "ONLINE", "version": "2.0",
+                    "name": "Test", "zones": []
+                }
+            },
+            "meta": {"token_remaining": 1900}
+        }
+        _, is_online, _ = handler.process_device_info(response, "ABC123", api_version="2")
+        assert is_online is True
+
+
+@pytest.mark.handlers
+class TestSprinklerHandlerV2Schedules:
+    """Tests for V2 schedule processing."""
+
+    def test_v2_schedule_iso_timestamp_parsing(self, mock_logger, sample_v2_schedules):
+        """V2 schedules with ISO 8601 timestamps should parse correctly."""
+        handler = SprinklerHandler(logger=mock_logger)
+        states, active_name = handler.process_schedules(
+            sample_v2_schedules, api_version="2"
+        )
+        assert active_name is not None
+        # Should find the EXECUTING schedule
+        active_zone = next(s for s in states if s["key"] == "activeZone")
+        assert active_zone["value"] == 1
+
+    def test_v2_next_schedule_uses_local_time(self, mock_logger, sample_v2_schedules):
+        """V2 next schedule should use local_start_time when available."""
+        handler = SprinklerHandler(logger=mock_logger)
+        states, _ = handler.process_schedules(sample_v2_schedules, api_version="2")
+        next_time = next(s for s in states if s["key"] == "nextScheduleTime")
+        assert "06:15:00" in next_time["value"]
+
+    def test_v2_duration_calculated_from_start_end(self, mock_logger, sample_v2_schedules):
+        """V2 duration should be calculated from start_time and end_time."""
+        handler = SprinklerHandler(logger=mock_logger)
+        states, _ = handler.process_schedules(sample_v2_schedules, api_version="2")
+        duration = next(s for s in states if s["key"] == "nextScheduleDuration")
+        assert duration["value"] == 15  # 06:15 to 06:30 = 15 minutes
+
+    def test_v2_source_values(self, mock_logger, sample_v2_schedules):
+        """V2 schedule source (SMART/FIX/MANUAL) should be title-cased."""
+        handler = SprinklerHandler(logger=mock_logger)
+        states, active_name = handler.process_schedules(
+            sample_v2_schedules, api_version="2"
+        )
+        # Active schedule source is SMART
+        assert active_name == "Smart"
+        # Next schedule source is FIX
+        next_source = next(s for s in states if s["key"] == "nextScheduleSource")
+        assert next_source["value"] == "Fix"
+
+    def test_v2_schedule_sort_key_iso_parsing(self, mock_logger):
+        """V2 timestamp sort key should parse ISO 8601 correctly."""
+        handler = SprinklerHandler(logger=mock_logger)
+        result = handler._parse_schedule_sort_key("2026-04-07T06:00:00", api_version="2")
+        assert result > 0
+        assert isinstance(result, float)
+
+    def test_v1_schedule_sort_key_ms_parsing(self, mock_logger):
+        """V1 timestamp sort key should parse millisecond timestamp."""
+        handler = SprinklerHandler(logger=mock_logger)
+        result = handler._parse_schedule_sort_key("1740664800000", api_version="1")
+        assert result == 1740664800000.0
+
+    def test_v2_calc_duration_from_start_end(self, mock_logger):
+        """_calc_v2_duration should calculate minutes from ISO times."""
+        handler = SprinklerHandler(logger=mock_logger)
+        schedule = {
+            "start_time": "2026-04-07T06:00:00",
+            "end_time": "2026-04-07T06:30:00"
+        }
+        assert handler._calc_v2_duration(schedule) == 30
+
+    def test_v2_calc_duration_missing_end(self, mock_logger):
+        """_calc_v2_duration returns 0 when end_time is missing."""
+        handler = SprinklerHandler(logger=mock_logger)
+        assert handler._calc_v2_duration({"start_time": "2026-04-07T06:00:00"}) == 0
+
+    def test_v2_calc_duration_invalid_format(self, mock_logger):
+        """_calc_v2_duration returns 0 for invalid timestamps."""
+        handler = SprinklerHandler(logger=mock_logger)
+        assert handler._calc_v2_duration({"start_time": "bad", "end_time": "data"}) == 0
+
+
+@pytest.mark.handlers
+class TestWhispererHandlerV2:
+    """Tests for V2 Whisperer sensor processing."""
+
+    def test_v2_sensor_data_processed(self, mock_logger, sample_v2_sensor_data):
+        """V2 sensor data should be processed correctly."""
+        handler = WhispererHandler(logger=mock_logger)
+        states, has_readings = handler.process_sensor_data(
+            sample_v2_sensor_data, "SENSOR123", api_version="2"
+        )
+        assert has_readings is True
+        moisture = next(s for s in states if s["key"] == "soilMoisture")
+        assert moisture["value"] == 45
+
+    def test_v2_sensor_temperature(self, mock_logger, sample_v2_sensor_data):
+        """V2 sensor should report celsius temperature."""
+        handler = WhispererHandler(logger=mock_logger)
+        states, _ = handler.process_sensor_data(
+            sample_v2_sensor_data, "SENSOR123", api_version="2"
+        )
+        temp = next(s for s in states if s["key"] == "temperature")
+        assert temp["value"] == 22.5
+
+    def test_v2_sensor_v2_meta_fields(self, mock_logger, sample_v2_sensor_data):
+        """V2 sensor should include v2 meta fields in states."""
+        handler = WhispererHandler(logger=mock_logger)
+        states, _ = handler.process_sensor_data(
+            sample_v2_sensor_data, "SENSOR123", api_version="2"
+        )
+        token = next(s for s in states if s["key"] == "token_remaining")
+        assert token["value"] == 1848

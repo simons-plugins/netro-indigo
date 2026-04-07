@@ -18,6 +18,16 @@
             <Field id="addressHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
                 <Label>Found in the Netro mobile app under Settings (e.g., a4cf12b8d5e2).</Label>
             </Field>
+            <Field id="sep_api" type="separator"/>
+            <Field id="apiKeyLabel" type="label">
+                <Label>API v2 (Optional): Enter an API key for more secure authentication. Get your key at netrohome.com → Account → API Key.</Label>
+            </Field>
+            <Field id="apiKey" type="textfield" defaultValue="">
+                <Label>API Key (v2):</Label>
+            </Field>
+            <Field id="apiKeyHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+                <Label>Leave blank to continue using v1 (serial number authentication).</Label>
+            </Field>
             <Field id="sep1" type="separator"/>
             <Field type="menu" id="units" defaultValue="US">
                 <Label>Display units:</Label>
@@ -55,9 +65,14 @@
                 <ControlPageLabel>Token reset time</ControlPageLabel>
             </State>
             <State id="api_version">
-                <ValueType>Integer</ValueType>
+                <ValueType>String</ValueType>
                 <TriggerLabel>API Version</TriggerLabel>
                 <ControlPageLabel>API Version</ControlPageLabel>
+            </State>
+            <State id="sw_version">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Firmware Version</TriggerLabel>
+                <ControlPageLabel>Firmware Version</ControlPageLabel>
             </State>
             <State id="time">
                 <ValueType>String</ValueType>
@@ -207,6 +222,16 @@
             </Field>
             <Field id="addressHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
                 <Label>Found in the Netro mobile app under Settings.</Label>
+            </Field>
+            <Field id="sep_api" type="separator"/>
+            <Field id="apiKeyLabel" type="label">
+                <Label>API v2 (Optional): Enter an API key for more secure authentication. Get your key at netrohome.com → Account → API Key.</Label>
+            </Field>
+            <Field id="apiKey" type="textfield" defaultValue="">
+                <Label>API Key (v2):</Label>
+            </Field>
+            <Field id="apiKeyHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+                <Label>Leave blank to continue using v1 (serial number authentication).</Label>
             </Field>
             <Field id="sep1" type="separator"/>
             <Field id="SupportsOnState" type="checkbox" defaultValue="false">
