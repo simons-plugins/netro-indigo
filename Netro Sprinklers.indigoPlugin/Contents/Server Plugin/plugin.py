@@ -252,28 +252,26 @@ class Plugin(indigo.PluginBase):
                     var_name = f"zone_moisture_{zone_slug}"
 
                 if zone_num in zone_var_map:
-                    # Variable already mapped — check if zone was renamed
                     var_id = zone_var_map[zone_num].get("var_id")
                     old_name = zone_var_map[zone_num].get("zone_name", "")
-                    if var_id and old_name != zone_name:
-                        # Zone renamed — rename the Indigo variable
-                        try:
-                            var = indigo.variables[int(var_id)]
+                    # Verify the mapped variable still exists
+                    try:
+                        var = indigo.variables[int(var_id)]
+                        # Variable exists — check if zone was renamed
+                        if old_name != zone_name or var.name != var_name:
                             old_var_name = var.name
-                            if var.name != var_name:
-                                var.name = var_name
-                                var.replaceOnServer()
+                            var.name = var_name
+                            var.replaceOnServer()
                             zone_var_map[zone_num]["zone_name"] = zone_name
                             zone_var_map[zone_num]["var_name"] = var_name
                             changed = True
                             self.logger.info(
-                                f"Zone renamed: variable '{old_var_name}' → "
-                                f"'{var_name}' (zone {zone_num}: "
-                                f"'{old_name}' → '{zone_name}')"
+                                f"Zone variable updated: '{old_var_name}' → "
+                                f"'{var_name}'"
                             )
-                        except (KeyError, ValueError):
-                            # Variable was deleted — recreate below
-                            del zone_var_map[zone_num]
+                    except (KeyError, ValueError):
+                        # Variable was deleted — recreate below
+                        del zone_var_map[zone_num]
 
                 if zone_num not in zone_var_map:
                     # Create new variable for this zone
