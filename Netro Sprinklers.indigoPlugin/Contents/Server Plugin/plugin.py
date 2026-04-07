@@ -1078,7 +1078,7 @@ class Plugin(indigo.PluginBase):
                             zone_devs = self._get_zone_devices(dev.id)
                             if int(zone_num) in zone_devs:
                                 zone_devs[int(zone_num)].updateStateOnServer(
-                                    "moisture", moisture
+                                    "moisture", moisture, uiValue=f"{moisture}%"
                                 )
                         else:
                             self.logger.error(
@@ -1235,55 +1235,6 @@ class Plugin(indigo.PluginBase):
                 self._fireTrigger("setNoWater", dev.id)
 
     ########################################
-    def setMoisture(self, pluginAction, dev):
-        """Override moisture level for a specific zone.
-
-        Sends a manual moisture override to the Netro API for the selected
-        zone. This affects smart scheduling decisions.
-
-        Args:
-            pluginAction: Action parameters containing zone and moisture
-            dev: Sprinkler controller device
-        """
-        try:
-            zone = int(pluginAction.props["zone"])
-
-            # Resolve Indigo variable substitution (%%v:ID%%) at runtime
-            moisture_raw = self.substitute(pluginAction.props.get("moisture", ""))
-            try:
-                moisture = int(float(moisture_raw))
-            except (ValueError, TypeError):
-                self.logger.error(
-                    f"Moisture value '{moisture_raw}' is not a valid number "
-                    f"(resolved from '{pluginAction.props.get('moisture', '')}')"
-                )
-                self._fireTrigger("setMoistureFailed", dev.id)
-                return
-
-            if moisture < 0 or moisture > 100:
-                self.logger.error(f"Moisture value {moisture} is out of range (0-100)")
-                self._fireTrigger("setMoistureFailed", dev.id)
-                return
-
-            key, api_version = self._get_device_auth(dev)
-            response = self.api_client.set_moisture(key, zone, moisture, api_version=api_version)
-            response_status = response.get("status", "UNKNOWN")
-            self.logger.debug(response)
-            if response_status == "OK":
-                self.logger.info(
-                    f"Moisture for zone {zone} on '{dev.name}' set to {moisture}%"
-                )
-            else:
-                self.logger.error(
-                    f"Error setting moisture for zone {zone}: {response_status}"
-                )
-                self._fireTrigger("setMoistureFailed", dev.id)
-        except Exception:
-            self.logger.error(f"Could not set moisture override on '{dev.name}'")
-            self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
-            self._fireTrigger("setMoistureFailed", dev.id)
-
-    ########################################
     def setZoneMoisture(self, pluginAction, dev):
         """Override moisture for this zone device.
 
@@ -1316,7 +1267,7 @@ class Plugin(indigo.PluginBase):
             response = self.api_client.set_moisture(key, zone_num, moisture, api_version=api_version)
             if response.get("status") == "OK":
                 self.logger.info(f"Moisture for '{dev.name}' set to {moisture}%")
-                dev.updateStateOnServer("moisture", moisture)
+                dev.updateStateOnServer("moisture", moisture, uiValue=f"{moisture}%")
             else:
                 self.logger.error(f"Error setting moisture for '{dev.name}': {response.get('status')}")
         except KeyError:

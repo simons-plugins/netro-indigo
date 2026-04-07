@@ -705,16 +705,17 @@ class ZoneHandler:
         try:
             moistures = api_response["data"]["moistures"]
             if not moistures:
-                return [{"key": "moisture", "value": 0}]
+                return [{"key": "moisture", "value": 0, "uiValue": "0%"}]
 
             moistures_sorted = sorted(moistures, key=lambda x: x.get("id", 0), reverse=True)
             max_date = moistures_sorted[0].get("date")
 
             for m in moistures_sorted:
                 if m.get("zone") == zone_number and m.get("date") == max_date:
-                    return [{"key": "moisture", "value": m.get("moisture", 0)}]
+                    val = m.get("moisture", 0)
+                    return [{"key": "moisture", "value": val, "uiValue": f"{val}%"}]
 
-            return [{"key": "moisture", "value": 0}]
+            return [{"key": "moisture", "value": 0, "uiValue": "0%"}]
 
         except (KeyError, TypeError, IndexError) as exc:
             self.logger.error(f"Error parsing zone moisture: {exc}")

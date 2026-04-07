@@ -68,25 +68,6 @@
         </ConfigUI>
     </Action>
 
-    <Action id="setMoisture" deviceFilter="self.sprinkler" uiPath="DeviceActions">
-        <Name>Set Moisture Override</Name>
-        <CallbackMethod>setMoisture</CallbackMethod>
-        <ConfigUI>
-            <Field type="label" id="moisture_warning_label" fontColor="orange">
-                <Label>Warning: Overriding moisture levels affects Netro's smart scheduling. Use with caution.</Label>
-            </Field>
-            <Field type="menu" id="zone">
-                <Label>Zone:</Label>
-                <List class="self" method="getZoneList" dynamicReload="true"/>
-            </Field>
-            <Field type="textfield" id="moisture" defaultValue="50">
-                <Label>Moisture Level (%):</Label>
-            </Field>
-            <Field type="label" id="moisture_label" alignWithControl="true" fontSize="small" fontColor="darkgray">
-                <Label>Moisture percentage (0-100). This overrides Netro's calculated moisture for the selected zone.</Label>
-            </Field>
-        </ConfigUI>
-    </Action>
 
     <Action id="reportWeather" deviceFilter="self.sprinkler" uiPath="DeviceActions">
         <Name>Report Local Weather to Netro</Name>
