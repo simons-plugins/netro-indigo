@@ -245,11 +245,11 @@ class Plugin(indigo.PluginBase):
                 # For single-zone devices (e.g. Pixie) or zones without names,
                 # use the device name only. For multi-zone, use zone name.
                 if single_zone or not zone_name:
-                    var_name = f"{dev_slug}_moisture"
+                    var_name = f"zone_moisture_{dev_slug}"
                     zone_name = zone_name or dev.name
                 else:
                     zone_slug = self._slugify(zone_name)
-                    var_name = f"{dev_slug}_{zone_slug}_moisture"
+                    var_name = f"zone_moisture_{zone_slug}"
 
                 if zone_num in zone_var_map:
                     # Variable already mapped — check if zone was renamed
