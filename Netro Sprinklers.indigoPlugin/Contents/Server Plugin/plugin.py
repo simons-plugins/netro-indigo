@@ -391,7 +391,6 @@ class Plugin(indigo.PluginBase):
                         props=props,
                     )
                     new_dev.model = "Netro Zone"
-                    new_dev.subModel = zone_name
                     new_dev.replaceOnServer()
                     self.logger.info(
                         f"Created zone device '{expected_name}' "
