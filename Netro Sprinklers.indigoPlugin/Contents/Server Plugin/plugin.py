@@ -61,7 +61,7 @@ from validators import (
     validate_prefs_config,
 )
 from api_client import NetroAPIClient
-from device_handlers import SprinklerHandler, WhispererHandler
+from device_handlers import SprinklerHandler, WhispererHandler, ZoneHandler
 from utils import convert_weather_us_to_metric
 
 
@@ -129,6 +129,7 @@ class Plugin(indigo.PluginBase):
         # Initialize device handlers for state transformation
         self.sprinkler_handler = SprinklerHandler(self.logger)
         self.whisperer_handler = WhispererHandler(self.logger)
+        self.zone_handler = ZoneHandler(self.logger)
 
         # Track last seen event ID per device for v2 event polling
         self._last_event_ids = {}
@@ -334,6 +335,126 @@ class Plugin(indigo.PluginBase):
             return (api_key, "2")
         return (dev.address, "1")
 
+    def _get_zone_devices(self, parent_dev_id):
+        """Get all zone devices belonging to a parent controller.
+
+        Args:
+            parent_dev_id: Indigo device ID of the parent controller
+
+        Returns:
+            Dict mapping zone number (int) to Indigo device
+        """
+        zone_devs = {}
+        for dev in indigo.devices.iter(filter="self.zone"):
+            if dev.pluginProps.get("parentDeviceId") == str(parent_dev_id):
+                zone_num = int(dev.pluginProps.get("zoneNumber", 0))
+                if zone_num > 0:
+                    zone_devs[zone_num] = dev
+        return zone_devs
+
+    def _ensure_zone_devices(self, parent_dev, zones_data):
+        """Create or update zone devices for a parent controller.
+
+        Auto-creates zone devices for zones returned by the API.
+        Updates device names if the zone was renamed in Netro.
+
+        Args:
+            parent_dev: Indigo sprinkler controller device
+            zones_data: List of zone dicts from extract_zone_info
+                        (each has "id", "name", "enabled")
+        """
+        existing = self._get_zone_devices(parent_dev.id)
+
+        for zone in zones_data:
+            zone_num = zone["id"]
+            zone_name = zone.get("name", "").strip() or f"Zone {zone_num}"
+            expected_name = f"{parent_dev.name} - {zone_name}"
+
+            if zone_num in existing:
+                zone_dev = existing[zone_num]
+                if zone_dev.name != expected_name:
+                    self.logger.info(
+                        f"Zone renamed: '{zone_dev.name}' -> '{expected_name}'"
+                    )
+                    zone_dev.name = expected_name
+                    try:
+                        zone_dev.replaceOnServer()
+                    except Exception as exc:
+                        self.logger.error(
+                            f"Could not rename zone device '{zone_dev.name}' "
+                            f"to '{expected_name}': {exc}"
+                        )
+            else:
+                try:
+                    props = {
+                        "parentDeviceId": str(parent_dev.id),
+                        "zoneNumber": str(zone_num),
+                    }
+                    new_dev = indigo.device.create(
+                        protocol=indigo.kProtocol.Plugin,
+                        deviceTypeId="zone",
+                        name=expected_name,
+                        props=props,
+                    )
+                    new_dev.model = "Netro Zone"
+                    new_dev.replaceOnServer()
+                    self.logger.info(
+                        f"Created zone device '{expected_name}' "
+                        f"(zone {zone_num} on '{parent_dev.name}')"
+                    )
+                except Exception as exc:
+                    self.logger.error(
+                        f"Could not create zone device for zone {zone_num} "
+                        f"on '{parent_dev.name}': {exc}"
+                    )
+
+    def _update_zone_devices(self, parent_dev, device_data, schedule_response, moisture_response, api_version):
+        """Update all zone devices for a parent controller.
+
+        Args:
+            parent_dev: Indigo sprinkler controller device
+            device_data: Raw device dict from info API (contains zones array)
+            schedule_response: Raw schedules API response (or None)
+            moisture_response: Raw moistures API response (or None)
+            api_version: "1" or "2"
+        """
+        zone_devs = self._get_zone_devices(parent_dev.id)
+        zones = device_data.get("zones", [])
+
+        for zone_dev in zone_devs.values():
+            try:
+                zone_num = int(zone_dev.pluginProps.get("zoneNumber", 0))
+                if zone_num == 0:
+                    continue
+
+                states = []
+                zone_states = self.zone_handler.extract_zone_states(zones, zone_num)
+                states.extend(zone_states)
+
+                # Check if zone is enabled
+                is_enabled = next(
+                    (s["value"] for s in zone_states if s["key"] == "enabled"), False
+                )
+
+                if not is_enabled:
+                    zone_dev.setErrorStateOnServer('disabled')
+                else:
+                    zone_dev.setErrorStateOnServer('')
+                    if schedule_response:
+                        states.extend(
+                            self.zone_handler.process_zone_schedules(
+                                schedule_response, zone_num, api_version=api_version
+                            )
+                        )
+
+                    if moisture_response:
+                        states.extend(
+                            self.zone_handler.process_zone_moisture(moisture_response, zone_num)
+                        )
+            except Exception as exc:
+                self.logger.error(f"Error updating zone device '{zone_dev.name}': {exc}")
+                self.logger.debug(f"Zone update error: \n{traceback.format_exc(10)}")
+
     ########################################
     def _update_from_netro(self):
         """Update all Indigo devices from Netro API data.
@@ -372,6 +493,8 @@ class Plugin(indigo.PluginBase):
         try:
             # Get auth credentials (API key for v2, serial for v1)
             key, api_version = self._get_device_auth(dev)
+            schedule_dict = None
+            moisture_dict = None
 
             # Get device info
             reply_dict = self.api_client.get_device_info(key, api_version=api_version)
@@ -425,16 +548,18 @@ class Plugin(indigo.PluginBase):
                 props["ScheduledZoneDurations"] = active_schedule_name
             dev.replacePluginPropsOnServer(props)
 
-            # Update moisture levels per zone
+            # Fetch moisture levels (used by zone devices below)
             try:
                 moisture_dict = self.api_client.get_moistures(key, api_version=api_version)
-                moisture_states = self.sprinkler_handler.process_moistures(
-                    moisture_dict, api_version=api_version
-                )
-                if moisture_states:
-                    dev.updateStatesOnServer(moisture_states)
             except Exception:
+                self.logger.warning(f"Moisture API unavailable for '{dev.name}' - zone moisture states may be stale")
                 self.logger.debug(f"Moisture API error: \n{traceback.format_exc(10)}")
+
+            # Auto-create and update zone devices
+            self._ensure_zone_devices(dev, zones_data)
+            self._update_zone_devices(
+                dev, device_data, schedule_dict, moisture_dict, api_version
+            )
 
             # Ensure Indigo variables exist for each zone (for variable substitution)
             # Must be after replacePluginPropsOnServer to avoid props overwrite race
@@ -591,11 +716,14 @@ class Plugin(indigo.PluginBase):
         """
         self.logger.info("Netro Sprinklers Started")
 
-        # Log API version for each enabled device
-        for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled]:
+        # Log API version for each enabled device (skip zone devices — they use parent auth)
+        for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled and s.deviceTypeId != "zone"]:
             _, api_version = self._get_device_auth(dev)
             auth_type = "API key" if api_version == "2" else "serial number"
             self.logger.info(f"Device '{dev.name}' using API v{api_version} ({auth_type} auth)")
+
+        # Subscribe to variable changes for zone moisture auto-link
+        indigo.variables.subscribeToChanges()
 
     ########################################
     def shutdown(self):
@@ -796,7 +924,9 @@ class Plugin(indigo.PluginBase):
             True if device ID changed (requires reconnection), False otherwise
         """
         self.logger.threaddebug("didDeviceCommPropertyChange")
-        return origDev.states["id"] != newDev.states["id"]
+        if origDev.deviceTypeId == "zone":
+            return False
+        return origDev.states.get("id") != newDev.states.get("id")
 
     ########################################
     # pylint: disable=unused-argument
@@ -909,6 +1039,77 @@ class Plugin(indigo.PluginBase):
             # Trigger wasn't in dict - already removed or never added
             self.logger.debug(f"Trigger {trigger.id} not found in triggerDict")
         self.logger.debug(f"Stop trigger processing list: {str(self.triggerDict)}")
+
+    def variableUpdated(self, origVar, newVar):
+        """Called when any subscribed variable changes.
+
+        Checks if the variable is a zone moisture variable. If so,
+        calls set_moisture API for the corresponding zone.
+
+        Args:
+            origVar: Variable before change
+            newVar: Variable after change
+        """
+        # Only act on value changes
+        if origVar.value == newVar.value:
+            return
+
+        # Search all sprinkler devices for a zone variable mapping that matches
+        for dev in indigo.devices.iter(filter="self.sprinkler"):
+            mapping_json = dev.pluginProps.get("zoneVariableMap", "{}")
+            try:
+                zone_var_map = json.loads(mapping_json)
+            except (json.JSONDecodeError, TypeError) as exc:
+                self.logger.warning(f"Invalid zoneVariableMap on '{dev.name}': {exc}")
+                continue
+
+            for zone_num, var_info in zone_var_map.items():
+                if str(var_info.get("var_id")) == str(newVar.id):
+                    # Found the matching zone — call set_moisture
+                    try:
+                        moisture = int(float(newVar.value))
+                    except (ValueError, TypeError):
+                        self.logger.warning(
+                            f"Zone moisture variable '{newVar.name}' has "
+                            f"non-numeric value '{newVar.value}', ignoring"
+                        )
+                        return
+
+                    if moisture < 0 or moisture > 100:
+                        self.logger.warning(
+                            f"Zone moisture variable '{newVar.name}' value "
+                            f"{moisture} out of range (0-100), ignoring"
+                        )
+                        return
+
+                    key, api_version = self._get_device_auth(dev)
+                    try:
+                        response = self.api_client.set_moisture(
+                            key, int(zone_num), moisture, api_version=api_version
+                        )
+                        if response.get("status") == "OK":
+                            self.logger.info(
+                                f"Auto-set moisture for zone {zone_num} on "
+                                f"'{dev.name}' to {moisture}% "
+                                f"(from variable '{newVar.name}')"
+                            )
+                            # Update the zone device state too
+                            zone_devs = self._get_zone_devices(dev.id)
+                            if int(zone_num) in zone_devs:
+                                zone_devs[int(zone_num)].updateStateOnServer(
+                                    "moisture", moisture, uiValue=f"{moisture}%"
+                                )
+                        else:
+                            self.logger.error(
+                                f"Error auto-setting moisture for zone {zone_num}: "
+                                f"{response.get('status')}"
+                            )
+                    except Exception:
+                        self.logger.error(
+                            f"API error auto-setting moisture for zone {zone_num}"
+                        )
+                        self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
+                    return  # Found match, stop searching
 
     ########################################
     # Sprinkler Control Action callback
@@ -1053,53 +1254,51 @@ class Plugin(indigo.PluginBase):
                 self._fireTrigger("setNoWater", dev.id)
 
     ########################################
-    def setMoisture(self, pluginAction, dev):
-        """Override moisture level for a specific zone.
+    def setZoneMoisture(self, pluginAction, dev):
+        """Override moisture for this zone device.
 
-        Sends a manual moisture override to the Netro API for the selected
-        zone. This affects smart scheduling decisions.
+        Looks up the parent controller's auth credentials and calls
+        set_moisture API for this zone.
 
         Args:
-            pluginAction: Action parameters containing zone and moisture
-            dev: Sprinkler controller device
+            pluginAction: Action parameters containing moisture value
+            dev: Zone device
         """
         try:
-            zone = int(pluginAction.props["zone"])
+            zone_num = int(dev.pluginProps.get("zoneNumber", 0))
+            parent_id = int(dev.pluginProps.get("parentDeviceId", 0))
+            try:
+                parent_dev = indigo.devices[parent_id]
+            except KeyError:
+                self.logger.error(
+                    f"Parent controller (ID {parent_id}) "
+                    f"not found for zone '{dev.name}'"
+                )
+                return
 
-            # Resolve Indigo variable substitution (%%v:ID%%) at runtime
             moisture_raw = self.substitute(pluginAction.props.get("moisture", ""))
             try:
                 moisture = int(float(moisture_raw))
             except (ValueError, TypeError):
                 self.logger.error(
-                    f"Moisture value '{moisture_raw}' is not a valid number "
-                    f"(resolved from '{pluginAction.props.get('moisture', '')}')"
+                    f"Moisture value '{moisture_raw}' is not a valid number"
                 )
-                self._fireTrigger("setMoistureFailed", dev.id)
                 return
 
             if moisture < 0 or moisture > 100:
                 self.logger.error(f"Moisture value {moisture} is out of range (0-100)")
-                self._fireTrigger("setMoistureFailed", dev.id)
                 return
 
-            key, api_version = self._get_device_auth(dev)
-            response = self.api_client.set_moisture(key, zone, moisture, api_version=api_version)
-            response_status = response.get("status", "UNKNOWN")
-            self.logger.debug(response)
-            if response_status == "OK":
-                self.logger.info(
-                    f"Moisture for zone {zone} on '{dev.name}' set to {moisture}%"
-                )
+            key, api_version = self._get_device_auth(parent_dev)
+            response = self.api_client.set_moisture(key, zone_num, moisture, api_version=api_version)
+            if response.get("status") == "OK":
+                self.logger.info(f"Moisture for '{dev.name}' set to {moisture}%")
+                dev.updateStateOnServer("moisture", moisture, uiValue=f"{moisture}%")
             else:
-                self.logger.error(
-                    f"Error setting moisture for zone {zone}: {response_status}"
-                )
-                self._fireTrigger("setMoistureFailed", dev.id)
+                self.logger.error(f"Error setting moisture for '{dev.name}': {response.get('status')}")
         except Exception:
-            self.logger.error(f"Could not set moisture override on '{dev.name}'")
+            self.logger.error(f"Could not set moisture for '{dev.name}'")
             self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
-            self._fireTrigger("setMoistureFailed", dev.id)
 
     ########################################
     def setStandbyMode(self, pluginAction, dev):
