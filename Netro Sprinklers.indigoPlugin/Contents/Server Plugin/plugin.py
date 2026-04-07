@@ -367,7 +367,7 @@ class Plugin(indigo.PluginBase):
 
         for zone in zones_data:
             zone_num = zone["id"]
-            zone_name = zone.get("name", f"Zone {zone_num}")
+            zone_name = zone.get("name", "").strip() or f"Zone {zone_num}"
             expected_name = f"{parent_dev.name} - {zone_name}"
 
             if zone_num in existing:
@@ -699,8 +699,8 @@ class Plugin(indigo.PluginBase):
         """
         self.logger.info("Netro Sprinklers Started")
 
-        # Log API version for each enabled device
-        for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled]:
+        # Log API version for each enabled device (skip zone devices — they use parent auth)
+        for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled and s.deviceTypeId != "zone"]:
             _, api_version = self._get_device_auth(dev)
             auth_type = "API key" if api_version == "2" else "serial number"
             self.logger.info(f"Device '{dev.name}' using API v{api_version} ({auth_type} auth)")
@@ -907,7 +907,9 @@ class Plugin(indigo.PluginBase):
             True if device ID changed (requires reconnection), False otherwise
         """
         self.logger.threaddebug("didDeviceCommPropertyChange")
-        return origDev.states["id"] != newDev.states["id"]
+        if origDev.deviceTypeId == "zone":
+            return False
+        return origDev.states.get("id") != newDev.states.get("id")
 
     ########################################
     # pylint: disable=unused-argument
