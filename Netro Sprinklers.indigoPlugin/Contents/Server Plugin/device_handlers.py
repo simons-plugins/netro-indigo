@@ -690,6 +690,36 @@ class ZoneHandler:
         except (ValueError, TypeError, OSError):
             return ""
 
+    def process_zone_moisture(self, api_response, zone_number):
+        """Extract moisture for a single zone from moistures response.
+
+        Uses the most recent date's reading for the zone.
+
+        Args:
+            api_response: Response from api_client.get_moistures()
+            zone_number: Zone ith number (1-based)
+
+        Returns:
+            List with single moisture state update dict
+        """
+        try:
+            moistures = api_response["data"]["moistures"]
+            if not moistures:
+                return [{"key": "moisture", "value": 0}]
+
+            moistures_sorted = sorted(moistures, key=lambda x: x.get("id", 0), reverse=True)
+            max_date = moistures_sorted[0].get("date")
+
+            for m in moistures_sorted:
+                if m.get("zone") == zone_number and m.get("date") == max_date:
+                    return [{"key": "moisture", "value": m.get("moisture", 0)}]
+
+            return [{"key": "moisture", "value": 0}]
+
+        except (KeyError, TypeError, IndexError) as exc:
+            self.logger.error(f"Error parsing zone moisture: {exc}")
+            return [{"key": "moisture", "value": 0}]
+
     def extract_zone_states(self, zones, zone_number):
         """Extract enabled and smartMode for a single zone from info data.
 

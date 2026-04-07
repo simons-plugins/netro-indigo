@@ -187,3 +187,45 @@ class TestProcessZoneSchedules:
         assert "2026-04-07" in state_dict["nextWateringStart"]
         assert state_dict["lastWateringSource"] == "Smart"
         assert state_dict["nextWateringSource"] == "Fix"
+
+
+@pytest.fixture
+def sample_moistures_response():
+    return {
+        "data": {
+            "moistures": [
+                {"id": 50, "zone": 1, "moisture": 65, "date": "2026-04-07"},
+                {"id": 51, "zone": 2, "moisture": 42, "date": "2026-04-07"},
+                {"id": 40, "zone": 1, "moisture": 55, "date": "2026-04-06"},
+            ]
+        }
+    }
+
+
+class TestProcessZoneMoisture:
+    def test_zone_moisture(self, zone_handler, sample_moistures_response):
+        states = zone_handler.process_zone_moisture(
+            sample_moistures_response, zone_number=1
+        )
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["moisture"] == 65
+
+    def test_zone_moisture_latest_date(self, zone_handler, sample_moistures_response):
+        states = zone_handler.process_zone_moisture(
+            sample_moistures_response, zone_number=1
+        )
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["moisture"] == 65  # from 2026-04-07, not 55 from 04-06
+
+    def test_zone_not_found(self, zone_handler, sample_moistures_response):
+        states = zone_handler.process_zone_moisture(
+            sample_moistures_response, zone_number=99
+        )
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["moisture"] == 0
+
+    def test_empty_moistures(self, zone_handler):
+        response = {"data": {"moistures": []}}
+        states = zone_handler.process_zone_moisture(response, zone_number=1)
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["moisture"] == 0
