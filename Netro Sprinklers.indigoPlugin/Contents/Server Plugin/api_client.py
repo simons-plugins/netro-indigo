@@ -411,15 +411,7 @@ class NetroAPIClient:
             self._token_remaining = int(meta.get("token_remaining", 2000))
             reset_str = meta.get("token_reset", "")
             if reset_str:
-                # Use fromisoformat for robustness — handles both v1 and v2 formats
-                # v1: "2026-04-08T00:00:00", v2: "2026-04-08T00:00:00" (both ISO 8601)
-                try:
-                    self._token_reset = datetime.fromisoformat(reset_str).replace(tzinfo=timezone.utc)
-                except (ValueError, AttributeError):
-                    # Fallback for non-ISO formats
-                    self._token_reset = datetime.strptime(
-                        reset_str, "%Y-%m-%dT%H:%M:%S"
-                    ).replace(tzinfo=timezone.utc)
+                self._token_reset = datetime.fromisoformat(reset_str).replace(tzinfo=timezone.utc)
         except (ValueError, TypeError) as exc:
             self.logger.warning(f"Could not parse token info from response: {exc}")
             # Set safe default to trigger proactive pause and prevent exhausting token budget
@@ -563,7 +555,13 @@ class NetroAPIClient:
         Returns:
             Full endpoint URL
         """
-        return self._ENDPOINT_MAP[name].get(api_version, self._ENDPOINT_MAP[name]["1"])
+        versions = self._ENDPOINT_MAP[name]
+        if api_version not in versions:
+            self.logger.warning(
+                f"Unknown API version '{api_version}' for endpoint '{name}', falling back to v1"
+            )
+            api_version = "1"
+        return versions[api_version]
 
     # =========================================================================
     # Convenience Methods for Endpoints

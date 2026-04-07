@@ -236,7 +236,7 @@ class SprinklerHandler:
                 # V1: Millisecond timestamp (may be string)
                 return float(raw_value) if isinstance(raw_value, str) else float(raw_value)
         except (ValueError, TypeError):
-            return 0.0
+            return float('inf')  # Unparseable schedules sort last (never "next")
 
     def _format_next_schedule(
         self,
@@ -300,8 +300,7 @@ class SprinklerHandler:
 
         return updates
 
-    @staticmethod
-    def _calc_v2_duration(schedule_dict: Dict[str, Any]) -> int:
+    def _calc_v2_duration(self, schedule_dict: Dict[str, Any]) -> int:
         """Calculate schedule duration in minutes from v2 start/end times.
 
         Args:
@@ -318,8 +317,12 @@ class SprinklerHandler:
                 end_dt = datetime.fromisoformat(str(end_str))
                 delta = end_dt - start_dt
                 return max(0, int(delta.total_seconds() / 60))
-        except (ValueError, TypeError):
-            pass
+        except (ValueError, TypeError) as exc:
+            self.logger.warning(
+                f"Could not calculate v2 schedule duration from "
+                f"start='{schedule_dict.get('start_time')}' "
+                f"end='{schedule_dict.get('end_time')}': {exc}"
+            )
         return 0
 
     def _no_upcoming_schedule(self) -> List[Dict[str, Any]]:

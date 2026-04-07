@@ -327,7 +327,11 @@ class Plugin(indigo.PluginBase):
                     (s["value"] for s in states if s["key"] == "readingID"), None
                 )
                 current_reading_id = dev.states.get("readingID", None)
-                if new_reading_id is not None and new_reading_id == current_reading_id:
+                if (
+                    new_reading_id is not None
+                    and current_reading_id is not None
+                    and str(new_reading_id) == str(current_reading_id)
+                ):
                     self.logger.debug(
                         f"Sensor '{dev.name}' reading unchanged (ID {new_reading_id}), skipping update"
                     )
@@ -1010,8 +1014,8 @@ class Plugin(indigo.PluginBase):
             # Get auth credentials and convert units if needed
             key, api_version = self._get_device_auth(dev)
 
-            # V2 API expects metric units — convert from US if needed
-            if api_version == "2":
+            # V2 API expects metric units — convert from US if device uses US units
+            if api_version == "2" and dev.pluginProps.get("units", "US") == "US":
                 weather_data = convert_weather_us_to_metric(weather_data)
 
             # Make API call

@@ -230,6 +230,14 @@ def validate_api_key(
     if len(sanitized) < 16:
         return (False, sanitized, "API key appears too short")
 
+    # Validate maximum length
+    if len(sanitized) > 128:
+        return (False, sanitized, "API key appears too long — paste only the key value")
+
+    # Validate characters — keys are alphanumeric with hyphens and underscores
+    if not all(c.isalnum() or c in '-_' for c in sanitized):
+        return (False, sanitized, "API key contains invalid characters")
+
     return (True, sanitized, None)
 
 
