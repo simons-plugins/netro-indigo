@@ -436,10 +436,7 @@ class Plugin(indigo.PluginBase):
                     (s["value"] for s in zone_states if s["key"] == "enabled"), False
                 )
 
-                if not is_enabled:
-                    zone_dev.setErrorStateOnServer('disabled')
-                else:
-                    zone_dev.setErrorStateOnServer('')
+                if is_enabled:
                     if schedule_response:
                         states.extend(
                             self.zone_handler.process_zone_schedules(
@@ -451,6 +448,23 @@ class Plugin(indigo.PluginBase):
                         states.extend(
                             self.zone_handler.process_zone_moisture(moisture_response, zone_num)
                         )
+
+                if states:
+                    zone_dev.updateStatesOnServer(states)
+
+                # Set error state and icon after state update
+                if not is_enabled:
+                    zone_dev.setErrorStateOnServer('disabled')
+                    zone_dev.updateStateImageOnServer(indigo.kStateImageSel.NoImage)
+                else:
+                    zone_dev.setErrorStateOnServer('')
+                    is_irrigating = next(
+                        (s["value"] for s in states if s["key"] == "isIrrigating"), False
+                    )
+                    if is_irrigating:
+                        zone_dev.updateStateImageOnServer(indigo.kStateImageSel.SprinklerOn)
+                    else:
+                        zone_dev.updateStateImageOnServer(indigo.kStateImageSel.HumiditySensor)
             except Exception as exc:
                 self.logger.error(f"Error updating zone device '{zone_dev.name}': {exc}")
                 self.logger.debug(f"Zone update error: \n{traceback.format_exc(10)}")
