@@ -38,7 +38,7 @@ http://www.indigodomo.com
 import json
 import copy
 import traceback
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 import indigo
 import requests
@@ -47,6 +47,7 @@ import requests
 from constants import (
     MAX_ZONE_DURATION_SECONDS,
     DEFAULT_API_TIMEOUT_SECONDS,
+    DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES,
     MINIMUM_POLLING_INTERVAL_MINUTES,
     ZONE_START_ENDPOINT,
     OPERATIONAL_ERROR_EVENTS,
@@ -62,7 +63,8 @@ from validators import (
 )
 from api_client import NetroAPIClient
 from device_handlers import SprinklerHandler, WhispererHandler, ZoneHandler
-from utils import convert_weather_us_to_metric
+from utils import convert_weather_us_to_metric, convert_weather_metric_to_us
+from tomorrow_client import TomorrowClient
 
 
 ################################################################################
@@ -109,8 +111,12 @@ class Plugin(indigo.PluginBase):
 
         self.triggerDict = {}
 
-        # Initialize weather update tracking
+        # Initialize Tomorrow.io weather integration
         self._next_weather_update = datetime.now()
+        self._weather_update_interval = int(
+            pluginPrefs.get("weatherUpdateInterval", DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES)
+        )
+        self._tomorrow_client = self._create_tomorrow_client(pluginPrefs)
 
         # Initialize API client with prefs callbacks for throttle state persistence
         self.api_client = NetroAPIClient(
@@ -334,6 +340,101 @@ class Plugin(indigo.PluginBase):
         if api_key:
             return (api_key, "2")
         return (dev.address, "1")
+
+    def _create_tomorrow_client(self, prefs):
+        """Create a TomorrowClient if Tomorrow.io weather is configured.
+
+        Args:
+            prefs: Plugin preferences dict
+
+        Returns:
+            TomorrowClient instance or None if not configured/enabled
+        """
+        if not prefs.get("tomorrowEnabled", False):
+            return None
+
+        api_key = str(prefs.get("tomorrowApiKey", "")).strip()
+        location = str(prefs.get("tomorrowLocation", "")).strip()
+
+        if not api_key or not location:
+            return None
+
+        return TomorrowClient(
+            api_key=api_key,
+            location=location,
+            logger=self.logger,
+            timeout=self.timeout,
+        )
+
+    def _update_weather_from_tomorrow(self):
+        """Fetch weather from Tomorrow.io and report to all sprinkler devices.
+
+        Called periodically from the polling loop when Tomorrow.io integration
+        is enabled. Fetches current weather once, then reports it to each
+        enabled sprinkler device via the Netro report_weather endpoint.
+
+        Uses 1 Tomorrow.io API call + 1 Netro API call per sprinkler device.
+        """
+        if self._tomorrow_client is None:
+            return
+
+        if datetime.now() < self._next_weather_update:
+            return
+
+        # Schedule next update regardless of success/failure
+        self._next_weather_update = datetime.now() + timedelta(
+            minutes=self._weather_update_interval
+        )
+
+        # Fetch weather from Tomorrow.io
+        weather_data = self._tomorrow_client.fetch_current_weather()
+        if weather_data is None:
+            self.logger.warning("Failed to fetch weather from Tomorrow.io, will retry next interval")
+            return
+
+        # Report to each enabled sprinkler device
+        reported_count = 0
+        for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled]:
+            if dev.deviceTypeId != "sprinkler":
+                continue
+
+            try:
+                key, api_version = self._get_device_auth(dev)
+
+                # Tomorrow.io returns metric; convert to US for v1 API
+                if api_version == "1":
+                    device_weather = convert_weather_metric_to_us(weather_data)
+                else:
+                    device_weather = dict(weather_data)
+
+                response = self.api_client.report_weather(
+                    key, device_weather, api_version=api_version
+                )
+
+                if response.get("status") == "OK":
+                    reported_count += 1
+                    unit_label = "C" if api_version == "2" else "F"
+                    self.logger.debug(
+                        f"Weather reported to '{dev.name}': "
+                        f"{device_weather.get('t')}{unit_label}, "
+                        f"condition={device_weather['condition']}"
+                    )
+                else:
+                    self.logger.error(
+                        f"Error reporting weather to '{dev.name}': {response}"
+                    )
+
+            except ThrottleDelayError:
+                self.logger.debug(f"Skipping weather report for '{dev.name}' - throttled")
+            except Exception as exc:
+                self.logger.error(f"Could not report weather to '{dev.name}': {exc}")
+                self.logger.debug(f"Weather report error: \n{traceback.format_exc(10)}")
+
+        if reported_count > 0:
+            self.logger.info(
+                f"Tomorrow.io weather reported to {reported_count} device(s): "
+                f"{weather_data.get('t')}C, condition={weather_data['condition']}"
+            )
 
     def _get_zone_devices(self, parent_dev_id):
         """Get all zone devices belonging to a parent controller.
@@ -736,6 +837,13 @@ class Plugin(indigo.PluginBase):
             auth_type = "API key" if api_version == "2" else "serial number"
             self.logger.info(f"Device '{dev.name}' using API v{api_version} ({auth_type} auth)")
 
+        # Log Tomorrow.io weather status
+        if self._tomorrow_client is not None:
+            self.logger.info(
+                f"Tomorrow.io weather integration enabled "
+                f"(updating every {self._weather_update_interval} minutes)"
+            )
+
         # Subscribe to variable changes for zone moisture auto-link
         indigo.variables.subscribeToChanges()
 
@@ -774,6 +882,8 @@ class Plugin(indigo.PluginBase):
                     )
                 else:
                     self._update_from_netro()
+                    # Fetch weather from Tomorrow.io and report to Netro
+                    self._update_weather_from_tomorrow()
             except self.StopThread:
                 # Clean shutdown requested by Indigo - must re-raise
                 self.logger.debug("Concurrent thread stopping")
@@ -920,6 +1030,32 @@ class Plugin(indigo.PluginBase):
                     self.logger.info(f"Max zone runtime updated to {self.maxZoneRunTime} seconds")
             except (ValueError, TypeError):
                 self.logger.warning("Invalid max zone runtime value, keeping existing setting")
+
+            # Update Tomorrow.io weather integration
+            try:
+                new_interval = int(valuesDict.get(
+                    "weatherUpdateInterval", DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES
+                ))
+                if new_interval != self._weather_update_interval:
+                    self._weather_update_interval = new_interval
+                    self.logger.info(
+                        f"Weather update interval updated to {new_interval} minutes"
+                    )
+            except (ValueError, TypeError):
+                pass
+
+            new_client = self._create_tomorrow_client(valuesDict)
+            was_enabled = self._tomorrow_client is not None
+            now_enabled = new_client is not None
+            self._tomorrow_client = new_client
+
+            if now_enabled and not was_enabled:
+                self._next_weather_update = datetime.now()
+                self.logger.info("Tomorrow.io weather integration enabled")
+            elif not now_enabled and was_enabled:
+                self.logger.info("Tomorrow.io weather integration disabled")
+            elif now_enabled:
+                self.logger.debug("Tomorrow.io weather settings updated")
 
     ########################################
     # General device callbacks

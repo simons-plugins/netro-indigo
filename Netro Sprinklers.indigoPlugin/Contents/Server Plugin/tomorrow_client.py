@@ -1,0 +1,226 @@
+"""Tomorrow.io weather API client for automated weather reporting.
+
+This module provides the TomorrowClient class that fetches current weather
+data from the Tomorrow.io API and transforms it into the format expected
+by the Netro report_weather endpoint.
+
+Tomorrow.io returns metric units by default (Celsius, mm/hr, m/s, hPa).
+The client returns weather data in metric, and callers are responsible for
+converting to US units when needed (for Netro API v1).
+
+Note:
+    This module does not import indigo directly. Plugin integration is
+    achieved through a logger callback passed to the constructor.
+"""
+
+import logging
+from datetime import date
+from typing import Any, Dict, Optional, Tuple
+
+import requests
+
+
+# =============================================================================
+# Tomorrow.io Weather Code to Netro Condition Mapping
+# =============================================================================
+#
+# Netro conditions: 0=Clear, 1=Cloudy, 2=Rain, 3=Snow, 4=Wind
+#
+# Tomorrow.io v4 weather codes:
+# https://docs.tomorrow.io/reference/data-layers-weather-codes
+
+_TOMORROW_TO_NETRO_CONDITION: Dict[int, int] = {
+    # Clear / Sunny
+    1000: 0,  # Clear, Sunny
+    1100: 0,  # Mostly Clear
+    # Cloudy
+    1101: 1,  # Partly Cloudy
+    1102: 1,  # Mostly Cloudy
+    1001: 1,  # Cloudy
+    # Fog (treat as cloudy)
+    2000: 1,  # Fog
+    2100: 1,  # Light Fog
+    # Rain
+    4000: 2,  # Drizzle
+    4001: 2,  # Rain
+    4200: 2,  # Light Rain
+    4201: 2,  # Heavy Rain
+    # Snow
+    5000: 3,  # Snow
+    5001: 3,  # Flurries
+    5100: 3,  # Light Snow
+    5101: 3,  # Heavy Snow
+    # Freezing Rain (treat as rain)
+    6000: 2,  # Freezing Drizzle
+    6001: 2,  # Freezing Rain
+    6200: 2,  # Light Freezing Rain
+    6201: 2,  # Heavy Freezing Rain
+    # Ice Pellets (treat as snow)
+    7000: 3,  # Ice Pellets
+    7101: 3,  # Heavy Ice Pellets
+    7102: 3,  # Light Ice Pellets
+    # Thunderstorm (treat as rain)
+    8000: 2,  # Thunderstorm
+}
+
+# Default condition when code is unknown
+_DEFAULT_CONDITION = 1  # Cloudy
+
+
+# =============================================================================
+# TomorrowClient
+# =============================================================================
+
+class TomorrowClient:
+    """Client for fetching weather data from Tomorrow.io API.
+
+    Fetches current weather conditions and transforms them into the dict
+    format expected by Netro's report_weather endpoint (metric units).
+
+    Args:
+        api_key: Tomorrow.io API key
+        location: Location string (lat,lon or place name)
+        logger: Logger instance for debug/error output
+        timeout: HTTP request timeout in seconds
+    """
+
+    REALTIME_URL = "https://api.tomorrow.io/v4/weather/realtime"
+
+    def __init__(
+        self,
+        api_key: str,
+        location: str,
+        logger: logging.Logger,
+        timeout: int = 10,
+    ):
+        self.api_key = api_key
+        self.location = location
+        self.logger = logger
+        self.timeout = timeout
+
+    def fetch_current_weather(self) -> Optional[Dict[str, Any]]:
+        """Fetch current weather from Tomorrow.io and return Netro-format dict.
+
+        Returns weather data in metric units suitable for Netro API v2.
+        For v1 devices, the caller should convert to US units.
+
+        Returns:
+            Dict with Netro weather fields (metric):
+                - condition (int): 0=Clear, 1=Cloudy, 2=Rain, 3=Snow, 4=Wind
+                - date (str): YYYY-MM-DD
+                - t (float): Current temperature in Celsius
+                - humidity (int): Relative humidity 0-100
+                - rain (float): Precipitation amount in mm
+                - rain_prob (int): Precipitation probability 0-100
+                - wind_speed (float): Wind speed in m/s
+                - pressure (float): Surface pressure in hPa
+            None if the request fails.
+        """
+        try:
+            params = {
+                "location": self.location,
+                "apikey": self.api_key,
+                "units": "metric",
+            }
+
+            self.logger.debug(
+                f"Fetching weather from Tomorrow.io for location: {self.location}"
+            )
+
+            response = requests.get(
+                self.REALTIME_URL,
+                params=params,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+
+            data = response.json()
+            return self._transform_response(data)
+
+        except requests.exceptions.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else "unknown"
+            self.logger.error(
+                f"Tomorrow.io API error (HTTP {status}): {exc}"
+            )
+            return None
+        except requests.exceptions.ConnectionError:
+            self.logger.error(
+                "Could not connect to Tomorrow.io API - check internet connection"
+            )
+            return None
+        except requests.exceptions.Timeout:
+            self.logger.error("Tomorrow.io API request timed out")
+            return None
+        except Exception as exc:
+            self.logger.error(f"Unexpected error fetching weather: {exc}")
+            return None
+
+    def _transform_response(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Transform Tomorrow.io API response to Netro weather format.
+
+        Args:
+            data: Raw JSON response from Tomorrow.io realtime endpoint
+
+        Returns:
+            Netro-format weather dict (metric) or None on parse error
+        """
+        try:
+            values = data["data"]["values"]
+        except (KeyError, TypeError):
+            self.logger.error(
+                "Unexpected Tomorrow.io response structure - missing data.values"
+            )
+            return None
+
+        # Map Tomorrow.io weather code to Netro condition
+        weather_code = values.get("weatherCode", 1001)
+        condition = _TOMORROW_TO_NETRO_CONDITION.get(weather_code, _DEFAULT_CONDITION)
+
+        # Check for high wind — override condition to Wind if speed is very high
+        wind_speed = values.get("windSpeed")
+        if wind_speed is not None and wind_speed > 15.0 and condition in (0, 1):
+            # >15 m/s (~34 mph) is strong wind; only override clear/cloudy
+            condition = 4
+
+        weather_data = {
+            "condition": condition,
+            "date": date.today().strftime("%Y-%m-%d"),
+        }
+
+        # Temperature (required by Netro)
+        temp = values.get("temperature")
+        if temp is not None:
+            weather_data["t"] = round(float(temp), 1)
+        else:
+            self.logger.error("Tomorrow.io response missing temperature")
+            return None
+
+        # Optional fields
+        humidity = values.get("humidity")
+        if humidity is not None:
+            weather_data["humidity"] = int(round(float(humidity)))
+
+        precip_intensity = values.get("precipitationIntensity")
+        if precip_intensity is not None:
+            # Tomorrow.io returns mm/hr; Netro expects total mm
+            # For current conditions, use the intensity as a reasonable estimate
+            weather_data["rain"] = round(float(precip_intensity), 1)
+
+        precip_prob = values.get("precipitationProbability")
+        if precip_prob is not None:
+            weather_data["rain_prob"] = int(round(float(precip_prob)))
+
+        if wind_speed is not None:
+            weather_data["wind_speed"] = round(float(wind_speed), 1)
+
+        pressure = values.get("pressureSurfaceLevel")
+        if pressure is not None:
+            weather_data["pressure"] = round(float(pressure), 1)
+
+        self.logger.debug(
+            f"Tomorrow.io weather: {weather_data['t']}C, "
+            f"condition={condition} (code {weather_code}), "
+            f"humidity={weather_data.get('humidity', 'N/A')}%"
+        )
+
+        return weather_data

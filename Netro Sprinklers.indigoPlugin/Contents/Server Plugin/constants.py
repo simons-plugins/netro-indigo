@@ -137,6 +137,9 @@ THROTTLE_LIMIT_MINUTES: Final[int] = 61
 FORECAST_UPDATE_INTERVAL_MINUTES: Final[int] = 60
 """Interval between forecast updates in minutes."""
 
+MINIMUM_WEATHER_UPDATE_INTERVAL_MINUTES: Final[int] = 10
+"""Minimum interval for Tomorrow.io weather updates in minutes."""
+
 TOKEN_PAUSE_THRESHOLD: Final[int] = 100
 """Token count below which polling should pause proactively."""
 

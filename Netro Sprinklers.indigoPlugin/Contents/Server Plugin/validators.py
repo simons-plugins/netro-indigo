@@ -26,7 +26,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from constants import MINIMUM_POLLING_INTERVAL_MINUTES
+from constants import MINIMUM_POLLING_INTERVAL_MINUTES, MINIMUM_WEATHER_UPDATE_INTERVAL_MINUTES
 
 
 # Type alias for validation function return values
@@ -596,6 +596,11 @@ _PREFS_FIELDS: List[PrefsFieldSpec] = [
         "Max runtime must be at least 60 seconds (1 minute)",
         "Max runtime cannot exceed 10800 seconds (3 hours)",
     ),
+    PrefsFieldSpec(
+        "weatherUpdateInterval", MINIMUM_WEATHER_UPDATE_INTERVAL_MINUTES, 1440, 30,
+        f"Weather update interval must be at least {MINIMUM_WEATHER_UPDATE_INTERVAL_MINUTES} minutes",
+        "Weather update interval cannot exceed 1440 minutes (24 hours)",
+    ),
 ]
 
 
@@ -631,5 +636,20 @@ def validate_prefs_config(
                 errors[spec.field] = spec.min_error if is_below_min else spec.max_error
             else:
                 errors[spec.field] = error
+
+    # Validate Tomorrow.io fields when enabled
+    tomorrow_enabled = values.get("tomorrowEnabled", False)
+    if tomorrow_enabled:
+        api_key = str(values.get("tomorrowApiKey", "")).strip()
+        if not api_key:
+            errors["tomorrowApiKey"] = "API key is required when Tomorrow.io weather is enabled"
+        else:
+            sanitized["tomorrowApiKey"] = api_key
+
+        location = str(values.get("tomorrowLocation", "")).strip()
+        if not location:
+            errors["tomorrowLocation"] = "Location is required when Tomorrow.io weather is enabled"
+        else:
+            sanitized["tomorrowLocation"] = location
 
     return (len(errors) == 0, sanitized, errors)
