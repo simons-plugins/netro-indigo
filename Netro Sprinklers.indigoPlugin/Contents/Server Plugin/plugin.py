@@ -1032,21 +1032,29 @@ class Plugin(indigo.PluginBase):
                 self.logger.warning("Invalid max zone runtime value, keeping existing setting")
 
             # Update Tomorrow.io weather integration
+            weather_settings_changed = False
             try:
                 new_interval = int(valuesDict.get(
                     "weatherUpdateInterval", DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES
                 ))
                 if new_interval != self._weather_update_interval:
                     self._weather_update_interval = new_interval
+                    weather_settings_changed = True
                     self.logger.info(
                         f"Weather update interval updated to {new_interval} minutes"
                     )
             except (ValueError, TypeError):
                 pass
 
+            old_client = self._tomorrow_client
             new_client = self._create_tomorrow_client(valuesDict)
-            was_enabled = self._tomorrow_client is not None
+            was_enabled = old_client is not None
             now_enabled = new_client is not None
+            if was_enabled and now_enabled:
+                weather_settings_changed = weather_settings_changed or (
+                    old_client.api_key != new_client.api_key
+                    or old_client.location != new_client.location
+                )
             self._tomorrow_client = new_client
 
             if now_enabled and not was_enabled:
@@ -1055,6 +1063,8 @@ class Plugin(indigo.PluginBase):
             elif not now_enabled and was_enabled:
                 self.logger.info("Tomorrow.io weather integration disabled")
             elif now_enabled:
+                if weather_settings_changed:
+                    self._next_weather_update = datetime.now()
                 self.logger.debug("Tomorrow.io weather settings updated")
 
     ########################################

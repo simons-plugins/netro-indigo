@@ -352,6 +352,7 @@ class TestFetchCurrentWeather:
         assert result is not None
         assert result["t"] == 22.5
         assert result["condition"] == 0
+        mock_response.raise_for_status.assert_called_once()
         mock_get.assert_called_once()
 
     @patch("tomorrow_client.requests.get")
@@ -364,6 +365,7 @@ class TestFetchCurrentWeather:
 
         client.fetch_current_weather()
 
+        mock_response.raise_for_status.assert_called_once()
         call_kwargs = mock_get.call_args
         assert call_kwargs[1]["params"]["location"] == "42.3478,-71.0466"
         assert call_kwargs[1]["params"]["apikey"] == "test-api-key-123"
