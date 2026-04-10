@@ -115,8 +115,8 @@ class TestThrottleState:
         assert "device_tokens" in saved_state
         assert "last_saved" in saved_state
 
-    def test_restore_v1_format_only_restores_throttle(self, mock_logger):
-        """V1 format (no version key) restores throttle_until, ignores global tokens."""
+    def test_restore_v1_format_ignores_stale_throttle(self, mock_logger):
+        """V1 format (no version key) does not restore throttle — may be from incorrect global tracking."""
         future_time = datetime.now() + timedelta(minutes=30)
         state = {
             "throttle_until": future_time.isoformat(),
@@ -131,9 +131,8 @@ class TestThrottleState:
             prefs_setter=lambda k, v: None
         )
 
-        assert client._throttle_until is not None
-        assert abs((client._throttle_until - future_time).total_seconds()) < 1
-        # V1 format: per-device tokens not restored, will populate on first poll
+        # V1 throttle not restored — was likely caused by incorrect global token tracking
+        assert client._throttle_until is None
         assert len(client._device_tokens) == 0
 
     def test_restore_v2_format_restores_per_device_tokens(self, mock_logger):

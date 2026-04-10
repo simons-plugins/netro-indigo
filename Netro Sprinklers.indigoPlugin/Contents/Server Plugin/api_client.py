@@ -534,9 +534,12 @@ class NetroAPIClient:
 
         try:
             state = json.loads(state_json)
+            is_v2 = state.get("version", 1) >= 2
 
-            # Restore throttle expiry only if still in future
-            if state.get("throttle_until"):
+            # Restore throttle expiry only from v2 format and if still in future.
+            # V1 throttles were often triggered by incorrect global token tracking
+            # and should not carry over after the per-device migration.
+            if is_v2 and state.get("throttle_until"):
                 throttle_until = datetime.fromisoformat(state["throttle_until"])
                 now = datetime.now(timezone.utc) if throttle_until.tzinfo else datetime.now()
                 if throttle_until > now:
@@ -546,7 +549,7 @@ class NetroAPIClient:
                     )
 
             # V2 format: restore per-device token budgets
-            if state.get("version", 1) >= 2 and "device_tokens" in state:
+            if is_v2 and "device_tokens" in state:
                 for key, token_state in state["device_tokens"].items():
                     reset_time = None
                     if token_state.get("token_reset"):
