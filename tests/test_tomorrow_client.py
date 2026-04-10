@@ -229,6 +229,36 @@ class TestTransformResponse:
         assert result["condition"] == 4  # Wind
         assert result["wind_speed"] == 18.5
 
+    def test_wind_override_boundary_at_15(self, client):
+        """Exactly 15.0 m/s should NOT trigger wind override (threshold is >15)."""
+        data = {
+            "data": {
+                "values": {
+                    "temperature": 18.0,
+                    "windSpeed": 15.0,
+                    "weatherCode": 1000,  # Clear
+                }
+            }
+        }
+        result = client._transform_response(data)
+        assert result is not None
+        assert result["condition"] == 0  # Still Clear, not Wind
+
+    def test_wind_override_just_above_15(self, client):
+        """15.1 m/s should trigger wind override for clear/cloudy."""
+        data = {
+            "data": {
+                "values": {
+                    "temperature": 18.0,
+                    "windSpeed": 15.1,
+                    "weatherCode": 1000,  # Clear
+                }
+            }
+        }
+        result = client._transform_response(data)
+        assert result is not None
+        assert result["condition"] == 4  # Wind
+
     def test_wind_no_override_during_rain(self, client):
         """High wind should not override rain condition."""
         data = {

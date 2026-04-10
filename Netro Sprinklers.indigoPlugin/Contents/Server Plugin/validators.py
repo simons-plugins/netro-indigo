@@ -609,7 +609,8 @@ def validate_prefs_config(
 ) -> ValidationResult:
     """Validate plugin configuration before saving.
 
-    Validates polling interval, API timeout, and max zone runtime settings.
+    Validates polling interval, API timeout, max zone runtime, and
+    Tomorrow.io weather integration settings.
 
     Args:
         values: Configuration values from plugin preferences UI

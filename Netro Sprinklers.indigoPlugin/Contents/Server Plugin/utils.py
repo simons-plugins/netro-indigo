@@ -2,6 +2,10 @@
 
 This module provides common utility functions used throughout the plugin:
 
+- Unit conversions: Bidirectional metric/US conversions for temperature,
+  rainfall, wind speed, and pressure
+- Weather data conversion: convert_weather_us_to_metric / convert_weather_metric_to_us
+  for transforming weather dicts between API v1 (US) and v2 (metric) formats
 - get_key_from_dict: Safely retrieve values from dictionaries
 
 These functions are extracted from plugin.py to enable reuse and testing.

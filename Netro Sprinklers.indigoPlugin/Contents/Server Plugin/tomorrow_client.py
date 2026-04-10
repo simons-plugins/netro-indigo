@@ -15,7 +15,8 @@ Note:
 
 import logging
 from datetime import date
-from typing import Any, Dict, Optional, Tuple
+import traceback
+from typing import Any, Dict, Optional
 
 import requests
 
@@ -63,7 +64,9 @@ _TOMORROW_TO_NETRO_CONDITION: Dict[int, int] = {
     8000: 2,  # Thunderstorm
 }
 
-# Default condition when code is unknown
+# Default condition when code is unknown — Cloudy is the safest default
+# for irrigation: it won't suppress watering like Rain/Snow, but won't
+# assume clear skies either.
 _DEFAULT_CONDITION = 1  # Cloudy
 
 
@@ -110,7 +113,7 @@ class TomorrowClient:
                 - date (str): YYYY-MM-DD
                 - t (float): Current temperature in Celsius
                 - humidity (int): Relative humidity 0-100
-                - rain (float): Precipitation amount in mm
+                - rain (float): Precipitation intensity in mm/hr
                 - rain_prob (int): Precipitation probability 0-100
                 - wind_speed (float): Wind speed in m/s
                 - pressure (float): Surface pressure in hPa
@@ -139,9 +142,8 @@ class TomorrowClient:
 
         except requests.exceptions.HTTPError as exc:
             status = exc.response.status_code if exc.response is not None else "unknown"
-            self.logger.error(
-                f"Tomorrow.io API error (HTTP {status}): {exc}"
-            )
+            self.logger.error(f"Tomorrow.io API error (HTTP {status})")
+            self.logger.debug(f"Tomorrow.io error details: {exc}")
             return None
         except requests.exceptions.ConnectionError:
             self.logger.error(
@@ -153,6 +155,7 @@ class TomorrowClient:
             return None
         except Exception as exc:
             self.logger.error(f"Unexpected error fetching weather: {exc}")
+            self.logger.debug(f"Weather fetch traceback:\n{traceback.format_exc()}")
             return None
 
     def _transform_response(self, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -173,13 +176,16 @@ class TomorrowClient:
             return None
 
         # Map Tomorrow.io weather code to Netro condition
-        weather_code = values.get("weatherCode", 1001)
+        weather_code = values.get("weatherCode")
+        if weather_code is None:
+            self.logger.debug("Tomorrow.io response missing weatherCode, defaulting to Cloudy")
+            weather_code = 1001
         condition = _TOMORROW_TO_NETRO_CONDITION.get(weather_code, _DEFAULT_CONDITION)
 
         # Check for high wind — override condition to Wind if speed is very high
         wind_speed = values.get("windSpeed")
         if wind_speed is not None and wind_speed > 15.0 and condition in (0, 1):
-            # >15 m/s (~34 mph) is strong wind; only override clear/cloudy
+            # >15 m/s (~34 mph, Beaufort 7 near-gale); only override clear/cloudy
             condition = 4
 
         weather_data = {
@@ -202,8 +208,9 @@ class TomorrowClient:
 
         precip_intensity = values.get("precipitationIntensity")
         if precip_intensity is not None:
-            # Tomorrow.io returns mm/hr; Netro expects total mm
-            # For current conditions, use the intensity as a reasonable estimate
+            # Tomorrow.io returns mm/hr (intensity). Netro expects total mm but
+            # we only have current intensity, not accumulation. Passed as-is —
+            # this is an approximation that may overstate rainfall during heavy rain.
             weather_data["rain"] = round(float(precip_intensity), 1)
 
         precip_prob = values.get("precipitationProbability")

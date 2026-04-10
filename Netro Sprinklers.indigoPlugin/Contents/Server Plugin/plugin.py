@@ -357,6 +357,10 @@ class Plugin(indigo.PluginBase):
         location = str(prefs.get("tomorrowLocation", "")).strip()
 
         if not api_key or not location:
+            self.logger.warning(
+                "Tomorrow.io weather is enabled but missing required fields "
+                "(API key and/or location) — weather integration will not run"
+            )
             return None
 
         return TomorrowClient(
@@ -372,6 +376,8 @@ class Plugin(indigo.PluginBase):
         Called periodically from the polling loop when Tomorrow.io integration
         is enabled. Fetches current weather once, then reports it to each
         enabled sprinkler device via the Netro report_weather endpoint.
+        Also updates weather-related device states in Indigo for each
+        successfully reported device.
 
         Uses 1 Tomorrow.io API call + 1 Netro API call per sprinkler device.
         """
@@ -1079,7 +1085,7 @@ class Plugin(indigo.PluginBase):
                         f"Weather update interval updated to {new_interval} minutes"
                     )
             except (ValueError, TypeError):
-                pass
+                self.logger.warning("Invalid weather update interval value, keeping existing setting")
 
             old_client = self._tomorrow_client
             new_client = self._create_tomorrow_client(valuesDict)
@@ -1413,6 +1419,7 @@ class Plugin(indigo.PluginBase):
         if action.deviceAction == indigo.kUniversalAction.RequestStatus:
             self._next_weather_update = datetime.now()
             self._update_from_netro()
+            self._update_weather_from_tomorrow()
 
     ########################################
     # Custom Plugin Action callbacks defined in Actions.xml

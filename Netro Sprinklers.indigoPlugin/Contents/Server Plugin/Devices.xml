@@ -146,8 +146,8 @@
             </State>
             <State id="weather_rain">
                 <ValueType>Number</ValueType>
-                <TriggerLabel>Weather Rain (mm/hr)</TriggerLabel>
-                <ControlPageLabel>Weather Rain (mm/hr)</ControlPageLabel>
+                <TriggerLabel>Weather Precipitation (mm/hr)</TriggerLabel>
+                <ControlPageLabel>Weather Precipitation (mm/hr)</ControlPageLabel>
             </State>
             <State id="weather_rain_prob">
                 <ValueType>Integer</ValueType>
