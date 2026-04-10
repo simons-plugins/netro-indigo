@@ -475,11 +475,11 @@ class Plugin(indigo.PluginBase):
     def _update_forecast_from_tomorrow(self):
         """Fetch daily forecast from Tomorrow.io and report to all sprinkler devices.
 
-        Reports up to 6 days of forecast data (today + 5 days ahead) to each
-        sprinkler device via the Netro report_weather endpoint. Runs on a
-        separate, longer interval than realtime weather updates.
+        Reports daily forecast data to each sprinkler device via the Netro
+        report_weather endpoint. Runs on a separate, longer interval than
+        realtime weather updates.
 
-        Uses 1 Tomorrow.io API call + up to 6 Netro API calls per sprinkler device.
+        Uses 1 Tomorrow.io API call + 1 Netro API call per forecast day per device.
         """
         if self._tomorrow_client is None:
             return
@@ -516,7 +516,7 @@ class Plugin(indigo.PluginBase):
                     # Convert units for v1 devices
                     if api_version == "1":
                         device_weather = convert_weather_metric_to_us(day_weather)
-                        # v1 API does not support t_dew
+                        # v1 Netro API does not accept t_dew field — strip before sending
                         device_weather.pop("t_dew", None)
                     else:
                         device_weather = dict(day_weather)
@@ -548,8 +548,10 @@ class Plugin(indigo.PluginBase):
         if reported_count > 0:
             self.logger.info(
                 f"Tomorrow.io forecast reported to {reported_count} device(s): "
-                f"{len(forecast_data)} days"
+                f"{len(forecast_data)} days fetched"
             )
+        elif forecast_data:
+            self.logger.debug("No sprinkler devices available for forecast reporting")
 
     def _get_zone_devices(self, parent_dev_id):
         """Get all zone devices belonging to a parent controller.
@@ -1811,7 +1813,7 @@ class Plugin(indigo.PluginBase):
         self._update_forecast_from_tomorrow()
 
     def refreshWeather(self):
-        """Force immediate weather update from Tomorrow.io via plugin menu."""
+        """Force immediate weather and forecast update from Tomorrow.io via plugin menu."""
         if self._tomorrow_client is None:
             self.logger.warning("Tomorrow.io weather integration is not configured")
             return

@@ -77,8 +77,8 @@ _DEFAULT_CONDITION = 1  # Cloudy
 class TomorrowClient:
     """Client for fetching weather data from Tomorrow.io API.
 
-    Fetches current weather conditions and transforms them into the dict
-    format expected by Netro's report_weather endpoint (metric units).
+    Fetches current weather and daily forecasts, transforming them into the
+    dict format expected by Netro's report_weather endpoint (metric units).
 
     Args:
         api_key: Tomorrow.io API key
@@ -236,22 +236,22 @@ class TomorrowClient:
     def fetch_forecast(self) -> Optional[List[Dict[str, Any]]]:
         """Fetch daily forecast from Tomorrow.io and return list of Netro-format dicts.
 
-        Returns up to 6 days of daily forecast data (today + 5 days ahead)
+        Returns daily forecast data (typically 6 days on the free tier)
         in metric units suitable for Netro API v2.
 
         Returns:
             List of Netro weather dicts (one per day), each containing:
-                - date (str): YYYY-MM-DD
-                - condition (int): 0=Clear, 1=Cloudy, 2=Rain, 3=Snow, 4=Wind
-                - t (float): Average temperature in Celsius
-                - t_max (float): Maximum temperature in Celsius
-                - t_min (float): Minimum temperature in Celsius
-                - t_dew (float): Dew point in Celsius
-                - humidity (int): Average relative humidity 0-100
-                - rain (float): Total rainfall accumulation in mm
-                - rain_prob (int): Maximum precipitation probability 0-100
-                - wind_speed (float): Average wind speed in m/s
-                - pressure (float): Average surface pressure in hPa
+                - date (str): YYYY-MM-DD (always present)
+                - condition (int): 0=Clear, 1=Cloudy, 2=Rain, 3=Snow, 4=Wind (always present)
+                - t (float): Average temperature in Celsius (always present)
+                - t_max (float): Maximum temperature in Celsius (optional)
+                - t_min (float): Minimum temperature in Celsius (optional)
+                - t_dew (float): Dew point in Celsius (optional)
+                - humidity (int): Average relative humidity 0-100 (optional)
+                - rain (float): Total rainfall accumulation in mm (optional)
+                - rain_prob (int): Maximum precipitation probability 0-100 (optional)
+                - wind_speed (float): Average wind speed in m/s (optional)
+                - pressure (float): Average surface pressure in hPa (optional)
             None if the request fails.
         """
         try:
@@ -317,75 +317,84 @@ class TomorrowClient:
         forecasts = []
         for day in daily:
             values = day.get("values", {})
+            time_str = day.get("time", "unknown")
 
             # Temperature average is required
             temp_avg = values.get("temperatureAvg")
             if temp_avg is None:
-                time_str = day.get("time", "unknown")
                 self.logger.warning(
                     f"Forecast day {time_str} missing temperatureAvg, skipping"
                 )
                 continue
 
-            # Extract date from ISO timestamp (e.g. "2026-04-10T05:00:00Z" → "2026-04-10")
-            forecast_date = day.get("time", "")[:10]
+            try:
+                # Extract date from ISO timestamp (e.g. "2026-04-10T05:00:00Z" → "2026-04-10")
+                forecast_date = day.get("time", "")[:10]
 
-            # Map weather code to Netro condition
-            weather_code = values.get("weatherCodeMax")
-            if weather_code is None:
-                weather_code = 1001
-            condition = _TOMORROW_TO_NETRO_CONDITION.get(weather_code, _DEFAULT_CONDITION)
+                # Map weather code to Netro condition
+                weather_code = values.get("weatherCodeMax")
+                if weather_code is None:
+                    weather_code = 1001
+                condition = _TOMORROW_TO_NETRO_CONDITION.get(weather_code, _DEFAULT_CONDITION)
 
-            # Wind override: use max wind speed for threshold check
-            wind_speed_max = values.get("windSpeedMax")
-            if wind_speed_max is not None and wind_speed_max > 15.0 and condition in (0, 1):
-                condition = 4
+                # Wind override: use max wind speed for threshold check
+                wind_speed_max = values.get("windSpeedMax")
+                if wind_speed_max is not None and wind_speed_max > 15.0 and condition in (0, 1):
+                    condition = 4
 
-            weather_data: Dict[str, Any] = {
-                "date": forecast_date,
-                "condition": condition,
-                "t": round(float(temp_avg), 1),
-            }
+                weather_data: Dict[str, Any] = {
+                    "date": forecast_date,
+                    "condition": condition,
+                    "t": round(float(temp_avg), 1),
+                }
 
-            # Optional fields
-            temp_max = values.get("temperatureMax")
-            if temp_max is not None:
-                weather_data["t_max"] = round(float(temp_max), 1)
+                # Optional fields
+                temp_max = values.get("temperatureMax")
+                if temp_max is not None:
+                    weather_data["t_max"] = round(float(temp_max), 1)
 
-            temp_min = values.get("temperatureMin")
-            if temp_min is not None:
-                weather_data["t_min"] = round(float(temp_min), 1)
+                temp_min = values.get("temperatureMin")
+                if temp_min is not None:
+                    weather_data["t_min"] = round(float(temp_min), 1)
 
-            dew_point = values.get("dewPointAvg")
-            if dew_point is not None:
-                weather_data["t_dew"] = round(float(dew_point), 1)
+                dew_point = values.get("dewPointAvg")
+                if dew_point is not None:
+                    weather_data["t_dew"] = round(float(dew_point), 1)
 
-            humidity = values.get("humidityAvg")
-            if humidity is not None:
-                weather_data["humidity"] = int(round(float(humidity)))
+                humidity = values.get("humidityAvg")
+                if humidity is not None:
+                    weather_data["humidity"] = int(round(float(humidity)))
 
-            rain = values.get("rainAccumulationSum")
-            if rain is not None:
-                weather_data["rain"] = round(float(rain), 1)
+                rain = values.get("rainAccumulationSum")
+                if rain is not None:
+                    weather_data["rain"] = round(float(rain), 1)
 
-            rain_prob = values.get("precipitationProbabilityMax")
-            if rain_prob is not None:
-                weather_data["rain_prob"] = int(round(float(rain_prob)))
+                rain_prob = values.get("precipitationProbabilityMax")
+                if rain_prob is not None:
+                    weather_data["rain_prob"] = int(round(float(rain_prob)))
 
-            wind_speed = values.get("windSpeedAvg")
-            if wind_speed is not None:
-                weather_data["wind_speed"] = round(float(wind_speed), 1)
+                wind_speed = values.get("windSpeedAvg")
+                if wind_speed is not None:
+                    weather_data["wind_speed"] = round(float(wind_speed), 1)
 
-            pressure = values.get("pressureSurfaceLevelAvg")
-            if pressure is not None:
-                weather_data["pressure"] = round(float(pressure), 1)
+                pressure = values.get("pressureSurfaceLevelAvg")
+                if pressure is not None:
+                    weather_data["pressure"] = round(float(pressure), 1)
 
-            forecasts.append(weather_data)
+                forecasts.append(weather_data)
 
-        self.logger.debug(
-            f"Tomorrow.io forecast: {len(forecasts)} days, "
-            f"dates {forecasts[0]['date']} to {forecasts[-1]['date']}"
-            if forecasts else "Tomorrow.io forecast: no days returned"
-        )
+            except (ValueError, TypeError) as exc:
+                self.logger.warning(
+                    f"Forecast day {time_str} has invalid data, skipping: {exc}"
+                )
+                continue
+
+        if forecasts:
+            self.logger.debug(
+                f"Tomorrow.io forecast: {len(forecasts)} days, "
+                f"dates {forecasts[0]['date']} to {forecasts[-1]['date']}"
+            )
+        else:
+            self.logger.debug("Tomorrow.io forecast: no days returned")
 
         return forecasts

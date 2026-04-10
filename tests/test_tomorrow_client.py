@@ -564,6 +564,22 @@ class TestTransformForecastResponse:
         result = client._transform_forecast_response(data)
         assert result[0]["condition"] == 4
 
+    def test_wind_override_boundary_at_15(self, client):
+        """windSpeedMax exactly 15.0 should NOT trigger wind override."""
+        data = {
+            "timelines": {
+                "daily": [{
+                    "time": "2026-04-10T05:00:00Z",
+                    "values": _make_daily_values(
+                        wind_max=15.0,
+                        weather_code_max=1000,  # Clear
+                    ),
+                }]
+            }
+        }
+        result = client._transform_forecast_response(data)
+        assert result[0]["condition"] == 0  # Still Clear
+
     def test_wind_no_override_during_rain(self, client):
         """windSpeedMax > 15 should NOT override rain condition."""
         data = {
@@ -676,6 +692,38 @@ class TestFetchForecast:
             response=mock_response
         )
         mock_get.return_value = mock_response
+
+        result = client.fetch_forecast()
+
+        assert result is None
+        mock_logger.error.assert_called()
+
+    @patch("tomorrow_client.requests.get")
+    def test_connection_error_returns_none(self, mock_get, client, mock_logger):
+        """Connection error returns None and logs error."""
+        import requests
+        mock_get.side_effect = requests.exceptions.ConnectionError("no connection")
+
+        result = client.fetch_forecast()
+
+        assert result is None
+        mock_logger.error.assert_called()
+
+    @patch("tomorrow_client.requests.get")
+    def test_timeout_returns_none(self, mock_get, client, mock_logger):
+        """Timeout returns None and logs error."""
+        import requests
+        mock_get.side_effect = requests.exceptions.Timeout("timed out")
+
+        result = client.fetch_forecast()
+
+        assert result is None
+        mock_logger.error.assert_called()
+
+    @patch("tomorrow_client.requests.get")
+    def test_unexpected_error_returns_none(self, mock_get, client, mock_logger):
+        """Unexpected error returns None and logs error."""
+        mock_get.side_effect = ValueError("unexpected")
 
         result = client.fetch_forecast()
 
