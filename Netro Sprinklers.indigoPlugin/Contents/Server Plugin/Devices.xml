@@ -129,6 +129,46 @@
                 <TriggerLabel>Status</TriggerLabel>
                 <ControlPageLabel>Status</ControlPageLabel>
             </State>
+            <State id="weather_condition">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Weather Condition</TriggerLabel>
+                <ControlPageLabel>Weather Condition</ControlPageLabel>
+            </State>
+            <State id="weather_temperature">
+                <ValueType>Number</ValueType>
+                <TriggerLabel>Weather Temperature</TriggerLabel>
+                <ControlPageLabel>Weather Temperature</ControlPageLabel>
+            </State>
+            <State id="weather_humidity">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Weather Humidity (%)</TriggerLabel>
+                <ControlPageLabel>Weather Humidity (%)</ControlPageLabel>
+            </State>
+            <State id="weather_rain">
+                <ValueType>Number</ValueType>
+                <TriggerLabel>Weather Rain (mm/hr)</TriggerLabel>
+                <ControlPageLabel>Weather Rain (mm/hr)</ControlPageLabel>
+            </State>
+            <State id="weather_rain_prob">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Weather Rain Probability (%)</TriggerLabel>
+                <ControlPageLabel>Weather Rain Probability (%)</ControlPageLabel>
+            </State>
+            <State id="weather_wind_speed">
+                <ValueType>Number</ValueType>
+                <TriggerLabel>Weather Wind Speed (m/s)</TriggerLabel>
+                <ControlPageLabel>Weather Wind Speed (m/s)</ControlPageLabel>
+            </State>
+            <State id="weather_pressure">
+                <ValueType>Number</ValueType>
+                <TriggerLabel>Weather Pressure (hPa)</TriggerLabel>
+                <ControlPageLabel>Weather Pressure (hPa)</ControlPageLabel>
+            </State>
+            <State id="weather_updated">
+                <ValueType>String</ValueType>
+                <TriggerLabel>Weather Last Updated</TriggerLabel>
+                <ControlPageLabel>Weather Last Updated</ControlPageLabel>
+            </State>
         </States>
     </Device>
     <Device type="sensor" subType="kSensorDeviceSubType.Humidity, ui=Plant Moisture Sensor"  id="Whisperer">

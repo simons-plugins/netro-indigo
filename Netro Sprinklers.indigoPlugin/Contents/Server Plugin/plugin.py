@@ -392,6 +392,10 @@ class Plugin(indigo.PluginBase):
             self.logger.warning("Failed to fetch weather from Tomorrow.io, will retry next interval")
             return
 
+        # Map condition codes to human-readable labels
+        condition_labels = {0: "Clear", 1: "Cloudy", 2: "Rain", 3: "Snow", 4: "Wind"}
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M")
+
         # Report to each enabled sprinkler device
         reported_count = 0
         for dev in [s for s in indigo.devices.iter(filter="self") if s.enabled]:
@@ -419,6 +423,25 @@ class Plugin(indigo.PluginBase):
                         f"{device_weather.get('t')}{unit_label}, "
                         f"condition={device_weather['condition']}"
                     )
+
+                    # Update device states with weather data (always metric from Tomorrow.io)
+                    state_updates = [
+                        {"key": "weather_condition", "value": condition_labels.get(weather_data["condition"], "Unknown")},
+                        {"key": "weather_temperature", "value": weather_data.get("t", 0), "decimalPlaces": 1},
+                        {"key": "weather_updated", "value": timestamp},
+                    ]
+                    if "humidity" in weather_data:
+                        state_updates.append({"key": "weather_humidity", "value": weather_data["humidity"]})
+                    if "rain" in weather_data:
+                        state_updates.append({"key": "weather_rain", "value": weather_data["rain"], "decimalPlaces": 1})
+                    if "rain_prob" in weather_data:
+                        state_updates.append({"key": "weather_rain_prob", "value": weather_data["rain_prob"]})
+                    if "wind_speed" in weather_data:
+                        state_updates.append({"key": "weather_wind_speed", "value": weather_data["wind_speed"], "decimalPlaces": 1})
+                    if "pressure" in weather_data:
+                        state_updates.append({"key": "weather_pressure", "value": weather_data["pressure"], "decimalPlaces": 1})
+
+                    dev.updateStatesOnServer(state_updates)
                 else:
                     self.logger.error(
                         f"Error reporting weather to '{dev.name}': {response}"
