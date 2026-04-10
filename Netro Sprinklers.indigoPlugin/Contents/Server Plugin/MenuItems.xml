@@ -8,4 +8,8 @@
 		<Name>Update All Status</Name>
         <CallbackMethod>updateAllStatus</CallbackMethod>
 	</MenuItem>
+	<MenuItem id="refreshWeather">
+		<Name>Refresh Weather Now</Name>
+        <CallbackMethod>refreshWeather</CallbackMethod>
+	</MenuItem>
 </MenuItems>

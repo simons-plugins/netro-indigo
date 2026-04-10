@@ -379,7 +379,12 @@ class Plugin(indigo.PluginBase):
             return
 
         if datetime.now() < self._next_weather_update:
+            self.logger.debug(
+                f"Next weather update at {self._next_weather_update:%H:%M}, skipping"
+            )
             return
+
+        self.logger.info("Fetching weather from Tomorrow.io...")
 
         # Schedule next update regardless of success/failure
         self._next_weather_update = datetime.now() + timedelta(
@@ -860,12 +865,18 @@ class Plugin(indigo.PluginBase):
             auth_type = "API key" if api_version == "2" else "serial number"
             self.logger.info(f"Device '{dev.name}' using API v{api_version} ({auth_type} auth)")
 
+        # Notify Indigo to re-read state lists (picks up any Devices.xml changes)
+        for dev in indigo.devices.iter(filter="self"):
+            dev.stateListOrDisplayStateIdChanged()
+
         # Log Tomorrow.io weather status
         if self._tomorrow_client is not None:
             self.logger.info(
                 f"Tomorrow.io weather integration enabled "
                 f"(updating every {self._weather_update_interval} minutes)"
             )
+        else:
+            self.logger.info("Tomorrow.io weather integration not enabled")
 
         # Subscribe to variable changes for zone moisture auto-link
         indigo.variables.subscribeToChanges()
@@ -905,8 +916,9 @@ class Plugin(indigo.PluginBase):
                     )
                 else:
                     self._update_from_netro()
-                    # Fetch weather from Tomorrow.io and report to Netro
-                    self._update_weather_from_tomorrow()
+
+                # Tomorrow.io uses its own API; run regardless of Netro token pause
+                self._update_weather_from_tomorrow()
             except self.StopThread:
                 # Clean shutdown requested by Indigo - must re-raise
                 self.logger.debug("Concurrent thread stopping")
@@ -1701,6 +1713,15 @@ class Plugin(indigo.PluginBase):
         """
         self._next_weather_update = datetime.now()
         self._update_from_netro()
+        self._update_weather_from_tomorrow()
+
+    def refreshWeather(self):
+        """Force immediate weather update from Tomorrow.io via plugin menu."""
+        if self._tomorrow_client is None:
+            self.logger.warning("Tomorrow.io weather integration is not configured")
+            return
+        self._next_weather_update = datetime.now()
+        self._update_weather_from_tomorrow()
 
     ########################################
     # pylint: disable=unused-argument
