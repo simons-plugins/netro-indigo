@@ -449,3 +449,283 @@ class TestFetchCurrentWeather:
 
         assert result is None
         mock_logger.error.assert_called()
+
+
+# =============================================================================
+# Forecast Fixtures
+# =============================================================================
+
+def _make_daily_values(
+    temp_avg=15.0, temp_max=20.0, temp_min=10.0, dew_point=8.0,
+    humidity=60, rain_sum=2.5, rain_prob_max=40, wind_avg=3.0,
+    wind_max=6.0, pressure_avg=1013.0, weather_code_max=1001,
+):
+    """Helper to build a daily forecast values dict."""
+    return {
+        "temperatureAvg": temp_avg,
+        "temperatureMax": temp_max,
+        "temperatureMin": temp_min,
+        "dewPointAvg": dew_point,
+        "humidityAvg": humidity,
+        "rainAccumulationSum": rain_sum,
+        "precipitationProbabilityMax": rain_prob_max,
+        "windSpeedAvg": wind_avg,
+        "windSpeedMax": wind_max,
+        "pressureSurfaceLevelAvg": pressure_avg,
+        "weatherCodeMax": weather_code_max,
+    }
+
+
+@pytest.fixture
+def sample_forecast_response():
+    """Sample Tomorrow.io forecast response with 6 days."""
+    days = []
+    for i in range(6):
+        days.append({
+            "time": f"2026-04-{10 + i:02d}T05:00:00Z",
+            "values": _make_daily_values(
+                temp_avg=12.0 + i,
+                temp_max=18.0 + i,
+                temp_min=6.0 + i,
+            ),
+        })
+    return {"timelines": {"daily": days}}
+
+
+@pytest.fixture
+def rainy_forecast_day():
+    """Single rainy forecast day."""
+    return {
+        "timelines": {
+            "daily": [{
+                "time": "2026-04-11T05:00:00Z",
+                "values": _make_daily_values(
+                    rain_sum=15.0,
+                    rain_prob_max=85,
+                    weather_code_max=4001,
+                ),
+            }]
+        }
+    }
+
+
+# =============================================================================
+# TestTransformForecastResponse
+# =============================================================================
+
+@pytest.mark.weather
+class TestTransformForecastResponse:
+    """Tests for Tomorrow.io forecast response transformation."""
+
+    def test_transforms_all_six_days(self, client, sample_forecast_response):
+        """Should return 6 dicts, one per day."""
+        result = client._transform_forecast_response(sample_forecast_response)
+        assert result is not None
+        assert len(result) == 6
+
+    def test_dates_extracted_correctly(self, client, sample_forecast_response):
+        """Each dict should have the correct YYYY-MM-DD date."""
+        result = client._transform_forecast_response(sample_forecast_response)
+        assert result[0]["date"] == "2026-04-10"
+        assert result[5]["date"] == "2026-04-15"
+
+    def test_daily_fields_mapped_correctly(self, client, sample_forecast_response):
+        """First day should have all fields mapped from aggregated values."""
+        result = client._transform_forecast_response(sample_forecast_response)
+        day = result[0]
+        assert day["t"] == 12.0
+        assert day["t_max"] == 18.0
+        assert day["t_min"] == 6.0
+        assert day["t_dew"] == 8.0
+        assert day["humidity"] == 60
+        assert day["rain"] == 2.5
+        assert day["rain_prob"] == 40
+        assert day["wind_speed"] == 3.0
+        assert day["pressure"] == 1013.0
+
+    def test_weather_code_max_maps_to_condition(self, client, rainy_forecast_day):
+        """weatherCodeMax 4001 (Rain) should map to condition 2."""
+        result = client._transform_forecast_response(rainy_forecast_day)
+        assert result[0]["condition"] == 2
+
+    def test_wind_override_uses_wind_speed_max(self, client):
+        """windSpeedMax > 15 should override clear/cloudy to Wind (4)."""
+        data = {
+            "timelines": {
+                "daily": [{
+                    "time": "2026-04-10T05:00:00Z",
+                    "values": _make_daily_values(
+                        wind_max=16.0,
+                        weather_code_max=1000,  # Clear
+                    ),
+                }]
+            }
+        }
+        result = client._transform_forecast_response(data)
+        assert result[0]["condition"] == 4
+
+    def test_wind_override_boundary_at_15(self, client):
+        """windSpeedMax exactly 15.0 should NOT trigger wind override."""
+        data = {
+            "timelines": {
+                "daily": [{
+                    "time": "2026-04-10T05:00:00Z",
+                    "values": _make_daily_values(
+                        wind_max=15.0,
+                        weather_code_max=1000,  # Clear
+                    ),
+                }]
+            }
+        }
+        result = client._transform_forecast_response(data)
+        assert result[0]["condition"] == 0  # Still Clear
+
+    def test_wind_no_override_during_rain(self, client):
+        """windSpeedMax > 15 should NOT override rain condition."""
+        data = {
+            "timelines": {
+                "daily": [{
+                    "time": "2026-04-10T05:00:00Z",
+                    "values": _make_daily_values(
+                        wind_max=20.0,
+                        weather_code_max=4001,  # Rain
+                    ),
+                }]
+            }
+        }
+        result = client._transform_forecast_response(data)
+        assert result[0]["condition"] == 2  # Still Rain
+
+    def test_missing_temperature_skips_day(self, client, mock_logger):
+        """Day with no temperatureAvg should be skipped."""
+        data = {
+            "timelines": {
+                "daily": [
+                    {
+                        "time": "2026-04-10T05:00:00Z",
+                        "values": {"humidityAvg": 50, "weatherCodeMax": 1000},
+                    },
+                    {
+                        "time": "2026-04-11T05:00:00Z",
+                        "values": _make_daily_values(),
+                    },
+                ]
+            }
+        }
+        result = client._transform_forecast_response(data)
+        assert len(result) == 1
+        assert result[0]["date"] == "2026-04-11"
+        mock_logger.warning.assert_called()
+
+    def test_optional_fields_omitted_when_missing(self, client):
+        """Only date, condition, and t should be present for minimal data."""
+        data = {
+            "timelines": {
+                "daily": [{
+                    "time": "2026-04-10T05:00:00Z",
+                    "values": {"temperatureAvg": 15.0, "weatherCodeMax": 1000},
+                }]
+            }
+        }
+        result = client._transform_forecast_response(data)
+        assert result[0]["t"] == 15.0
+        assert "t_max" not in result[0]
+        assert "humidity" not in result[0]
+        assert "rain" not in result[0]
+
+    def test_missing_timelines_returns_none(self, client, mock_logger):
+        """Response without timelines key returns None."""
+        result = client._transform_forecast_response({"error": "bad"})
+        assert result is None
+        mock_logger.error.assert_called()
+
+    def test_empty_daily_returns_empty_list(self, client):
+        """Empty daily array returns empty list (not None)."""
+        result = client._transform_forecast_response({"timelines": {"daily": []}})
+        assert result == []
+
+
+# =============================================================================
+# TestFetchForecast
+# =============================================================================
+
+@pytest.mark.weather
+class TestFetchForecast:
+    """Tests for the full fetch_forecast method."""
+
+    @patch("tomorrow_client.requests.get")
+    def test_successful_fetch(self, mock_get, client, sample_forecast_response):
+        """Successful API call returns list of weather dicts."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = sample_forecast_response
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        result = client.fetch_forecast()
+
+        assert result is not None
+        assert len(result) == 6
+        mock_response.raise_for_status.assert_called_once()
+        mock_get.assert_called_once()
+
+    @patch("tomorrow_client.requests.get")
+    def test_api_params_include_timesteps_1d(self, mock_get, client, sample_forecast_response):
+        """Forecast API call should include timesteps=1d."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = sample_forecast_response
+        mock_response.raise_for_status = Mock()
+        mock_get.return_value = mock_response
+
+        client.fetch_forecast()
+
+        call_kwargs = mock_get.call_args
+        assert call_kwargs[1]["params"]["timesteps"] == "1d"
+        assert call_kwargs[1]["params"]["units"] == "metric"
+
+    @patch("tomorrow_client.requests.get")
+    def test_http_error_returns_none(self, mock_get, client, mock_logger):
+        """HTTP error returns None and logs error."""
+        import requests
+        mock_response = MagicMock()
+        mock_response.status_code = 429
+        mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError(
+            response=mock_response
+        )
+        mock_get.return_value = mock_response
+
+        result = client.fetch_forecast()
+
+        assert result is None
+        mock_logger.error.assert_called()
+
+    @patch("tomorrow_client.requests.get")
+    def test_connection_error_returns_none(self, mock_get, client, mock_logger):
+        """Connection error returns None and logs error."""
+        import requests
+        mock_get.side_effect = requests.exceptions.ConnectionError("no connection")
+
+        result = client.fetch_forecast()
+
+        assert result is None
+        mock_logger.error.assert_called()
+
+    @patch("tomorrow_client.requests.get")
+    def test_timeout_returns_none(self, mock_get, client, mock_logger):
+        """Timeout returns None and logs error."""
+        import requests
+        mock_get.side_effect = requests.exceptions.Timeout("timed out")
+
+        result = client.fetch_forecast()
+
+        assert result is None
+        mock_logger.error.assert_called()
+
+    @patch("tomorrow_client.requests.get")
+    def test_unexpected_error_returns_none(self, mock_get, client, mock_logger):
+        """Unexpected error returns None and logs error."""
+        mock_get.side_effect = ValueError("unexpected")
+
+        result = client.fetch_forecast()
+
+        assert result is None
+        mock_logger.error.assert_called()

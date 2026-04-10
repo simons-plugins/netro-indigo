@@ -53,7 +53,7 @@ def convert_weather_us_to_metric(weather_data: Dict[str, Any]) -> Dict[str, Any]
     converted = dict(weather_data)
 
     # Temperature fields: °F → °C
-    for temp_key in ("t", "t_max", "t_min"):
+    for temp_key in ("t", "t_max", "t_min", "t_dew"):
         if temp_key in converted and converted[temp_key] is not None:
             converted[temp_key] = round(fahrenheit_to_celsius(float(converted[temp_key])), 1)
 
@@ -107,7 +107,7 @@ def convert_weather_metric_to_us(weather_data: Dict[str, Any]) -> Dict[str, Any]
     converted = dict(weather_data)
 
     # Temperature fields: C -> F
-    for temp_key in ("t", "t_max", "t_min"):
+    for temp_key in ("t", "t_max", "t_min", "t_dew"):
         if temp_key in converted and converted[temp_key] is not None:
             converted[temp_key] = round(celsius_to_fahrenheit(float(converted[temp_key])), 1)
 
