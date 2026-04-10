@@ -36,6 +36,42 @@
 
     <Field id="sep4" type="separator"/>
 
+    <!-- Tomorrow.io Weather Integration -->
+    <Field id="weatherLabel" type="label" fontColor="blue">
+        <Label>Tomorrow.io Weather Integration</Label>
+    </Field>
+    <Field id="weatherDescription" type="label" fontSize="small" fontColor="darkgray">
+        <Label>Automatically fetch weather from Tomorrow.io and report it to your Netro devices. This overrides Netro's built-in weather data for smarter watering schedules. Get a free API key at tomorrow.io.</Label>
+    </Field>
+
+    <Field id="tomorrowEnabled" type="checkbox" defaultValue="false">
+        <Label>Enable Tomorrow.io weather:</Label>
+        <Description>Fetch and report weather automatically</Description>
+    </Field>
+
+    <Field id="tomorrowApiKey" type="textfield" defaultValue="" visibleBindingId="tomorrowEnabled" visibleBindingValue="true">
+        <Label>Tomorrow.io API Key:</Label>
+    </Field>
+    <Field id="tomorrowApiKeyLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true" visibleBindingId="tomorrowEnabled" visibleBindingValue="true">
+        <Label>Your Tomorrow.io API key from your account dashboard.</Label>
+    </Field>
+
+    <Field id="tomorrowLocation" type="textfield" defaultValue="" visibleBindingId="tomorrowEnabled" visibleBindingValue="true">
+        <Label>Location (lat,lon):</Label>
+    </Field>
+    <Field id="tomorrowLocationLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true" visibleBindingId="tomorrowEnabled" visibleBindingValue="true">
+        <Label>Latitude and longitude, e.g. "42.3478,-71.0466". You can also use a place name like "Boston, MA".</Label>
+    </Field>
+
+    <Field id="weatherUpdateInterval" type="textfield" defaultValue="30" visibleBindingId="tomorrowEnabled" visibleBindingValue="true">
+        <Label>Weather Update Interval (minutes):</Label>
+    </Field>
+    <Field id="weatherIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true" visibleBindingId="tomorrowEnabled" visibleBindingValue="true">
+        <Label>How often to fetch weather and report to Netro. Default is 30 minutes. Minimum 10 minutes. Tomorrow.io free tier allows 500 calls/day.</Label>
+    </Field>
+
+    <Field id="sep5" type="separator"/>
+
     <!-- Debug Logging -->
     <Field id="showDebugInfo" type="checkbox" defaultValue="false">
         <Label>Enable debug logging:</Label>

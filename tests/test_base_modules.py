@@ -136,7 +136,7 @@ class TestConstants:
     def test_default_weather_update_interval(self):
         """DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES should be reasonable."""
         assert DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES >= 1
-        assert DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES == 10
+        assert DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES == 30
 
     def test_throttle_limit(self):
         """THROTTLE_LIMIT_MINUTES should be ~1 hour."""

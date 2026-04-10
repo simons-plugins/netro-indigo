@@ -2,6 +2,10 @@
 
 This module provides common utility functions used throughout the plugin:
 
+- Unit conversions: Bidirectional metric/US conversions for temperature,
+  rainfall, wind speed, and pressure
+- Weather data conversion: convert_weather_us_to_metric / convert_weather_metric_to_us
+  for transforming weather dicts between API v1 (US) and v2 (metric) formats
 - get_key_from_dict: Safely retrieve values from dictionaries
 
 These functions are extracted from plugin.py to enable reuse and testing.
@@ -64,6 +68,60 @@ def convert_weather_us_to_metric(weather_data: Dict[str, Any]) -> Dict[str, Any]
     # Pressure: inHg → hPa
     if "pressure" in converted and converted["pressure"] is not None:
         converted["pressure"] = round(inhg_to_hpa(float(converted["pressure"])), 1)
+
+    return converted
+
+
+def celsius_to_fahrenheit(c: float) -> float:
+    """Convert Celsius to Fahrenheit."""
+    return c * 9 / 5 + 32
+
+
+def mm_to_inches(mm: float) -> float:
+    """Convert millimeters to inches."""
+    return mm / 25.4
+
+
+def ms_to_mph(ms: float) -> float:
+    """Convert meters per second to miles per hour."""
+    return ms / 0.44704
+
+
+def hpa_to_inhg(hpa: float) -> float:
+    """Convert hectopascals to inches of mercury."""
+    return hpa / 33.8639
+
+
+def convert_weather_metric_to_us(weather_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert weather data from metric to US units for API v1.
+
+    V1 API expects US units (F, inches, mph, inHg).
+    V2 API expects metric (C, mm, m/s, hPa).
+
+    Args:
+        weather_data: Weather dict with metric-unit values
+
+    Returns:
+        New dict with values converted to US units
+    """
+    converted = dict(weather_data)
+
+    # Temperature fields: C -> F
+    for temp_key in ("t", "t_max", "t_min"):
+        if temp_key in converted and converted[temp_key] is not None:
+            converted[temp_key] = round(celsius_to_fahrenheit(float(converted[temp_key])), 1)
+
+    # Rainfall: mm -> inches
+    if "rain" in converted and converted["rain"] is not None:
+        converted["rain"] = round(mm_to_inches(float(converted["rain"])), 2)
+
+    # Wind speed: m/s -> mph
+    if "wind_speed" in converted and converted["wind_speed"] is not None:
+        converted["wind_speed"] = round(ms_to_mph(float(converted["wind_speed"])), 1)
+
+    # Pressure: hPa -> inHg
+    if "pressure" in converted and converted["pressure"] is not None:
+        converted["pressure"] = round(hpa_to_inhg(float(converted["pressure"])), 2)
 
     return converted
 
