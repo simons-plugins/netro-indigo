@@ -19,7 +19,7 @@ Note:
 
 import json
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Final, List, Optional, Set, Union
 
@@ -461,7 +461,8 @@ class NetroAPIClient:
         except (ValueError, TypeError) as exc:
             self.logger.warning(f"Could not parse token info from response: {exc}")
             remaining = TOKEN_PAUSE_THRESHOLD - 1
-            reset_time = None
+            # Set near-future reset so auto-reset can unlock this device
+            reset_time = datetime.now(timezone.utc) + timedelta(hours=1)
 
         # Update or create per-device state
         self._device_tokens[device_key] = DeviceTokenState(
@@ -551,16 +552,22 @@ class NetroAPIClient:
             # V2 format: restore per-device token budgets
             if is_v2 and "device_tokens" in state:
                 for key, token_state in state["device_tokens"].items():
-                    reset_time = None
-                    if token_state.get("token_reset"):
-                        reset_time = datetime.fromisoformat(token_state["token_reset"])
-                    self._device_tokens[key] = DeviceTokenState(
-                        token_remaining=token_state.get("token_remaining", 2000),
-                        token_reset=reset_time,
-                    )
-            # V1 format: ignore global token_remaining, let first poll populate per-device
+                    try:
+                        reset_time = None
+                        if token_state.get("token_reset"):
+                            reset_time = datetime.fromisoformat(token_state["token_reset"])
+                        self._device_tokens[key] = DeviceTokenState(
+                            token_remaining=int(token_state.get("token_remaining", 2000)),
+                            token_reset=reset_time,
+                        )
+                    except (ValueError, TypeError) as exc:
+                        key_display = key[:8] + "..." if len(key) > 8 else key
+                        self.logger.warning(f"Could not restore token state for device {key_display}: {exc}")
+            elif not is_v2 and state.get("throttle_until"):
+                # V1 format: log that legacy throttle is being discarded
+                self.logger.info("Migrating to per-device token tracking — discarding legacy throttle state")
 
-        except (json.JSONDecodeError, ValueError, KeyError) as exc:
+        except (json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
             self.logger.warning("Could not restore throttle state: %s", exc)
 
     # =========================================================================

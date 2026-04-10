@@ -158,8 +158,72 @@ class TestThrottleState:
         assert client._device_tokens["key_A"].token_remaining == 1500
         assert client._device_tokens["key_B"].token_remaining == 1800
 
+    def test_restore_v2_throttle_future(self, mock_logger):
+        """V2 format restores throttle_until if still in future."""
+        future_time = datetime.now() + timedelta(minutes=30)
+        state = {
+            "version": 2,
+            "throttle_until": future_time.isoformat(),
+            "device_tokens": {},
+        }
+        prefs_data = {"throttle_state": json.dumps(state)}
+
+        client = NetroAPIClient(
+            logger=mock_logger,
+            prefs_getter=lambda: prefs_data,
+            prefs_setter=lambda k, v: None
+        )
+
+        assert client._throttle_until is not None
+        assert abs((client._throttle_until - future_time).total_seconds()) < 1
+
+    def test_restore_v2_throttle_expired(self, mock_logger):
+        """V2 format ignores throttle_until if in past."""
+        past_time = datetime.now() - timedelta(minutes=30)
+        state = {
+            "version": 2,
+            "throttle_until": past_time.isoformat(),
+            "device_tokens": {},
+        }
+        prefs_data = {"throttle_state": json.dumps(state)}
+
+        client = NetroAPIClient(
+            logger=mock_logger,
+            prefs_getter=lambda: prefs_data,
+            prefs_setter=lambda k, v: None
+        )
+
+        assert client._throttle_until is None
+
+    def test_restore_v2_bad_device_timestamp_skips_device(self, mock_logger):
+        """Malformed token_reset for one device doesn't abort others."""
+        state = {
+            "version": 2,
+            "throttle_until": None,
+            "device_tokens": {
+                "key_A": {"token_remaining": 1500, "token_reset": None},
+                "key_B": {"token_remaining": 1200, "token_reset": "not-a-date"},
+                "key_C": {"token_remaining": 900, "token_reset": None},
+            },
+        }
+        prefs_data = {"throttle_state": json.dumps(state)}
+
+        client = NetroAPIClient(
+            logger=mock_logger,
+            prefs_getter=lambda: prefs_data,
+            prefs_setter=lambda k, v: None
+        )
+
+        # key_A and key_C should be restored, key_B skipped
+        assert "key_A" in client._device_tokens
+        assert client._device_tokens["key_A"].token_remaining == 1500
+        assert "key_B" not in client._device_tokens
+        assert "key_C" in client._device_tokens
+        assert client._device_tokens["key_C"].token_remaining == 900
+        mock_logger.warning.assert_called()
+
     def test_restore_throttle_state_ignores_expired(self, mock_logger):
-        """Restore ignores throttle_until if in past."""
+        """V1 format with past throttle — ignored entirely."""
         past_time = datetime.now() - timedelta(minutes=30)
         state = {
             "throttle_until": past_time.isoformat(),
@@ -214,6 +278,12 @@ class TestProactivePause:
         from api_client import DeviceTokenState
         client._device_tokens["KEY_A"] = DeviceTokenState(token_remaining=TOKEN_PAUSE_THRESHOLD - 1)
         assert client.should_pause_polling_for("KEY_A") is True
+
+    def test_should_not_pause_for_at_exactly_threshold(self, client):
+        """should_pause_polling_for returns False at exactly threshold (< not <=)."""
+        from api_client import DeviceTokenState
+        client._device_tokens["KEY_A"] = DeviceTokenState(token_remaining=TOKEN_PAUSE_THRESHOLD)
+        assert client.should_pause_polling_for("KEY_A") is False
 
     def test_should_not_pause_for_above_threshold(self, client):
         """should_pause_polling_for returns False when device above threshold."""
