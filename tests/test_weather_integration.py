@@ -19,6 +19,7 @@ sys.path.insert(0, str(SERVER_PLUGIN_DIR))
 
 from utils import (
     convert_weather_metric_to_us,
+    convert_weather_us_to_metric,
     celsius_to_fahrenheit,
     mm_to_inches,
     ms_to_mph,
@@ -230,3 +231,31 @@ class TestPrefsValidationTomorrow:
         assert is_valid is True
         assert sanitized["tomorrowApiKey"] == "my-api-key-12345678"
         assert sanitized["tomorrowLocation"] == "42.3478,-71.0466"
+
+
+# =============================================================================
+# TestDewPointConversion
+# =============================================================================
+
+@pytest.mark.weather
+class TestDewPointConversion:
+    """Tests for t_dew conversion in weather data."""
+
+    def test_t_dew_converted_metric_to_us(self):
+        """t_dew should be converted from Celsius to Fahrenheit."""
+        weather = {"condition": 1, "t": 20.0, "t_dew": 10.0}
+        result = convert_weather_metric_to_us(weather)
+        assert result["t_dew"] == 50.0  # 10°C = 50°F
+
+    def test_t_dew_converted_us_to_metric(self):
+        """t_dew should be converted from Fahrenheit to Celsius."""
+        weather = {"condition": 1, "t": 68.0, "t_dew": 50.0}
+        result = convert_weather_us_to_metric(weather)
+        assert result["t_dew"] == 10.0  # 50°F = 10°C
+
+    def test_missing_t_dew_unaffected(self):
+        """Dict without t_dew should be unchanged."""
+        weather = {"condition": 1, "t": 20.0, "humidity": 60}
+        result = convert_weather_metric_to_us(weather)
+        assert "t_dew" not in result
+        assert result["humidity"] == 60
