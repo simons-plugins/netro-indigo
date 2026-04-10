@@ -725,6 +725,15 @@ class Plugin(indigo.PluginBase):
         try:
             # Get auth credentials (API key for v2, serial for v1)
             key, api_version = self._get_device_auth(dev)
+
+            # Per-device token pause check
+            if self.api_client.should_pause_polling_for(key):
+                self.logger.warning(
+                    f"Polling paused for '{dev.name}': only "
+                    f"{self.api_client.token_remaining_for(key)} tokens remaining"
+                )
+                return
+
             schedule_dict = None
             moisture_dict = None
 
@@ -852,6 +861,15 @@ class Plugin(indigo.PluginBase):
         try:
             # Get auth credentials (API key for v2, serial for v1)
             key, api_version = self._get_device_auth(dev)
+
+            # Per-device token pause check
+            if self.api_client.should_pause_polling_for(key):
+                self.logger.warning(
+                    f"Polling paused for '{dev.name}': only "
+                    f"{self.api_client.token_remaining_for(key)} tokens remaining"
+                )
+                return
+
             self.logger.debug(f"Device ID: {dev.address} (API v{api_version})")
 
             if dev.sensorValue is not None:
@@ -997,14 +1015,8 @@ class Plugin(indigo.PluginBase):
         self.logger.debug("Starting concurrent thread")
         while True:
             try:
-                # Check proactive pause before polling
-                if self.api_client.should_pause_polling:
-                    self.logger.warning(
-                        f"Polling paused: only {self.api_client.token_remaining} tokens "
-                        f"remaining (threshold: 100), will resume when tokens reset"
-                    )
-                else:
-                    self._update_from_netro()
+                # Per-device token pause is checked inside each device update method
+                self._update_from_netro()
 
                 # Tomorrow.io uses its own API; run regardless of Netro token pause
                 self._update_weather_from_tomorrow()
