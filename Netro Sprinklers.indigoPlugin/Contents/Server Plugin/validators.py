@@ -26,7 +26,16 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
-from constants import MINIMUM_POLLING_INTERVAL_MINUTES, MINIMUM_WEATHER_UPDATE_INTERVAL_MINUTES
+from constants import (
+    MINIMUM_POLLING_INTERVAL_MINUTES,
+    MINIMUM_EVENTS_INTERVAL_MINUTES,
+    MINIMUM_DEVICE_INFO_INTERVAL_MINUTES,
+    MINIMUM_SCHEDULES_INTERVAL_MINUTES,
+    MINIMUM_MOISTURES_INTERVAL_MINUTES,
+    MINIMUM_SENSOR_INTERVAL_MINUTES,
+    MINIMUM_WEATHER_UPDATE_INTERVAL_MINUTES,
+    MINIMUM_FORECAST_INTERVAL_MINUTES,
+)
 
 
 # Type alias for validation function return values
@@ -580,11 +589,29 @@ class PrefsFieldSpec:
 # Preferences field validation specifications
 _PREFS_FIELDS: List[PrefsFieldSpec] = [
     PrefsFieldSpec(
-        "pollingInterval", MINIMUM_POLLING_INTERVAL_MINUTES, 1440,
-        MINIMUM_POLLING_INTERVAL_MINUTES,
-        f"Polling interval must be at least {MINIMUM_POLLING_INTERVAL_MINUTES} "
-        "minutes to avoid API rate limits",
-        "Polling interval cannot exceed 1440 minutes (24 hours)",
+        "eventsInterval", MINIMUM_EVENTS_INTERVAL_MINUTES, 1440, 5,
+        f"Events interval must be at least {MINIMUM_EVENTS_INTERVAL_MINUTES} minutes",
+        "Events interval cannot exceed 1440 minutes (24 hours)",
+    ),
+    PrefsFieldSpec(
+        "deviceInfoInterval", MINIMUM_DEVICE_INFO_INTERVAL_MINUTES, 1440, 10,
+        f"Device info interval must be at least {MINIMUM_DEVICE_INFO_INTERVAL_MINUTES} minutes",
+        "Device info interval cannot exceed 1440 minutes (24 hours)",
+    ),
+    PrefsFieldSpec(
+        "moisturesInterval", MINIMUM_MOISTURES_INTERVAL_MINUTES, 1440, 10,
+        f"Moistures interval must be at least {MINIMUM_MOISTURES_INTERVAL_MINUTES} minutes",
+        "Moistures interval cannot exceed 1440 minutes (24 hours)",
+    ),
+    PrefsFieldSpec(
+        "schedulesInterval", MINIMUM_SCHEDULES_INTERVAL_MINUTES, 1440, 30,
+        f"Schedules interval must be at least {MINIMUM_SCHEDULES_INTERVAL_MINUTES} minutes",
+        "Schedules interval cannot exceed 1440 minutes (24 hours)",
+    ),
+    PrefsFieldSpec(
+        "sensorInterval", MINIMUM_SENSOR_INTERVAL_MINUTES, 1440, 30,
+        f"Sensor interval must be at least {MINIMUM_SENSOR_INTERVAL_MINUTES} minutes",
+        "Sensor interval cannot exceed 1440 minutes (24 hours)",
     ),
     PrefsFieldSpec(
         "apiTimeout", 1, 60, 5,
@@ -600,6 +627,11 @@ _PREFS_FIELDS: List[PrefsFieldSpec] = [
         "weatherUpdateInterval", MINIMUM_WEATHER_UPDATE_INTERVAL_MINUTES, 1440, 30,
         f"Weather update interval must be at least {MINIMUM_WEATHER_UPDATE_INTERVAL_MINUTES} minutes",
         "Weather update interval cannot exceed 1440 minutes (24 hours)",
+    ),
+    PrefsFieldSpec(
+        "forecastInterval", MINIMUM_FORECAST_INTERVAL_MINUTES, 1440, 240,
+        f"Forecast interval must be at least {MINIMUM_FORECAST_INTERVAL_MINUTES} minutes",
+        "Forecast interval cannot exceed 1440 minutes (24 hours)",
     ),
 ]
 

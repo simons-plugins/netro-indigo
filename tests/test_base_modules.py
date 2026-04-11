@@ -143,8 +143,8 @@ class TestConstants:
         assert THROTTLE_LIMIT_MINUTES == 61
 
     def test_forecast_update_interval(self):
-        """FORECAST_UPDATE_INTERVAL_MINUTES should be 1 hour."""
-        assert FORECAST_UPDATE_INTERVAL_MINUTES == 60
+        """FORECAST_UPDATE_INTERVAL_MINUTES should be 4 hours (legacy constant)."""
+        assert FORECAST_UPDATE_INTERVAL_MINUTES == 240
 
     def test_operational_error_events_immutable(self):
         """OPERATIONAL_ERROR_EVENTS should be a frozenset."""

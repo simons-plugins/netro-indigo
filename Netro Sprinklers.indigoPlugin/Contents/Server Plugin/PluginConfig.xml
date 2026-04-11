@@ -6,12 +6,52 @@
 
     <Field id="sep1" type="separator"/>
 
-    <!-- Polling Interval -->
-    <Field id="pollingInterval" type="textfield" defaultValue="5">
-        <Label>Polling Interval (minutes):</Label>
+    <!-- Polling Intervals -->
+    <Field id="pollingLabel" type="label" fontColor="blue">
+        <Label>Polling Intervals</Label>
     </Field>
-    <Field id="pollingLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
-        <Label>How often to check device status. Each sprinkler poll uses 3 API calls, sensors use 1 call. Netro limits: 2000 calls/day (shared across all devices). Single sprinkler: 5+ min recommended. Multiple devices: 7-10 min recommended.</Label>
+    <Field id="pollingDescription" type="label" fontSize="small" fontColor="darkgray">
+        <Label>Control how often each type of data is fetched from the Netro API. Netro allows 2000 API calls/day shared across all devices. Lower intervals use more calls. The defaults are tuned for 2 controllers + 7 sensors.</Label>
+    </Field>
+
+    <!-- Events Interval -->
+    <Field id="eventsInterval" type="textfield" defaultValue="5">
+        <Label>Events interval (minutes):</Label>
+    </Field>
+    <Field id="eventsIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+        <Label>Online/offline device events (v2 API only). 1 call per controller. Default: 5 min.</Label>
+    </Field>
+
+    <!-- Device Info Interval -->
+    <Field id="deviceInfoInterval" type="textfield" defaultValue="10">
+        <Label>Device info interval (minutes):</Label>
+    </Field>
+    <Field id="deviceInfoIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+        <Label>Device status, firmware version, token count. 1 call per controller. Default: 10 min.</Label>
+    </Field>
+
+    <!-- Moistures Interval -->
+    <Field id="moisturesInterval" type="textfield" defaultValue="10">
+        <Label>Moistures interval (minutes):</Label>
+    </Field>
+    <Field id="moisturesIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+        <Label>Zone moisture levels. 1 call per controller. Default: 10 min.</Label>
+    </Field>
+
+    <!-- Schedules Interval -->
+    <Field id="schedulesInterval" type="textfield" defaultValue="30">
+        <Label>Schedules interval (minutes):</Label>
+    </Field>
+    <Field id="schedulesIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+        <Label>Upcoming watering schedules. 1 call per controller. Default: 30 min.</Label>
+    </Field>
+
+    <!-- Sensor Interval -->
+    <Field id="sensorInterval" type="textfield" defaultValue="30">
+        <Label>Sensor interval (minutes):</Label>
+    </Field>
+    <Field id="sensorIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+        <Label>Whisperer soil sensor readings. 1 call per sensor. Default: 30 min.</Label>
     </Field>
 
     <Field id="sep2" type="separator"/>
@@ -64,10 +104,17 @@
     </Field>
 
     <Field id="weatherUpdateInterval" type="textfield" defaultValue="30" visibleBindingId="tomorrowEnabled" visibleBindingValue="true">
-        <Label>Weather Update Interval (minutes):</Label>
+        <Label>Weather update interval (minutes):</Label>
     </Field>
     <Field id="weatherIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true" visibleBindingId="tomorrowEnabled" visibleBindingValue="true">
-        <Label>How often to fetch weather and report to Netro. Default is 30 minutes. Minimum 10 minutes. Tomorrow.io free tier allows 500 calls/day.</Label>
+        <Label>How often to fetch current weather. Default: 30 min. Minimum: 10 min.</Label>
+    </Field>
+
+    <Field id="forecastInterval" type="textfield" defaultValue="240" visibleBindingId="tomorrowEnabled" visibleBindingValue="true">
+        <Label>Forecast interval (minutes):</Label>
+    </Field>
+    <Field id="forecastIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true" visibleBindingId="tomorrowEnabled" visibleBindingValue="true">
+        <Label>How often to fetch 5-day forecast. Uses 6 Netro calls per controller. Default: 240 min (4 hours). Minimum: 60 min.</Label>
     </Field>
 
     <Field id="sep5" type="separator"/>
