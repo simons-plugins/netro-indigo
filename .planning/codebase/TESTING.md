@@ -1,386 +1,301 @@
 # Testing Patterns
 
-**Analysis Date:** 2026-02-01
+**Analysis Date:** 2026-04-11
 
 ## Test Framework
 
 **Runner:**
-- pytest >= 8.0.0
-- Configuration: `pytest.ini` in project root
+- pytest 8.0+ (configured in `pytest.ini` and `pyproject.toml`)
+- Config: `/Users/simon/vsCodeProjects/Indigo/netro/pytest.ini`
 
 **Assertion Library:**
-- pytest's built-in assertions
-- pytest-mock for mocking (`pytest-mock >= 3.12.0`)
+- pytest's built-in assertions (no separate assertion library)
 
-**Coverage Tools:**
-- pytest-cov >= 4.1.0
-- HTML reports generated to `htmlcov/`
-- Coverage target: >70% (current status per CLAUDE.md)
+**Coverage:**
+- `pytest-cov` with branch coverage enabled
+- HTML report written to `htmlcov/`
+- Minimum required: 85% (`fail_under = 85` in `pytest.ini`)
+- Current actual coverage: ~10% for most modules (coverage target is aspirational; plugin.py at 0% because it requires Indigo runtime)
 
 **Run Commands:**
 ```bash
-# Run all tests with coverage
-pytest tests/ -v --cov="Netro Sprinklers.indigoPlugin/Contents/Server Plugin" --cov-report=term-missing
+# Run all tests with coverage (default via pytest.ini addopts)
+cd /Users/simon/vsCodeProjects/Indigo/netro && python3 -m pytest
 
-# Run specific test file
-pytest tests/test_api_client.py -v
+# Run without coverage (faster)
+python3 -m pytest --no-cov
 
-# Run specific test
-pytest tests/test_api_client.py::test_successful_get_request -v
+# Run specific file
+python3 -m pytest tests/test_api_client.py
 
-# Run with branch coverage
-pytest tests/ --cov-branch
+# Run by marker
+python3 -m pytest -m api
+python3 -m pytest -m handlers
+python3 -m pytest -m weather
 
-# Generate HTML coverage report
-pytest tests/ --cov --cov-report=html
-# View in htmlcov/index.html
+# Run single test by name
+python3 -m pytest tests/test_api_client.py::TestThrottleState::test_initial_state_not_throttled
+
+# Run with pattern match
+python3 -m pytest -k "throttle"
+
+# View HTML coverage report
+open htmlcov/index.html
 ```
 
 ## Test File Organization
 
-**Location:**
-- `tests/` directory in project root
-- Test files are siblings of main plugin
+**Location:** Separate `tests/` directory at repo root (not co-located with source)
 
 **Naming:**
-- Files: `test_*.py` pattern (pytest auto-discovery)
-- Classes: `Test*` pattern (e.g., `TestAPIClient`)
-- Functions: `test_*` pattern (e.g., `test_successful_get_request`)
+- Files: `test_<module>.py` matching the source module name
+- Classes: `Test<Feature>` (e.g., `TestThrottleState`, `TestSprinklerHandlerDeviceInfo`)
+- Functions: `test_<scenario>` with descriptive name (e.g., `test_throttle_until_past_clears_automatically`)
 
-**Structure (from pytest.ini discovery):**
+**Structure:**
 ```
-tests/
-├── conftest.py              # pytest fixtures and setup
-├── test_api_client.py       # API integration tests (17 tests)
-├── test_validation.py       # Configuration validation tests (24 tests)
-├── test_actions.py          # Action callback tests (23 tests)
-└── fixtures/                # Mock API response data
-    ├── device_info.json
-    ├── schedules.json
-    └── ...
+netro/
+├── tests/
+│   ├── conftest.py                    # Shared fixtures (auto-discovered by pytest)
+│   ├── test_api_client.py             # NetroAPIClient tests
+│   ├── test_base_modules.py           # constants, exceptions, utils tests
+│   ├── test_device_handlers.py        # SprinklerHandler, WhispererHandler tests
+│   ├── test_validators.py             # validate_* function tests
+│   ├── test_tomorrow_client.py        # TomorrowClient tests
+│   ├── test_weather_integration.py    # Weather unit conversion + prefs validation
+│   └── test_zone_handler.py           # ZoneHandler tests
+└── pytest.ini                         # pytest configuration
 ```
 
-**Total: 64 tests covering >70% of code**
+**Total tests:** 427 collected (as of 2026-04-11)
 
 ## Test Structure
 
-**Markers defined in pytest.ini:**
-```ini
-[pytest]
-markers =
-    api: Tests for API client functionality
-    validation: Tests for configuration and action validation
-    actions: Tests for action callback methods
-    integration: Integration tests requiring external services
-    slow: Tests that take more than 1 second
-```
-
-**Usage pattern:**
+**Suite Organization — class-based grouping:**
 ```python
 @pytest.mark.api
-def test_successful_get_request(mock_plugin):
-    """Test successful API GET request."""
-    # Test implementation
+class TestThrottleState:
+    """Tests for throttle state management."""
+
+    def test_initial_state_not_throttled(self, client):
+        """New client should have is_throttled=False."""
+        assert client.is_throttled is False
+
+    def test_throttle_until_future_is_throttled(self, client):
+        """When _throttle_until is in future, is_throttled=True."""
+        client._throttle_until = datetime.now() + timedelta(minutes=30)
+        assert client.is_throttled is True
 ```
 
-**Test file categories:**
+**Key patterns:**
+- Every test method has a one-line docstring describing the expected behavior (the "should" statement)
+- Arrange/Act/Assert structure used but not labeled with comments
+- Fixtures injected via pytest parameters, not instantiated in test bodies
+- Test classes organized by feature/behavior boundary, not by method-under-test
 
-### test_api_client.py (17 tests, @pytest.mark.api)
-- Test `_make_api_call()` HTTP methods (GET, POST, PUT)
-- HTTP status code handling (200, 204, error codes)
-- Netro-specific error codes (code 1 = invalid key, code 3 = rate limit)
-- Timeout handling
-- Connection error handling
-- Rate limit (throttle) enforcement and recovery
-- JSON response parsing
-
-### test_validation.py (24 tests, @pytest.mark.validation)
-- Device configuration validation: `validateDeviceConfigUi()`
-- Action configuration validation: `validateActionConfigUi()`
-- Plugin preference validation: `validatePrefsConfigUi()`
-- Serial number format validation
-- Polling interval constraints
-- Zone duration and delay constraints
-- Weather data range validation
-- Error message generation
-
-### test_actions.py (23 tests, @pytest.mark.actions)
-- Zone on/off actions: `actionControlSprinkler()`
-- Custom actions: `startZoneWithDelay()`, `reportWeather()`, `setNoWater()`, `setStandbyMode()`
-- Action parameter validation
-- Error condition handling
-- Trigger firing on success/failure
+**Markers defined in `pytest.ini`:**
+- `api` — Tests for API client functionality
+- `handlers` — Tests for device handler functionality
+- `validation` — Tests for configuration and action validation
+- `actions` — Tests for action callback methods
+- `weather` — Tests for Tomorrow.io weather integration
+- `integration` — Integration tests requiring external services
+- `slow` — Tests that take more than 1 second
 
 ## Mocking
 
-**Framework:** pytest-mock (via `mocker` fixture)
+**Framework:** `unittest.mock` (stdlib) — `Mock`, `patch`, `MagicMock`
 
-**Pattern:** Mock Indigo objects and requests library
-
-**Example (from conftest.py fixture):**
+**Standard mock pattern for HTTP requests:**
 ```python
-@pytest.fixture
-def mock_plugin(mocker):
-    """Create a mock Plugin instance."""
-    plugin = Plugin(
-        pluginId="com.simonmikey.netro",
-        pluginDisplayName="Netro Sprinklers",
-        pluginVersion="2.0",
-        pluginPrefs={}
-    )
-
-    # Mock logger
-    plugin.logger = mocker.MagicMock()
-
-    # Mock Indigo collections
-    mocker.patch("indigo.devices", MagicMock())
-    mocker.patch("indigo.trigger", MagicMock())
-
-    return plugin
-```
-
-**What to Mock:**
-- HTTP library: `requests.get()`, `requests.post()`, `requests.put()` via `mocker.patch()`
-- Indigo API: `indigo.devices`, `indigo.trigger`, device/action objects
-- Logger: `self.logger.info()`, `self.logger.error()`, etc.
-- File I/O: Configuration reads, if needed
-
-**Pattern for mocking requests:**
-```python
-def test_successful_get_request(mocker):
-    """Test successful GET request to API."""
+def test_make_request_success(self, client):
+    """Successful GET returns parsed JSON."""
     mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "status": "OK",
-        "data": {"device": {...}}
-    }
+    mock_response.json.return_value = {"status": "OK", "data": {}}
 
-    mocker.patch("requests.get", return_value=mock_response)
+    with patch("requests.get", return_value=mock_response):
+        result = client.get_device_info(serial="ABC123")
 
-    # Test code using API
-    result = plugin._make_api_call(url)
     assert result["status"] == "OK"
 ```
 
-**What NOT to Mock:**
-- Plugin class instantiation (test against real __init__)
-- Core business logic like throttle calculation
-- Datetime operations (use freezegun if time control needed)
-- Dictionary/list operations
+**Standard mock for logger (used in every test file):**
+```python
+@pytest.fixture
+def mock_logger():
+    """Create a mock logger for testing."""
+    logger = Mock()
+    logger.debug = Mock()
+    logger.info = Mock()
+    logger.warning = Mock()
+    logger.error = Mock()
+    logger.exception = Mock()
+    return logger
+```
+
+**Dependency injection via constructor (preferred over patching):**
+The extracted modules (api_client, device_handlers, tomorrow_client) accept `logger`, `prefs_getter`, and `prefs_setter` as constructor args. Tests pass mocks directly rather than patching module-level imports:
+```python
+@pytest.fixture
+def client(mock_logger, mock_prefs):
+    """Create a NetroAPIClient instance with mocked dependencies."""
+    prefs_getter, prefs_setter, _ = mock_prefs
+    return NetroAPIClient(
+        logger=mock_logger,
+        prefs_getter=prefs_getter,
+        prefs_setter=prefs_setter
+    )
+```
+
+**What to mock:**
+- `requests.get` / `requests.post` for all HTTP calls
+- `logger` — always inject mock logger in unit tests
+- `prefs_getter`/`prefs_setter` callables for API client state persistence
+- Indigo module — `indigo` is not installed in test environment; mock it if needed
+
+**What NOT to mock:**
+- `constants.py` values — use real constants
+- `exceptions.py` classes — use real exceptions
+- Pure utility functions in `utils.py` — test them directly
+- `validators.py` functions — test them directly (no side effects)
 
 ## Fixtures and Factories
 
-**Test Data Location:**
-- `tests/fixtures/` directory contains JSON response files
-- Files match API endpoint responses exactly
-- Examples: `device_info.json`, `schedules.json`, `moistures.json`, `sensor_data.json`
+**Shared fixtures in `conftest.py`** (`/Users/simon/vsCodeProjects/Indigo/netro/tests/conftest.py`):
 
-**Fixture Pattern (conftest.py):**
 ```python
 @pytest.fixture
-def mock_plugin(mocker):
-    """Return mock plugin instance with logger and device mocks."""
-    # ... setup code ...
-    return plugin
+def mock_logger():
+    """Provides Mock with debug/info/warning/error/exception methods."""
 
 @pytest.fixture
-def mock_device(mocker):
-    """Return mock Indigo device."""
-    device = MagicMock()
-    device.id = 1
-    device.name = "Test Controller"
-    device.address = "0cb8152f9f78"  # Valid serial number format
-    device.states = {"id": "0cb8152f9f78"}
-    device.pluginProps = {"NumZones": 4}
-    return device
+def sample_api_response():
+    """Base successful API v1 response: {status: OK, data: {}, meta: {...}}"""
 
 @pytest.fixture
-def device_info_response():
-    """Load real API response from fixture file."""
-    with open("tests/fixtures/device_info.json") as f:
-        return json.load(f)
+def mock_prefs():
+    """Returns (prefs_getter, prefs_setter, prefs_data) tuple for API client tests."""
+
+@pytest.fixture
+def sample_api_v2_response():
+    """Base successful API v2 response with extended meta fields."""
+
+@pytest.fixture
+def sample_v2_device_info():
+    """Full device info v2 response with zones array."""
+
+@pytest.fixture
+def sample_v2_schedules():
+    """Schedules v2 response with ISO 8601 timestamps."""
+
+@pytest.fixture
+def sample_v2_sensor_data():
+    """Sensor data v2 response."""
 ```
 
-**Factory Pattern:**
+**Note:** `mock_logger` and `mock_prefs` are duplicated in `test_api_client.py` and `test_device_handlers.py` as local fixtures. Prefer the shared versions from `conftest.py` for new tests.
+
+**Test data pattern:**
+Fixtures return realistic dict structures matching the actual Netro API response format. Tests modify the returned dict for specific scenarios rather than creating new data from scratch:
 ```python
-def create_test_device(mocker, serial="0cb8152f9f78", name="Test"):
-    """Factory to create test devices with custom parameters."""
-    device = MagicMock()
-    device.address = serial
-    device.name = name
-    return device
+def test_device_offline(self, sprinkler_handler, sample_device_info_response):
+    sample_device_info_response["data"]["device"]["status"] = "OFFLINE"
+    states, is_online, _ = sprinkler_handler.process_device_info(
+        sample_device_info_response, "ABC123"
+    )
+    assert is_online is False
 ```
 
 ## Coverage
 
-**Requirements:** >70% (stated in CLAUDE.md, targeting 85%+)
+**Requirements:** 85% minimum enforced by `pytest.ini` (`fail_under = 85`)
 
-**View Coverage:**
+**Excluded from coverage:**
+- `*/tests/*` — test files themselves
+- `def __repr__`
+- `raise AssertionError`, `raise NotImplementedError`
+- `if __name__ == .__main__.:`
+- `if TYPE_CHECKING:`
+- `@abstractmethod`
+- Lines marked `# pragma: no cover`
+
+**Current coverage gaps:**
+- `plugin.py` — 0% (requires Indigo runtime; all tests bypass this file)
+- `api_client.py` — 17% (HTTP request paths require extensive mocking)
+- `device_handlers.py` — 10% (many handler paths not yet exercised)
+- `validators.py` — 10%
+- `utils.py` — 17%
+- `constants.py` — 100% (trivially satisfied)
+
+**View coverage:**
 ```bash
-# Terminal report
-pytest tests/ --cov --cov-report=term-missing
-
-# HTML report
-pytest tests/ --cov --cov-report=html
-open htmlcov/index.html
+python3 -m pytest  # Generates term-missing + HTML report
+open /Users/simon/vsCodeProjects/Indigo/netro/htmlcov/index.html
 ```
-
-**Coverage Configuration (pytest.ini):**
-```ini
-[coverage:run]
-source = .
-omit =
-    */tests/*
-    */test_*
-    */__pycache__/*
-
-[coverage:report]
-exclude_lines =
-    pragma: no cover
-    def __repr__
-    raise AssertionError
-    raise NotImplementedError
-    if __name__ == .__main__.:
-    if TYPE_CHECKING:
-    @abstractmethod
-```
-
-**Coverage Gaps (from analysis):**
-- Empty test files directory suggests tests may not be tracked in repo
-- pytest.ini shows full test infrastructure configured
-- Cached bytecode shows tests exist/existed (conftest, test_actions, test_validation, test_api_client)
 
 ## Test Types
 
-**Unit Tests** (primary - ~50 tests):
-- API call methods with mocked requests
-- Validation methods with various input combinations
-- Data transformation functions (timestamp conversion, list building)
-- Error handling (exceptions, error codes, graceful degradation)
-- Scope: Single method or small component
-- No external dependencies
+**Unit Tests (all current tests):**
+- Test individual modules in isolation
+- No Indigo runtime dependency
+- Fast, can run offline
+- Mock all external I/O
 
-**Integration Tests** (secondary - ~14 tests):
-- Test combinations of API calls and state updates
-- Mock Indigo device updates (updateStatesOnServer, replacePluginPropsOnServer)
+**Integration Tests (not yet implemented):**
 - Marked with `@pytest.mark.integration`
-- May test data flow across multiple methods
+- Would require live Netro API access
+- `docs/test_local_api.py` provides a standalone script for manual API testing against real hardware
 
-**E2E Tests** (standalone - docs/test_local_api.py):
-- Not part of pytest suite
-- Tests against real Netro API
-- Uses actual serial numbers from `.env` file
-- Location: `docs/test_local_api.py`
-- Usage: `python3 test_local_api.py --serial YOUR_SERIAL`
-- Read-only by default, write operations require `--full` flag
+**E2E Tests:**
+- Not implemented
+- Manual testing against Indigo server on `jarvis.local` is the current E2E approach
 
 ## Common Patterns
 
-**Async Testing Pattern:**
+**Async Testing:**
+Not applicable — plugin uses synchronous HTTP (`requests`) with Indigo's threading model. No async test patterns needed.
+
+**Error Testing:**
 ```python
-def test_concurrent_thread_exception_handling(mock_plugin):
-    """Test that runConcurrentThread swallows exceptions."""
-    mock_plugin._update_from_netro = MagicMock(side_effect=Exception("Test"))
+def test_raises_throttle_error_on_429(self, client):
+    """HTTP 429 response raises ThrottleDelayError."""
+    mock_response = MagicMock()
+    mock_response.status_code = 429
+    mock_response.raise_for_status.side_effect = requests.exceptions.HTTPError()
 
-    # Thread should continue despite exception
-    mock_plugin.runConcurrentThread()  # Within timeout
-
-    # Verify sleep was called (thread loop continued)
-    mock_plugin.sleep.assert_called()
+    with patch("requests.post", return_value=mock_response):
+        with pytest.raises(ThrottleDelayError):
+            client.start_zone(serial="ABC123", zone=1, duration=600)
 ```
 
-**Error Testing Pattern:**
+**Parametrize pattern (used in validators tests):**
 ```python
-def test_api_call_handles_connection_error(mocker, mock_plugin):
-    """Test error handling for connection failures."""
-    mocker.patch(
-        "requests.get",
-        side_effect=requests.exceptions.ConnectionError("Connection failed")
-    )
-
-    # Should raise exception but log gracefully
-    with pytest.raises(requests.exceptions.ConnectionError):
-        mock_plugin._make_api_call(url)
-
-    # Verify error logged
-    mock_plugin.logger.error.assert_called()
+@pytest.mark.parametrize("invalid_serial", ["", "ABC", "TOOLONGSERIAL1234"])
+def test_invalid_serial_rejected(self, invalid_serial):
+    is_valid, _, errors = validate_device_config({"address": invalid_serial}, "sprinkler")
+    assert is_valid is False
+    assert "address" in errors
 ```
 
-**Validation Testing Pattern:**
+**State assertion via dict comprehension:**
+Handler tests convert the returned state list to a dict for easy assertion:
 ```python
-def test_validate_device_config_requires_serial(mock_plugin):
-    """Test that serial number is required."""
-    valuesDict = {"address": ""}
-    typeId = "sprinkler"
-
-    is_valid, _, errorsDict = mock_plugin.validateDeviceConfigUi(
-        valuesDict, typeId, 0
-    )
-
-    assert not is_valid
-    assert "address" in errorsDict
-    assert "required" in errorsDict["address"].lower()
+states = zone_handler.extract_zone_states(sample_zones, zone_number=1)
+state_dict = {s["key"]: s["value"] for s in states}
+assert state_dict["enabled"] is True
+assert state_dict["smartMode"] == "SMART"
 ```
 
-**Rate Limit Testing Pattern:**
+**Validation return value unpacking:**
+All validator tests use 3-tuple unpacking to check each component separately:
 ```python
-def test_throttle_delay_prevents_api_calls(mock_plugin):
-    """Test that ThrottleDelayError blocks API calls."""
-    mock_plugin.throttle_next_call = datetime.now() + timedelta(minutes=1)
-
-    with pytest.raises(ThrottleDelayError) as exc_info:
-        mock_plugin._make_api_call(url)
-
-    assert "throttled" in str(exc_info.value).lower()
+is_valid, sanitized, errors = validate_device_config(values, "sprinkler")
+assert is_valid is True
+assert sanitized["address"] == "0123456789AB"
+assert errors == {}
 ```
-
-**Fixture Data Pattern:**
-```python
-def test_moisture_parsing(mock_plugin, device_info_response):
-    """Test parsing of moisture data from API response."""
-    # Load real API response from fixture
-    moisture_data = device_info_response["data"]["device"]["zones"][0]
-
-    # Test parsing logic
-    assert moisture_data["moisture"] == 45
-```
-
-## Test Dependencies
-
-**Runtime Dependencies** (auto-installed):
-- `requests==2.32.5` - Mocked in tests
-
-**Development Dependencies** (from DEPENDENCIES.md):
-- `pytest>=8.0.0` - Test runner
-- `pytest-cov>=4.1.0` - Coverage reporting
-- `pytest-mock>=3.12.0` - Mock/patch fixtures
-
-**Installation:**
-```bash
-pip install pytest>=8.0.0 pytest-cov>=4.1.0 pytest-mock>=3.12.0
-```
-
-## Notes on Current State
-
-**Test Infrastructure:**
-- pytest.ini fully configured with markers, discovery patterns, and coverage settings
-- tests/ directory structure in place with __pycache__ showing compiled tests existed
-- Coverage configuration defined but test source files not present in working tree
-
-**Implications:**
-- Tests may have been gitignored or removed
-- pytest configuration is ready for test implementation/recovery
-- Coverage reporting is set up and ready to use
-- Test markers (api, validation, actions, integration, slow) are defined for categorization
-
-**For Adding New Tests:**
-1. Create test files in `tests/` with `test_*.py` names
-2. Define test functions with `test_*` names
-3. Use fixtures from conftest.py for common setup
-4. Mark tests with appropriate marker: `@pytest.mark.api`, etc.
-5. Run with `pytest tests/ -v`
 
 ---
 
-*Testing analysis: 2026-02-01*
+*Testing analysis: 2026-04-11*

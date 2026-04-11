@@ -1,300 +1,191 @@
 # Codebase Structure
 
-**Analysis Date:** 2026-02-01
+**Analysis Date:** 2026-04-11
 
 ## Directory Layout
 
 ```
-netro/
-├── Netro Sprinklers.indigoPlugin/        # Plugin bundle (macOS app package)
+netro/                                          # Repo root
+├── Netro Sprinklers.indigoPlugin/              # Plugin bundle (loaded by Indigo server)
 │   └── Contents/
-│       ├── Info.plist                    # Plugin metadata and version
-│       ├── Server Plugin/
-│       │   ├── plugin.py                 # Main implementation (1635 lines)
-│       │   ├── Devices.xml               # Device type definitions
-│       │   ├── Actions.xml               # Custom action definitions
-│       │   ├── Events.xml                # Trigger event definitions
-│       │   ├── MenuItems.xml             # Plugin menu items
-│       │   ├── PluginConfig.xml          # Plugin settings UI
-│       │   └── requirements.txt           # Python dependencies
-│       └── Resources/                    # Web content and assets
-├── docs/                                 # Documentation
-│   ├── CLAUDE.md                         # Developer guide
-│   ├── NETRO_API.md                      # Complete API reference
-│   ├── API_NOTES.md                      # API quirks and discoveries
-│   ├── TESTING.md                        # Test suite guide
-│   ├── TROUBLESHOOTING.md                # User troubleshooting
-│   ├── LOCAL_TESTING.md                  # Standalone API tester guide
-│   ├── DEPENDENCIES.md                   # Package management
-│   └── test_local_api.py                 # Standalone API test utility
-├── tests/                                # Test suite (64 tests documented)
-│   ├── conftest.py                       # pytest fixtures (documented, not in repo)
-│   ├── test_api_client.py                # API tests (17 tests, documented)
-│   ├── test_validation.py                # Validation tests (24 tests, documented)
-│   ├── test_actions.py                   # Action tests (23 tests, documented)
-│   └── fixtures/                         # Mock API responses (documented)
-├── .planning/                            # GSD planning documents
-│   └── codebase/                         # Codebase analysis
-├── .github/                              # GitHub configuration
-│   └── workflows/                        # CI/CD workflows
-├── pytest.ini                            # pytest configuration
-├── README.md                             # User-facing plugin documentation
-├── CLAUDE.md                             # Developer guide (root level)
-└── .env                                  # Environment configuration (git-ignored)
+│       ├── Info.plist                          # Plugin metadata, version, bundle ID
+│       ├── Resources/
+│       │   └── icon.png                        # Plugin icon
+│       └── Server Plugin/                      # All Python source (Indigo loads this)
+│           ├── plugin.py                       # Main plugin class (entry point)
+│           ├── api_client.py                   # Netro API HTTP client
+│           ├── tomorrow_client.py              # Tomorrow.io weather API client
+│           ├── device_handlers.py              # API response → Indigo state transformers
+│           ├── validators.py                   # Pure config validation functions
+│           ├── constants.py                    # API URLs, defaults, event sets
+│           ├── exceptions.py                   # Custom exception hierarchy
+│           ├── utils.py                        # Unit conversions, dict helpers
+│           ├── Devices.xml                     # Indigo device type definitions + states
+│           ├── Actions.xml                     # Indigo action definitions
+│           ├── Events.xml                      # Indigo trigger/event definitions
+│           ├── MenuItems.xml                   # Plugin menu item definitions
+│           ├── PluginConfig.xml                # Plugin-level preferences UI
+│           └── requirements.txt               # Python dependencies
+├── tests/                                      # Test suite (runs outside Indigo)
+│   ├── conftest.py                             # Pytest fixtures (indigo mock, logger)
+│   ├── test_api_client.py                      # NetroAPIClient unit tests
+│   ├── test_base_modules.py                    # constants, exceptions, utils tests
+│   ├── test_device_handlers.py                 # SprinklerHandler, WhispererHandler tests
+│   ├── test_validators.py                      # validators.py unit tests
+│   ├── test_tomorrow_client.py                 # TomorrowClient unit tests
+│   ├── test_weather_integration.py             # Weather integration tests
+│   └── test_zone_handler.py                    # ZoneHandler unit tests
+├── docs/                                       # Developer documentation
+│   ├── CLAUDE.md                               # Plugin-specific dev guide (primary reference)
+│   ├── NETRO_API.md                            # Netro API v1 endpoint documentation
+│   ├── NETRO_API_V2.md                         # Netro API v2 endpoint documentation
+│   ├── API_NOTES.md                            # Known API quirks and limitations
+│   ├── TESTING.md                              # Testing guide
+│   ├── LOCAL_TESTING.md                        # Local/manual testing instructions
+│   ├── TROUBLESHOOTING.md                      # Common issues and fixes
+│   └── plans/                                  # Design documents
+│       ├── 2026-04-07-zone-devices-design.md
+│       └── 2026-04-07-zone-devices-plan.md
+├── .planning/                                  # GSD planning system
+│   ├── PROJECT.md                              # Project goals and scope
+│   ├── STATE.md                                # Current project state
+│   ├── MILESTONES.md                           # Milestone definitions
+│   ├── codebase/                               # Codebase analysis docs (this dir)
+│   ├── milestones/                             # Milestone files
+│   ├── phases/                                 # Completed phase plans + summaries
+│   └── research/                               # Research documents
+├── .github/workflows/
+│   ├── version-check.yml                       # CI: verifies PluginVersion bumped in PRs
+│   └── create-release.yml                      # CI: creates GitHub release on version tag
+├── pyproject.toml                              # Python project config (pytest, coverage)
+├── pytest.ini                                  # Pytest configuration
+├── htmlcov/                                    # HTML coverage report (generated, not committed)
+└── README.md                                   # Public-facing plugin README
 ```
 
 ## Directory Purposes
 
-**Netro Sprinklers.indigoPlugin:**
-- Purpose: macOS-compatible plugin bundle recognized by Indigo
-- Structure: Standard macOS app bundle structure with `Contents/` directory
-- Installed to: `/Library/Application Support/Perceptive Automation/Indigo 2023.2/Plugins/`
+**`Netro Sprinklers.indigoPlugin/Contents/Server Plugin/`:**
+- Purpose: All Python source that Indigo loads when the plugin is enabled
+- Contains: `plugin.py` (main), plus the extracted module files
+- Key files: `plugin.py` (coordinator), `api_client.py` (Netro HTTP), `device_handlers.py` (state transform)
+- Note: The `Server Plugin/` name is an Indigo convention — do not rename
 
-**Contents/Server Plugin:**
-- Purpose: Python plugin implementation and configuration
-- Contains: Main `plugin.py` class (inherits `indigo.PluginBase`), XML configuration files, dependencies list
-- Entry point: `plugin.py` - main Plugin class with all handlers
+**`tests/`:**
+- Purpose: Pytest test suite that runs outside Indigo (no Indigo server required)
+- Contains: One test file per source module; `conftest.py` provides `indigo` mock
+- Key files: `conftest.py` (mock setup), `test_api_client.py` (most critical coverage)
 
-**Contents/Info.plist:**
-- Purpose: Plugin metadata for Indigo and macOS
-- Contains: Version, bundle identifier, API version, GitHub info
-- Current: v2025.1.7, API v3.6, identifier `com.simons-plugins.netro`
+**`docs/`:**
+- Purpose: Developer-facing documentation and API reference
+- Contains: Guides for testing, API quirks, troubleshooting
+- Key files: `CLAUDE.md` (primary dev guide), `NETRO_API.md` / `NETRO_API_V2.md` (API reference)
 
-**Contents/Resources:**
-- Purpose: Static web assets (if using HTTP Responder features)
-- Current state: Exists but minimal content (not heavily used in this plugin)
+**`.planning/`:**
+- Purpose: GSD planning system — milestones, phases, research
+- Generated: No — manually maintained by GSD commands
+- Committed: Yes
 
-**docs/:**
-- Purpose: Developer and user documentation
-- CLAUDE.md: Comprehensive developer reference with architecture, workflow, code patterns
-- NETRO_API.md: Complete Netro API endpoint reference
-- API_NOTES.md: API quirks discovered during development (timestamps, device structure, offline status)
-- TESTING.md: How to run test suite and test patterns
-- TROUBLESHOOTING.md: User-facing troubleshooting guide
-- test_local_api.py: Standalone utility to test API calls against real Netro API
-
-**tests/:**
-- Purpose: Automated test suite (64 tests, >70% coverage)
-- conftest.py: pytest fixtures for mocking Indigo, device data, API responses
-- test_api_client.py: 17 tests for `_make_api_call()`, throttling, error handling
-- test_validation.py: 24 tests for config/action/device validation
-- test_actions.py: 23 tests for action execution and state updates
-- fixtures/: Mock Netro API response files
-- Run: `pytest tests/` with coverage
-
-**.planning/codebase/:**
-- Purpose: GSD (Generative Software Development) planning documents
-- Content: Architecture analysis, structure guide, conventions, testing patterns, concerns
-- Created by: `/gsd:map-codebase` command
-
-**.github/workflows/:**
-- Purpose: CI/CD pipeline configuration
-- Contains: GitHub Actions workflows for testing, linting, release automation
-
-**pytest.ini:**
-- Purpose: pytest configuration and options
-- Specifies: Test discovery, coverage settings, output format
-
-**README.md:**
-- Purpose: User-facing plugin documentation
-- Contains: Features, device types, setup instructions, API usage, troubleshooting links
+**`htmlcov/`:**
+- Purpose: Generated HTML coverage report from `pytest --cov`
+- Generated: Yes (by `pytest --cov --cov-report=html`)
+- Committed: Yes (`.gitignore` inside htmlcov excludes nothing — entire dir tracked)
 
 ## Key File Locations
 
 **Entry Points:**
-
-- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/plugin.py`: Main plugin implementation
-  - Class: `Plugin(indigo.PluginBase)` at line 132
-  - Lifecycle: `__init__` → `startup` → `runConcurrentThread` → `shutdown`
-
-- `Netro Sprinklers.indigoPlugin/Contents/Info.plist`: Plugin metadata
-  - Indigo reads this to identify plugin, load version, display name
-
-- `docs/test_local_api.py`: Standalone API testing tool
-  - Run: `python3 test_local_api.py --serial YOUR_SERIAL`
+- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/plugin.py`: Main plugin class, Indigo lifecycle
 
 **Configuration:**
-
-- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/PluginConfig.xml`: Plugin settings UI
-  - Fields: Polling interval, API timeout, max zone runtime, debug logging
-  - Validation: `validatePrefsConfigUi()` in plugin.py line 1031
-
-- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/Devices.xml`: Device type definitions
-  - Types: `sprinkler` (line 9), `Whisperer` (line 199)
-  - States: 40+ states for sprinkler (zones, schedules, moisture, API info)
-  - States: 15+ states for sensor (temperature, moisture, sunlight, battery)
+- `Netro Sprinklers.indigoPlugin/Contents/Info.plist`: Plugin version (`PluginVersion`), bundle ID
+- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/Devices.xml`: Device types and state definitions
+- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/PluginConfig.xml`: Plugin preferences UI
+- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/Actions.xml`: User-invokable actions
+- `pyproject.toml`: Test dependencies and coverage settings
+- `pytest.ini`: Test paths and options
 
 **Core Logic:**
-
-- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/plugin.py` key methods:
-  - `__init__` (line 157): Initialize plugin state
-  - `_make_api_call` (line 195): HTTP requests with throttling and error handling
-  - `_update_from_netro` (line 373): Main polling cycle, state refresh
-  - `runConcurrentThread` (line 810): Background polling loop (3+ minute interval)
-  - `actionControlSprinkler` (line 1238): Zone on/off actions
-  - `setNoWater` (line 1350): Rain delay action
-  - `setStandbyMode` (line 1383): Standby mode action
-  - `startZoneWithDelay` (line 1408): Delayed zone start action
-  - `reportWeather` (line 1479): Weather reporting action
+- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/api_client.py`: All Netro API HTTP calls
+- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/device_handlers.py`: State transformation
+- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/validators.py`: Config validation
+- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/constants.py`: All magic numbers and URLs
+- `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/tomorrow_client.py`: Weather API client
 
 **Testing:**
-
-- `tests/test_api_client.py`: API integration tests
-- `tests/test_validation.py`: Configuration validation tests
-- `tests/test_actions.py`: Action execution tests
-- `tests/conftest.py`: pytest fixtures (mocks, test data)
-- `docs/TESTING.md`: Testing guide and patterns
-
-**Documentation:**
-
-- `docs/CLAUDE.md`: Developer reference (architecture, patterns, quirks)
-- `docs/NETRO_API.md`: API endpoint reference with examples
-- `docs/API_NOTES.md`: Discovered API quirks and workarounds
-- `docs/TROUBLESHOOTING.md`: User issues and solutions
-- `README.md`: User-facing overview
+- `tests/conftest.py`: Shared fixtures including `indigo` module mock
+- `tests/test_api_client.py`: Most comprehensive test file
 
 ## Naming Conventions
 
 **Files:**
-
-- Python files: `plugin.py`, `test_*.py`, lowercase with underscores
-- XML files: `Devices.xml`, `Actions.xml`, `Events.xml`, `PluginConfig.xml`, `MenuItems.xml` (PascalCase)
-- Documentation: `UPPERCASE.md` (NETRO_API.md, API_NOTES.md, TROUBLESHOOTING.md)
-- Configuration: `pytest.ini`, `.env`, `.gitignore`
+- Python modules: `snake_case.py` (e.g., `api_client.py`, `device_handlers.py`)
+- Test files: `test_{module_name}.py` (e.g., `test_api_client.py`)
+- XML config files: `PascalCase.xml` (Indigo convention — `Devices.xml`, `Actions.xml`)
+- Docs: `UPPER_SNAKE.md` for reference docs, `lower-kebab-date-title.md` for plans
 
 **Directories:**
+- Indigo bundle: `Plugin Name.indigoPlugin` (spaces allowed, `.indigoPlugin` suffix required)
+- Plugin source: `Server Plugin/` (Indigo convention, fixed name)
 
-- Plugin bundle: `PluginName.indigoPlugin` (exact case match required by Indigo)
-- Server Plugin: `Server Plugin/` (space-separated, matches Indigo convention)
-- Source code: lowercase (`plugin.py`, not `Plugin.py`)
-- Documentation: `docs/` (lowercase)
-- Tests: `tests/` (lowercase)
-
-**Functions/Methods:**
-
-- Module-level: `convert_timestamp()` (line 101), `get_key_from_dict()` (line 117) - lowercase with underscores
-- Class methods (Plugin): `_make_api_call()` (private, single underscore prefix) - lowercase with underscores
-- Public methods: `actionControlSprinkler()`, `setNoWater()`, `startZoneWithDelay()` (camelCase, matches Indigo convention)
-- Private helpers: `_update_from_netro()`, `_get_device_dict()`, `_get_zone_dict()` (single underscore prefix)
-- Callback methods: `validatePrefsConfigUi()`, `deviceStartComm()`, `triggerStartProcessing()` (camelCase, matches Indigo callback names)
-
-**Variables:**
-
-- Instance: `self.throttle_next_call`, `self.pollingInterval`, `self.netro_devices` (camelCase with underscores for clarity)
-- Module-level constants: `NETRO_API_VERSION`, `DEFAULT_API_CALL_TIMEOUT`, `MINIMUM_POLLING_INTERVAL` (UPPER_SNAKE_CASE)
-- Local: `dev`, `dev_id`, `zone_dict`, `reply_dict` (lowercase with underscores)
-
-**Device IDs:**
-
-- Type IDs (in Devices.xml): `sprinkler` (lowercase), `Whisperer` (PascalCase)
-- State IDs (in Devices.xml): `status`, `activeZone`, `nextScheduleTime` (camelCase)
-- Action IDs (in Actions.xml): `setStandbyMode`, `setNoWater`, `startZoneWithDelay` (camelCase)
-- Event IDs (in Events.xml): `sprinklerError`, `commError` (camelCase)
+**Python identifiers:**
+- Constants: `SCREAMING_SNAKE_CASE` with `typing.Final`
+- Classes: `PascalCase` (e.g., `NetroAPIClient`, `SprinklerHandler`)
+- Methods/functions: `snake_case`; private helpers prefixed `_`
+- Indigo callback methods: `camelCase` (Indigo SDK convention, e.g., `runConcurrentThread`, `validateDeviceConfigUi`)
 
 ## Where to Add New Code
 
-**New Feature (e.g., smart scheduling):**
+**New API endpoint:**
+1. Add URL constant to `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/constants.py`
+2. Add convenience method to `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/api_client.py`
+3. Add processing to the appropriate handler in `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/device_handlers.py`
+4. Wire into polling timer logic in `plugin.py` `_update_sprinkler_device()` or `_update_whisperer_device()`
+5. Add tests in `tests/test_api_client.py` and `tests/test_device_handlers.py`
 
-1. **Add action definition:**
-   - Edit `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/Actions.xml`
-   - Add `<Action>` block with fields for user input
-   - Reference your callback method name
+**New device type:**
+1. Add device definition to `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/Devices.xml`
+2. Create new handler class in `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/device_handlers.py`
+3. Add update method to `plugin.py` (`_update_newtype_device()`)
+4. Add branch in `_update_from_netro()` for `dev.deviceTypeId == "newtype"`
+5. Add test file `tests/test_newtype_handler.py`
 
-2. **Implement callback:**
-   - Add method to `Plugin` class in `plugin.py`
-   - Follow naming: `def myNewAction(self, pluginAction, dev):`
-   - Check throttle state at start
-   - Make API call via `_make_api_call()`
-   - Fire trigger on failure: `self._fireTrigger("myActionFailed", dev.id)`
-   - Log success/failure: `self.logger.info()` or `self.logger.error()`
+**New validation:**
+- Add function to `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/validators.py`
+- Return `ValidationResult` tuple: `(bool, Dict, Dict)`
+- Import and call from appropriate `validate*ConfigUi` method in `plugin.py`
+- Add tests in `tests/test_validators.py`
 
-3. **Add event definition:**
-   - Edit `Events.xml` if feature can fail
-   - Add `<Event>` with IDs for error conditions
+**New Indigo action:**
+1. Define action in `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/Actions.xml`
+2. Implement callback in `plugin.py` following naming convention from Indigo SDK
+3. Validate input via `validators.validate_action_config()` pattern
 
-4. **Add tests:**
-   - Create or update test file in `tests/`
-   - Mock API responses in `tests/fixtures/`
-   - Test success and failure paths
-   - Test parameter validation
-   - Run: `pytest tests/test_actions.py::test_new_action -v`
-
-5. **Update documentation:**
-   - Add to `docs/CLAUDE.md` Architecture section
-   - Add API endpoint to `docs/NETRO_API.md`
-   - Add usage example to `README.md`
-
-**New Device Type (e.g., Smart Hose):**
-
-1. **Define device type:**
-   - Edit `Devices.xml`
-   - Add `<Device type="...">` block
-   - Define states and properties
-   - Example: `<Device type="hose" id="SmartHose">`
-
-2. **Add update logic:**
-   - Edit `_update_from_netro()` method
-   - Add device type check: `if dev.deviceTypeId == "SmartHose":`
-   - Call appropriate API endpoints
-   - Build state update list
-   - Update device: `dev.updateStatesOnServer(update_list)`
-
-3. **Add validation:**
-   - Update `validateDeviceConfigUi()` for device type validation
-   - Check serial number, capabilities, etc.
-
-4. **Add tests:**
-   - Test device discovery
-   - Test state updates
-   - Test error handling
-
-**Utility/Helper Function:**
-
-- Location: Add to top of `plugin.py` before Plugin class (around line 100)
-- Scope: Module-level functions for reusable logic
-- Example: `convert_timestamp()` (line 101), `get_key_from_dict()` (line 117)
-- Pattern: Use type hints where possible, add docstring
-- Test: Create unit tests in `tests/test_api_client.py` or new file
-
-**Error/Exception Handling:**
-
-- Location: Wrap in try/except in appropriate layer (API, Control, Data Sync)
-- Pattern: Log error with context, fire trigger if user action failed, continue execution
-- Never: Crash plugin or exit background thread
-- Always: Re-raise connection errors in API layer, catch in Control/Data layers
+**Utilities:**
+- Shared helpers with no plugin dependencies: `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/utils.py`
 
 ## Special Directories
 
-**Netro Sprinklers.indigoPlugin:**
-- Purpose: macOS app bundle structure (required format for Indigo)
-- Generated: No (hand-authored structure)
+**`Netro Sprinklers.indigoPlugin/`:**
+- Purpose: Indigo plugin bundle (directory with `.indigoPlugin` extension loaded as app bundle)
+- Generated: No
+- Committed: Yes — all source is inside the bundle
+
+**`htmlcov/`:**
+- Purpose: HTML coverage report from pytest
+- Generated: Yes, by `pytest --cov --cov-report=html` from repo root
+- Committed: Yes (tracked in git)
+
+**`.planning/`:**
+- Purpose: GSD project management system
+- Generated: Partially (by GSD commands)
 - Committed: Yes
-- Note: Entire directory is the installable plugin; contains source and all resources
 
-**tests/fixtures/:**
-- Purpose: Mock Netro API response JSON files
-- Generated: No (hand-authored mock data)
+**`tests/`:**
+- Purpose: Test suite lives outside the plugin bundle (can't be bundled with plugin)
+- Generated: No
 - Committed: Yes
-- Structure: Filename matches endpoint (e.g., `device_info_response.json`)
-
-**.planning/codebase/:**
-- Purpose: GSD (Generative Software Development) analysis documents
-- Generated: Yes (by `/gsd:map-codebase` and `/gsd:map-phase` commands)
-- Committed: Yes (part of development planning)
-- Created by: Claude Code via GSD orchestrator
-
-**.github/workflows/:**
-- Purpose: CI/CD pipeline automation (GitHub Actions)
-- Generated: No (hand-authored workflows)
-- Committed: Yes
-- Files: Test runs, linting, release automation
-
-**Contents/Packages/:**
-- Purpose: Bundled Python dependencies (if used)
-- Generated: No in this plugin (uses Indigo-provided requests library)
-- Committed: No
-- Note: Could contain vendored dependencies if needed
+- Note: `sys.path` manipulation in `conftest.py` makes plugin source importable for tests
 
 ---
 
-*Structure analysis: 2026-02-01*
+*Structure analysis: 2026-04-11*

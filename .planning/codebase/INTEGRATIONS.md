@@ -1,206 +1,129 @@
 # External Integrations
 
-**Analysis Date:** 2026-02-01
+**Analysis Date:** 2026-04-11
 
 ## APIs & External Services
 
-**Netro Smart Irrigation API:**
-- Service: Netro Public API (NPA) v1
-- What it's used for: Complete control and monitoring of Netro sprinkler controllers and Whisperer sensors
-  - SDK/Client: `requests` library (2.32.5)
-  - Auth: Device serial number as URL parameter (`key={serial}`)
-  - Base URL: `http://api.netrohome.com/npa/v1/`
+**Netro Public API (NPA) — Primary:**
+- Netro smart irrigation controller API — device info, schedules, moisture levels, watering control, rain delay, sensor data, weather reporting
+  - SDK/Client: `NetroAPIClient` class in `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/api_client.py`
+  - Auth: Device serial number (v1) passed as `?key=<serial>` query param; API key (v2) passed the same way
+  - Base URLs:
+    - v1: `https://api.netrohome.com/npa/v1/` (serial auth)
+    - v2: `https://api.netrohome.com/npa/v2/` (API key auth)
+  - Rate limit: 2000 tokens/device/day; HTTP 429 or error code 3 triggers throttle
+  - Throttle handling: state persisted to `pluginPrefs["throttle_state"]` as JSON; auto-restores on plugin restart
+  - Supported endpoints (both v1 and v2 unless noted):
+    - `info.json` — device status and zone info
+    - `schedules.json` — watering schedules
+    - `moistures.json` — per-zone moisture levels
+    - `sensor_data.json` — Whisperer soil sensor readings
+    - `water.json` — start watering (zones, duration, delay)
+    - `stop_water.json` — stop active watering
+    - `set_status.json` — online/standby toggle
+    - `no_water.json` — rain delay (N days)
+    - `report_weather.json` — push local weather data to improve smart scheduling
+    - `set_moisture.json` — override zone moisture
+    - `events.json` — device events (v2 only; online/offline/schedule start/end)
 
-**Supported Devices:**
-- Netro Sprite
-- Netro Pixie
-- Netro Spark
-- Whisperer soil moisture sensors
-
-## API Endpoints
-
-Location: `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/plugin.py:60-74`
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `info.json` | GET | Get device status, zones, model, serial number |
-| `schedules.json` | GET | Get current and upcoming watering schedules |
-| `moistures.json` | GET | Get soil moisture levels per zone |
-| `sensor_data.json` | GET | Get Whisperer sensor readings (moisture, temp, sunlight) |
-| `water.json` | POST | Start watering zone(s) with optional delay/schedule |
-| `stop_water.json` | POST | Stop all watering |
-| `set_status.json` | POST | Set standby mode on/off |
-| `no_water.json` | POST | Set rain delay (N days no watering) |
-| `report_weather.json` | POST | Report local weather for AI scheduling |
-| `zone/start` | PUT | Start specific zone (alternative endpoint) |
-
-## Rate Limiting
-
-**API Quota:**
-- Daily limit: 2,000 API calls per day
-- Reset time: Midnight UTC (stored in `meta.token_reset`)
-- Remaining quota: Tracked in `meta.token_remaining`
-
-**Plugin Rate Limit Management:**
-- Location: `plugin.py:91-98, 195-335`
-- Throttle enforcement: 61-minute backoff on HTTP 429 or API error code 3
-- Throttle state: `self.throttle_next_call` datetime
-- Automatic reset: Clears when expiry time passes
-- Default polling (3 min): ~480 calls/day (safe)
-- Aggressive polling (1 min): ~1440 calls/day (risky)
-
-**Error Handling:**
-- HTTP 429 responses trigger `ThrottleDelayError` exception
-- Netro API error code 3 (rate limit) parsed from JSON response
-- Fallback to 61-minute delay if reset time cannot be parsed
-- Logs warning and fires "rateLimitExceeded" trigger
+**Tomorrow.io Weather API — Secondary:**
+- Real-time weather and daily forecast fetched to report to Netro's `report_weather` endpoint, improving smart irrigation scheduling
+  - SDK/Client: `TomorrowClient` class in `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/tomorrow_client.py`
+  - Auth: API key passed as `?apikey=<key>` query param; key stored in `pluginPrefs` (configured via `PluginConfig.xml` UI)
+  - Endpoints used:
+    - `https://api.tomorrow.io/v4/weather/realtime` — current conditions
+    - `https://api.tomorrow.io/v4/weather/forecast` — daily forecast (`timesteps=1d`)
+  - Response format: metric units (Celsius, mm, m/s, hPa)
+  - Weather codes mapped to Netro conditions (0=Clear, 1=Cloudy, 2=Rain, 3=Snow, 4=Wind) via `_TOMORROW_TO_NETRO_CONDITION` dict in `tomorrow_client.py`
+  - Default poll interval: 30 min realtime, 4 hours forecast (configurable via `pluginPrefs`)
+  - Free tier provides ~6 days of daily forecast data
 
 ## Data Storage
 
-**In-Memory Caching:**
-- `self.person` - Cached device data from last API call
-  - Structure: `{"id": serial, "devices": [...]}`
-  - Updated every poll cycle in `_update_from_netro()`
-- `self.netro_devices` - Flattened list of cached devices
-- `self.key_val_list` - Cached Whisperer sensor readings
-
-**Indigo Device State Storage:**
-- Device states for sprinkler controllers:
-  - `id` - Controller serial number
-  - `status` - ONLINE/OFFLINE
-  - `activeZone` - Currently watering zone (1-16)
-  - `activeSchedule` - Current schedule type (Smart, Manual, etc.)
-  - `nextScheduleTime` - Next scheduled watering timestamp
-  - `nextScheduleZone` - Next zone name
-  - `token_remaining` - API calls left today
-  - `zone_1_moisture` through `zone_16_moisture` - Per-zone moisture %
-  - `paused`, `scheduleModeType`, `model`, `api_version` - Metadata
-
-- Device states for Whisperer sensors:
-  - `sensorValue` - Current moisture percentage
-  - `humidity` - Soil moisture
-  - `temperature` - Celsius reading
-  - `soilTemperature` - Same as temperature
-  - `sunlight` - Lux reading
-  - `batteryLevel` - Battery percentage
-  - `readingTime`, `readingLocalDate`, `readingLocalTime` - Timestamps
-  - `token_remaining`, `token_reset` - API quota info
-
 **Databases:**
-- None used - pure API integration with in-memory caching
+- None — no external database
+
+**Plugin Preferences (Indigo-managed persistence):**
+- All persistent state stored in Indigo's `pluginPrefs` dict
+- Key entries:
+  - `throttle_state` — JSON blob with per-device token budgets and throttle expiry
+  - `showDebugInfo`, `apiTimeout`, polling interval prefs
+  - Tomorrow.io API key and location
+- Access pattern: `self.pluginPrefs.get(key, default)` / `self.pluginPrefs.__setitem__(key, value)`
+- Callbacks passed into `NetroAPIClient`: `prefs_getter` and `prefs_setter` lambdas (in `plugin.py` at `NetroAPIClient` instantiation)
 
 **File Storage:**
-- None - all configuration in Indigo database
+- Local filesystem only — plugin icon at `Netro Sprinklers.indigoPlugin/Contents/Resources/icon.png`
+- No file-based data storage
 
 **Caching:**
-- In-memory only, no persistence across plugin restarts
-- Cache refreshed every polling interval (default 3 minutes)
+- In-memory only — device state cached in `self.person`, `self.netro_devices`, `self.zone_handler` during plugin runtime
+- Throttle state persisted to `pluginPrefs` across restarts
 
 ## Authentication & Identity
 
-**Auth Provider:**
-- Custom: Serial number-based authentication
-- Implementation: Device serial number passed as `key` parameter in all API calls
-  - Query parameter format: `?key={serial}` for GET requests
-  - JSON body format: `{"key": "{serial}", ...}` for POST/PUT requests
-- Serial number location: Device configuration (set by user during setup)
-- Serial number source: Found on physical device or Netro mobile app Settings
+**Netro v1 Auth:**
+- Device serial number — passed as URL query param `?key=<serial>`
+- No bearer tokens; no user account credentials
 
-**Security Considerations:**
-- Serial numbers are not secret - Netro treats them as public
-- Serial number grants full API access to controller
-- No bearer tokens, API keys, or OAuth used
-- Plugin requires active internet connection to api.netrohome.com
+**Netro v2 Auth:**
+- API key — passed as URL query param `?key=<api_key>`
+- Configured per Indigo device in device config UI
+
+**Tomorrow.io Auth:**
+- API key — passed as `?apikey=<key>` query param
+- Configured at plugin level via `PluginConfig.xml`; stored in `pluginPrefs`
+- Key is masked in debug logs: `url.split("key=")[0] + "key=***"` (in `api_client.py` `make_request`)
 
 ## Monitoring & Observability
 
 **Error Tracking:**
-- None (no external error tracking service)
-- All errors logged to Indigo Event Log via `self.logger`
+- None (no Sentry, Rollbar, or similar)
 
-**Logging:**
-- Framework: Indigo's built-in logging (`indigo.PluginBase.logger`)
-- Levels used:
-  - `logger.debug()` - Verbose output, API call details
-  - `logger.info()` - Normal operation, state changes
-  - `logger.warning()` - Rate limit warnings, token low
-  - `logger.error()` - API errors, validation failures
-  - `logger.exception()` - Full stack traces (via traceback format)
-- Destination: Indigo Event Log (viewable in Indigo UI)
+**Logs:**
+- Indigo event log via `self.logger` (provided by `indigo.PluginBase`)
+- Log levels: `debug`, `info`, `warning`, `error`, `exception`
+- Connection errors suppressed after first occurrence to avoid log spam (`_last_error_type` field in `NetroAPIClient`)
+- API key values masked before logging
 
-**Monitoring Points:**
-- API token counts logged at polling (tokens <50: error, <200: warning, <500: info)
-- Connection errors logged once, then silent retries
-- Throttle state displayed in error messages with retry time
-- Device online/offline status updated every poll
+## CI/CD & Deployment
+
+**Hosting:**
+- Plugin runs on macOS Indigo server (typically `jarvis.local` per workspace CLAUDE.md)
+- No cloud hosting
+
+**CI Pipeline:**
+- None detected (no `.github/workflows/`, no CircleCI, no Travis)
+- Manual deployment: copy plugin bundle to `/Volumes/Macintosh HD-1/Library/Application Support/Perceptive Automation/Indigo 2025.1/Plugins/`
+
+**Version Control:**
+- GitHub: `https://github.com/simons-plugins/netro-indigo.git`
+- Version in `Info.plist`: `PluginVersion = 2026.4.0`
+
+## Environment Configuration
+
+**Required configuration (set via Indigo plugin UI, stored in pluginPrefs):**
+- Netro device serial number or API key — per Indigo device
+- Tomorrow.io API key — plugin-level preference (optional; disables weather reporting if absent)
+- Tomorrow.io location string (lat,lon or place name) — plugin-level preference
+
+**Dev/test environment:**
+- `.env` file present but git-ignored; used for local testing (likely contains test API keys)
+- `docs/test_local_api.py` — manual local API testing script
+
+**Secrets location:**
+- Runtime: Indigo `pluginPrefs` (encrypted by Indigo/macOS Keychain)
+- Development: `.env` file (git-ignored)
 
 ## Webhooks & Callbacks
 
 **Incoming:**
-- None - plugin uses pull model (polling) not push (webhooks)
+- None — plugin polls Netro API on a timer; no webhooks received
 
 **Outgoing:**
-- None - Netro API does not provide webhook support
-- Plugin can send data via `report_weather.json` endpoint but does not receive callbacks
-
-**Internal Callbacks (Indigo Framework):**
-- Location: `plugin.py:1162-1233`
-- `deviceStartComm()` - Triggers initial API update when device enabled
-- `deviceStopComm()` - Called when device disabled
-- `triggerStartProcessing()` - Called when Indigo trigger enabled
-- `triggerStopProcessing()` - Called when Indigo trigger disabled
-- `closedPrefsConfigUi()` - Applies config changes without plugin restart
-
-## Events & Triggers
-
-**Plugin-defined Triggers** (defined in `Events.xml`):
-- `sprinklerError` - Zone start, stop, or standby mode failures
-- `commError` - API communication failures
-- `rateLimitExceeded` - API rate limit hit
-- `setNoWater` - Rain delay action failed
-- `setStandbyFailed` - Standby mode action failed
-- `startZoneFailed` - Zone start action failed
-- `stopFailed` - Stop all zones action failed
-- `getScheduleCall` - Schedule fetch failed
-- `personInfoCall` - Device info fetch failed
-- `forecastCall` - Forecast/weather fetch failed
-
-**Trigger Firing:**
-- Location: `plugin.py:1134-1174`
-- Method: `_fireTrigger(event, dev_id=None)`
-- Fired during API errors to enable user automation
-- Example: Alert user when rate limit exceeded
-
-**Standard Indigo Triggers Used:**
-- `RequestStatus` action - Forces immediate API update
-- Sprinkler Zone On/Off actions - Standard Indigo sprinkler control
-
-## Plugin Configuration Flow
-
-1. **User installs plugin** → Indigo loads `Info.plist`
-2. **User configures plugin** → Sets polling interval, timeout, max zone runtime in `PluginConfig.xml` UI
-3. **User creates device** → Specifies Netro controller serial number
-4. **Plugin validates config** → `validateDeviceConfigUi()` and `validatePrefsConfigUi()`
-5. **Device enabled** → `deviceStartComm()` triggers immediate `_update_from_netro()` call
-6. **Concurrent thread starts** → Polls API every N minutes (minimum 3)
-7. **API responses parsed** → Device states updated in Indigo
-8. **User creates actions** → Custom actions for rain delay, weather reporting, zone delay
-9. **User creates triggers** → Event triggers fire on errors
-
-## Environment Configuration
-
-**Required env vars:**
-- None - all configuration via Indigo UI
-
-**Secrets location:**
-- Device serial numbers stored in Indigo device configuration
-- Not in environment variables or config files
-- Stored encrypted by Indigo database
-
-**Connection Testing:**
-- Plugin includes standalone test utility: `docs/test_local_api.py`
-- Useful for debugging API connectivity before plugin integration
+- `report_weather` POST to Netro API — plugin pushes local weather data to Netro to influence smart scheduling
+- All other interactions are GET/POST polling (not event-driven from the plugin's perspective)
 
 ---
 
-*Integration audit: 2026-02-01*
+*Integration audit: 2026-04-11*
