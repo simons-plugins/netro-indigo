@@ -885,9 +885,10 @@ class Plugin(indigo.PluginBase):
                 else:
                     dev.setErrorStateOnServer('')
 
-                # Skip state update if the reading hasn't changed — this keeps
+                # Skip full state update if the reading hasn't changed — this keeps
                 # Indigo's lastChanged reflecting when new sensor data arrived,
-                # not when we last polled the API
+                # not when we last polled the API. Still update token/time states
+                # which change every poll regardless of sensor readings.
                 new_reading_id = next(
                     (s["value"] for s in states if s["key"] == "readingID"), None
                 )
@@ -897,8 +898,13 @@ class Plugin(indigo.PluginBase):
                     and current_reading_id is not None
                     and str(new_reading_id) == str(current_reading_id)
                 ):
+                    # Update only metadata states that change every poll
+                    meta_keys = {"token_remaining", "token_reset", "time", "last_active", "api_last_active"}
+                    meta_states = [s for s in states if s["key"] in meta_keys]
+                    if meta_states:
+                        dev.updateStatesOnServer(meta_states)
                     self.logger.debug(
-                        f"Sensor '{dev.name}' reading unchanged (ID {new_reading_id}), skipping update"
+                        f"Sensor '{dev.name}' reading unchanged (ID {new_reading_id}), updated metadata only"
                     )
                     return
 
