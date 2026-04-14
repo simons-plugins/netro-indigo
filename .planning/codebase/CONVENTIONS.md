@@ -1,201 +1,138 @@
-# Coding Conventions
+# CONVENTIONS.md — Code Conventions
 
-**Analysis Date:** 2026-04-11
+## Python Style
 
-## Naming Patterns
+- **Style guide**: Google Python Style Guide with Indigo SDK conventions
+- **Line length**: 120 characters (set in `pyproject.toml`)
+- **String formatting**: f-strings throughout (Python 3.10+)
+- **Type hints**: Present in extracted modules (`api_client.py`, `validators.py`,
+  `device_handlers.py`); absent in `plugin.py` (tech debt)
+- **Constants**: `SCREAMING_SNAKE_CASE` with `typing.Final` for immutability
+- **Dataclasses**: Used for structured data (`DeviceTokenState` in `api_client.py`,
+  `ValidationResult` alias in `validators.py`)
 
-**Files:**
-- `snake_case.py` for all Python source files: `api_client.py`, `device_handlers.py`, `tomorrow_client.py`, `validators.py`, `utils.py`, `constants.py`, `exceptions.py`
-- `test_<module>.py` for test files: `test_api_client.py`, `test_device_handlers.py`
-- XML config files use PascalCase: `Devices.xml`, `Actions.xml`, `PluginConfig.xml`
+## Naming Conventions
 
-**Functions and Methods:**
-- `snake_case` for all module-level functions: `validate_device_config()`, `convert_weather_us_to_metric()`, `get_key_from_dict()`
-- `camelCase` for Indigo framework callbacks (required by SDK): `actionControlSprinkler()`, `validateDeviceConfigUi()`, `runConcurrentThread()`
-- Private methods prefixed with underscore: `_make_api_call()`, `_get_device_dict()`, `_save_throttle_state()`
-- Static helpers prefixed with underscore if module-private: `_slugify()`
+Indigo requires camelCase method names for its callbacks; pylint is configured
+to allow this:
 
-**Variables:**
-- `snake_case` for local variables and instance attributes: `token_remaining`, `prefs_getter`, `device_handlers`
-- `camelCase` for Indigo-required attribute names: `pluginPrefs`, `pluginId`, `triggerDict`, `serialNo`
-- Timer attributes prefixed with `_next_`: `_next_device_info_update`, `_next_schedules_update`
-- Interval attributes prefixed with `_` and suffixed with `_interval`: `_events_interval`, `_weather_update_interval`
+```
+# Indigo-required camelCase callbacks
+def actionControlSprinkler(self, action, dev): ...
+def validateDeviceConfigUi(self, values, type_id, dev_id): ...
+def triggerStartProcessing(self, trigger): ...
 
-**Constants:**
-- `SCREAMING_SNAKE_CASE` throughout `constants.py`: `MAX_ZONE_DURATION_SECONDS`, `DEFAULT_API_TIMEOUT_SECONDS`, `TOKEN_PAUSE_THRESHOLD`
-- Annotated with `typing.Final` to indicate immutability: `NETRO_API_VERSION: Final[str] = "1"`
-- Each constant has a docstring on the following line explaining purpose
+# Internal helper methods use snake_case
+def _get_device_auth(self, dev): ...
+def _update_from_netro(self): ...
+def _ensure_zone_devices(self, parent_dev, zones_data): ...
+```
 
-**Classes:**
-- `PascalCase` for all class names: `NetroAPIClient`, `SprinklerHandler`, `WhispererHandler`, `ZoneHandler`, `DeviceTokenState`
-- Exception classes named `Netro<Type>Error` inheriting from `NetroError`: `ThrottleDelayError`, `NetroAPIError`
+Private helpers are prefixed with `_`.
 
-**Type Aliases:**
-- Defined at module level with docstring: `ValidationResult = Tuple[bool, Dict[str, Any], Dict[str, str]]`
+## Docstrings
 
-## Code Style
+All public methods and classes have Google-style docstrings:
 
-**Formatting:**
-- No formatter configured (no `.prettierrc`, `black`, or `autopep8` config)
-- Max line length: 120 characters (configured in `pyproject.toml` `[tool.pylint.format]`)
-- 4-space indentation (Python standard)
-
-**Linting:**
-- `pylint` with target score 9.0 (`fail-under = 9.0` in `pyproject.toml`)
-- Key rules disabled for Indigo plugin patterns:
-  - `too-many-lines` — large plugin.py by design
-  - `too-many-public-methods` — Indigo requires many callbacks
-  - `invalid-name` — Indigo requires camelCase callbacks
-- `method-rgx = "[a-z_][a-zA-Z0-9_]{2,}$"` to allow both snake_case and camelCase methods
-
-## Import Organization
-
-**Order within files:**
-1. Python standard library: `import json`, `from datetime import datetime`
-2. Third-party: `import requests`
-3. Local plugin modules: `from constants import ...`, `from exceptions import ...`
-
-**Path management in tests:**
-Every test file manually inserts the Server Plugin directory into `sys.path` using `pathlib.Path`:
 ```python
-SERVER_PLUGIN_DIR = (
-    Path(__file__).parent.parent
-    / "Netro Sprinklers.indigoPlugin"
-    / "Contents"
-    / "Server Plugin"
-)
-sys.path.insert(0, str(SERVER_PLUGIN_DIR))
-```
-
-**Module `__all__` usage:**
-Modules with public APIs declare `__all__`: `validators.py`, `device_handlers.py`, `api_client.py`. This explicitly controls what is exported and documents the public surface.
-
-**Circular import prevention:**
-Each module has explicit rules in its docstring:
-- `constants.py` — no dependencies on other plugin modules
-- `exceptions.py` — no dependencies on other plugin modules
-- `utils.py` — no dependencies on other plugin modules
-- `validators.py` — only imports from `constants.py`
-- `device_handlers.py` — only imports from `constants.py` and `utils.py`
-- `api_client.py` — only imports from `constants.py` and `exceptions.py`
-
-## Error Handling
-
-**Exception hierarchy:**
-All plugin exceptions inherit from `NetroError` (in `exceptions.py`):
-```
-NetroError (base)
-├── ThrottleDelayError   - API rate limit exceeded
-├── NetroAPIError        - API returned error response
-├── NetroConnectionError - Network connection failed
-└── NetroTimeoutError    - Request timed out
-```
-
-**Exception constructors:**
-All custom exceptions take `message: str` as first arg with a sensible default, plus context-specific optional attributes (`retry_after`, `status_code`, `error_code`, `timeout_seconds`). Always call `super().__init__(message)`.
-
-**Fail gracefully pattern:**
-```python
-# From utils.py - silent fallback for API response parsing
-try:
-    return data[key]
-except KeyError:
-    return "unavailable from API" if default is None else default
-except (TypeError, AttributeError):
-    return "unknown error" if default is None else default
-```
-
-**Connection error suppression:**
-Plugin tracks `_displayed_connection_error` to log network errors once then suppress repeats:
-```python
-if not self._displayed_connection_error:
-    self.logger.error("Timeout - will retry silently")
-    self._displayed_connection_error = True
-```
-
-**Throttle management:**
-`ThrottleDelayError` is raised and caught at the API client level. Plugin checks `client.is_throttled` before making calls. State is persisted across restarts via `pluginPrefs`.
-
-## Logging
-
-**Framework:** Indigo's built-in logger via `self.logger` (injected as constructor argument in extracted modules)
-
-**Log methods used:**
-- `self.logger.debug(...)` — detailed trace, only shown when debug enabled
-- `self.logger.info(...)` — significant state changes, startup, successful operations
-- `self.logger.warning(...)` — token budget warnings (<200 remaining), non-fatal anomalies
-- `self.logger.error(...)` — failures that degrade functionality, first-occurrence connection errors
-- `self.logger.exception(exc)` — unexpected exceptions with full traceback
-
-**Logger injection pattern:**
-Extracted modules (api_client, device_handlers, tomorrow_client) receive logger as constructor arg with fallback to module logger:
-```python
-def __init__(self, logger=None):
-    self.logger = logger or logging.getLogger(__name__)
-```
-
-## Comments
-
-**Module docstrings:**
-Every module has a docstring describing purpose, key features, dependency rules, and usage. Format is plain prose, not Google/NumPy style.
-
-**Class docstrings:**
-PascalCase classes have docstrings covering purpose, key attributes, and usage examples.
-
-**Method docstrings:**
-All public methods use Google-style Args/Returns/Raises sections:
-```python
-def process_device_info(self, api_response, serial, api_version="1"):
-    """Process device info API response.
+def _get_device_auth(self, dev):
+    """Get API authentication key and version for a device.
 
     Args:
-        api_response: Dict with Netro API response structure
-        serial: Device serial number for logging
-        api_version: API version string ("1" or "2")
+        dev: Indigo device with pluginProps
 
     Returns:
-        Tuple of (states_list, is_online, device_data_dict)
+        Tuple of (key, api_version) where key is the auth credential
+        and api_version is "1" or "2"
     """
 ```
 
-**Section separators:**
-Long files use `# =============================================================================` banners to divide logical sections (e.g., "API Configuration", "Default Values", "Event Sets" in `constants.py`).
+Module-level docstrings are required and describe purpose, classes exported,
+and any dependency constraints (e.g. "does not import indigo").
 
-**Inline comments:**
-Used for non-obvious logic: API quirks, backward compatibility notes, legacy constants. Example: `# Legacy constant — kept for backward compatibility during migration`.
+## Logging
 
-**pylint inline disables:**
-Used sparingly at class/method level with explicit reason:
+Uses `self.logger` in `Plugin` (injected by `indigo.PluginBase`). All other
+modules receive a logger via constructor injection:
+
 ```python
-# pylint: disable=too-many-public-methods,too-many-instance-attributes
-class Plugin(indigo.PluginBase):
+# Handlers and client accept optional logger
+def __init__(self, logger: Optional[logging.Logger] = None) -> None:
 ```
 
-## Function Design
+### Log levels
 
-**Size:** Large methods are accepted for `plugin.py` given Indigo's callback-driven architecture. Extracted utility modules (api_client, device_handlers, validators, utils) keep functions small and focused.
+| Level | When to use |
+|-------|-------------|
+| `debug` | Polling skips, raw API data, state before/after |
+| `info` | Successful API calls, device state changes, zone created/renamed |
+| `warning` | Token count low, Tomorrow.io misconfigured, non-fatal issues |
+| `error` | API errors, action failures, unexpected exceptions |
+| `exception` | Use in `except` blocks where traceback is needed — logs full stack |
 
-**Parameters:** Constructor dependency injection preferred over global state. Callbacks (prefs_getter, prefs_setter) passed as callables rather than direct object references to avoid circular imports.
+### Error suppression pattern
 
-**Return Values:**
-- Validators return 3-tuple: `(is_valid: bool, sanitized_values: dict, errors: dict)`
-- Handlers return lists of state dicts for `updateStatesOnServer()`
-- API methods return parsed JSON dict or raise typed exception
+Repeated connection errors are suppressed after the first display. The
+`_displayed_connection_error` flag in `Plugin.__init__` and equivalent logic
+in `NetroAPIClient` prevent log spam during extended outages:
 
-## Module Design
+```python
+if not self._displayed_connection_error:
+    self.logger.error("Connection failed - will retry silently")
+    self._displayed_connection_error = True
+# On next success: self._displayed_connection_error = False
+```
 
-**Exports:**
-Modules declare `__all__` to define their public API surface.
+## Error Handling Philosophy
 
-**Barrel files:**
-Not used. Each module is imported directly by name.
+"Fail gracefully, log details, continue operation."
 
-**Dataclasses:**
-Used for simple value objects: `DeviceTokenState` in `api_client.py`, `ValidationResult` type alias in `validators.py`.
+- API errors do not crash the polling loop — exceptions are caught at the
+  per-device level
+- Actions fire Indigo triggers on failure so users can automate responses
+- `traceback.format_exc(10)` is used for debug-level stack traces
+- Never expose serial numbers or API keys in log messages
 
-**Constants module:**
-All magic numbers and configuration strings live in `constants.py`. Do not define numeric literals in business logic — import the named constant.
+## Module Isolation Pattern
 
----
+All extracted modules (`api_client.py`, `device_handlers.py`, `validators.py`,
+`utils.py`, `constants.py`, `exceptions.py`) are designed with no `indigo`
+dependency. This is enforced by convention (not by import guards) and enables
+unit testing without the Indigo runtime.
 
-*Convention analysis: 2026-04-11*
+`plugin.py` is the only module that imports `indigo`. It acts as the
+coordinator that:
+1. Reads Indigo device/prefs state
+2. Calls extracted modules with plain Python data structures
+3. Writes results back to Indigo
+
+## Configuration Access
+
+Plugin preferences accessed via `self.pluginPrefs` (a dict-like object).
+Device configuration accessed via `dev.pluginProps`. Both are persisted by
+Indigo automatically.
+
+Throttle state is persisted to `pluginPrefs` via injected callbacks:
+
+```python
+self.api_client = NetroAPIClient(
+    prefs_getter=lambda: dict(self.pluginPrefs),
+    prefs_setter=lambda k, v: self.pluginPrefs.__setitem__(k, v)
+)
+```
+
+This allows the API client to remain `indigo`-free while still persisting
+state across plugin restarts.
+
+## Version Bumping
+
+Every PR must bump `PluginVersion` in
+`Netro Sprinklers.indigoPlugin/Contents/Info.plist`.
+
+Format: `YYYY.R.patch` — e.g. `2026.4.0`.
+
+- Patch bump for fixes and docs
+- Minor bump (R) for new features
+
+CI fails if the version already exists as a git tag. Do not merge with
+failing checks.

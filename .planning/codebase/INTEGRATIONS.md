@@ -1,129 +1,130 @@
-# External Integrations
+# INTEGRATIONS.md — External API Integrations
 
-**Analysis Date:** 2026-04-11
+## 1. Netro Public API (NPA)
 
-## APIs & External Services
+### Versions
 
-**Netro Public API (NPA) — Primary:**
-- Netro smart irrigation controller API — device info, schedules, moisture levels, watering control, rain delay, sensor data, weather reporting
-  - SDK/Client: `NetroAPIClient` class in `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/api_client.py`
-  - Auth: Device serial number (v1) passed as `?key=<serial>` query param; API key (v2) passed the same way
-  - Base URLs:
-    - v1: `https://api.netrohome.com/npa/v1/` (serial auth)
-    - v2: `https://api.netrohome.com/npa/v2/` (API key auth)
-  - Rate limit: 2000 tokens/device/day; HTTP 429 or error code 3 triggers throttle
-  - Throttle handling: state persisted to `pluginPrefs["throttle_state"]` as JSON; auto-restores on plugin restart
-  - Supported endpoints (both v1 and v2 unless noted):
-    - `info.json` — device status and zone info
-    - `schedules.json` — watering schedules
-    - `moistures.json` — per-zone moisture levels
-    - `sensor_data.json` — Whisperer soil sensor readings
-    - `water.json` — start watering (zones, duration, delay)
-    - `stop_water.json` — stop active watering
-    - `set_status.json` — online/standby toggle
-    - `no_water.json` — rain delay (N days)
-    - `report_weather.json` — push local weather data to improve smart scheduling
-    - `set_moisture.json` — override zone moisture
-    - `events.json` — device events (v2 only; online/offline/schedule start/end)
+Two API versions are supported simultaneously. Per-device version is
+auto-detected from device config: if an `apiKey` prop is set, v2 is used;
+otherwise v1 serial-number auth is used. Detection happens in
+`Plugin._get_device_auth(dev)` in
+`Netro Sprinklers.indigoPlugin/Contents/Server Plugin/plugin.py`.
 
-**Tomorrow.io Weather API — Secondary:**
-- Real-time weather and daily forecast fetched to report to Netro's `report_weather` endpoint, improving smart irrigation scheduling
-  - SDK/Client: `TomorrowClient` class in `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/tomorrow_client.py`
-  - Auth: API key passed as `?apikey=<key>` query param; key stored in `pluginPrefs` (configured via `PluginConfig.xml` UI)
-  - Endpoints used:
-    - `https://api.tomorrow.io/v4/weather/realtime` — current conditions
-    - `https://api.tomorrow.io/v4/weather/forecast` — daily forecast (`timesteps=1d`)
-  - Response format: metric units (Celsius, mm, m/s, hPa)
-  - Weather codes mapped to Netro conditions (0=Clear, 1=Cloudy, 2=Rain, 3=Snow, 4=Wind) via `_TOMORROW_TO_NETRO_CONDITION` dict in `tomorrow_client.py`
-  - Default poll interval: 30 min realtime, 4 hours forecast (configurable via `pluginPrefs`)
-  - Free tier provides ~6 days of daily forecast data
+### API v1
 
-## Data Storage
+- **Base URL**: `https://api.netrohome.com/npa/v1/`
+- **Auth**: Serial number passed as `?key={serial}` (GET) or `{"key": serial}` (POST body)
+- **Official docs**: https://www.netrohome.com/en/shop/articles/10
+- **Timestamp format**: Millisecond Unix epoch — **but often returned as strings**
+  (see `docs/API_NOTES.md` quirk #1)
 
-**Databases:**
-- None — no external database
+### API v2
 
-**Plugin Preferences (Indigo-managed persistence):**
-- All persistent state stored in Indigo's `pluginPrefs` dict
-- Key entries:
-  - `throttle_state` — JSON blob with per-device token budgets and throttle expiry
-  - `showDebugInfo`, `apiTimeout`, polling interval prefs
-  - Tomorrow.io API key and location
-- Access pattern: `self.pluginPrefs.get(key, default)` / `self.pluginPrefs.__setitem__(key, value)`
-- Callbacks passed into `NetroAPIClient`: `prefs_getter` and `prefs_setter` lambdas (in `plugin.py` at `NetroAPIClient` instantiation)
+- **Base URL**: `https://api.netrohome.com/npa/v2/`
+- **Auth**: Per-device 32-char API key, same parameter name `key`
+- **Obtain**: netrohome.com → Account → API Key → Generate (per device)
+- **Official docs**: https://netrohome.com/en/shop/user_guides/7
+- **Timestamp format**: ISO 8601 strings
+- **New in v2**: expanded device statuses, `events.json` endpoint, metric units
+  for weather, `token_limit` field in meta
 
-**File Storage:**
-- Local filesystem only — plugin icon at `Netro Sprinklers.indigoPlugin/Contents/Resources/icon.png`
-- No file-based data storage
+### Endpoints
 
-**Caching:**
-- In-memory only — device state cached in `self.person`, `self.netro_devices`, `self.zone_handler` during plugin runtime
-- Throttle state persisted to `pluginPrefs` across restarts
+All defined as `Final[str]` constants in
+`Netro Sprinklers.indigoPlugin/Contents/Server Plugin/constants.py`:
 
-## Authentication & Identity
+| Constant | v1 URL | v2 URL | Method |
+|----------|--------|--------|--------|
+| `DEVICE_INFO_ENDPOINT` / `_V2_` | `info.json` | `info.json` | GET |
+| `DEVICE_SCHEDULES_ENDPOINT` / `_V2_` | `schedules.json` | `schedules.json` | GET |
+| `DEVICE_MOISTURES_ENDPOINT` / `_V2_` | `moistures.json` | `moistures.json` | GET |
+| `DEVICE_SENSOR_DATA_ENDPOINT` / `_V2_` | `sensor_data.json` | `sensor_data.json` | GET |
+| `DEVICE_WATER_ENDPOINT` / `_V2_` | `water.json` | `water.json` | POST |
+| `DEVICE_STOP_WATER_ENDPOINT` / `_V2_` | `stop_water.json` | `stop_water.json` | POST |
+| `DEVICE_SET_STATUS_ENDPOINT` / `_V2_` | `set_status.json` | `set_status.json` | POST |
+| `DEVICE_NO_WATER_ENDPOINT` / `_V2_` | `no_water.json` | `no_water.json` | POST |
+| `DEVICE_REPORT_WEATHER_ENDPOINT` / `_V2_` | `report_weather.json` | `report_weather.json` | POST |
+| `DEVICE_SET_MOISTURE_ENDPOINT` / `_V2_` | `set_moisture.json` | `set_moisture.json` | POST |
+| `DEVICE_EVENTS_V2_ENDPOINT` | — | `events.json` | GET (v2 only) |
 
-**Netro v1 Auth:**
-- Device serial number — passed as URL query param `?key=<serial>`
-- No bearer tokens; no user account credentials
+### Rate Limiting
 
-**Netro v2 Auth:**
-- API key — passed as URL query param `?key=<api_key>`
-- Configured per Indigo device in device config UI
+- **Daily quota**: 2,000 calls/day per device (shared between v1 and v2 keys for the same device)
+- **Reset**: Midnight UTC
+- **HTTP 429**: Rate limit exceeded — plugin enforces a 61-minute lockout
+  (`THROTTLE_LIMIT_MINUTES = 61` in `constants.py`)
+- **Proactive pause**: When `token_remaining < TOKEN_PAUSE_THRESHOLD` (100),
+  polling is suspended before hitting the limit
+- **Warning threshold**: `TOKEN_WARNING_THRESHOLD = 200` — logs a warning
 
-**Tomorrow.io Auth:**
-- API key — passed as `?apikey=<key>` query param
-- Configured at plugin level via `PluginConfig.xml`; stored in `pluginPrefs`
-- Key is masked in debug logs: `url.split("key=")[0] + "key=***"` (in `api_client.py` `make_request`)
+### Polling budgets at default intervals
 
-## Monitoring & Observability
+| Interval | Calls/day | Safety |
+|----------|-----------|--------|
+| 3 min (minimum) | ~480 | Safe |
+| 5 min (events default) | ~288 | Very safe |
+| 10 min (device info/moisture default) | ~144 | Comfortable |
+| 30 min (schedules/sensor default) | ~48 | Very conservative |
 
-**Error Tracking:**
-- None (no Sentry, Rollbar, or similar)
+### Response envelope
 
-**Logs:**
-- Indigo event log via `self.logger` (provided by `indigo.PluginBase`)
-- Log levels: `debug`, `info`, `warning`, `error`, `exception`
-- Connection errors suppressed after first occurrence to avoid log spam (`_last_error_type` field in `NetroAPIClient`)
-- API key values masked before logging
+```json
+{
+  "status": "OK",
+  "data": { ... },
+  "meta": {
+    "token_remaining": 1850,
+    "token_reset": "2026-04-08T00:00:00"   // v2 ISO; v1 is Unix timestamp
+  }
+}
+```
 
-## CI/CD & Deployment
+Error codes: `1`=invalid key, `3`=rate limit, `4`=invalid device,
+`5`=server error, `6`=parameter error.
 
-**Hosting:**
-- Plugin runs on macOS Indigo server (typically `jarvis.local` per workspace CLAUDE.md)
-- No cloud hosting
+### Known API Quirks (see `docs/API_NOTES.md` for full details)
 
-**CI Pipeline:**
-- None detected (no `.github/workflows/`, no CircleCI, no Travis)
-- Manual deployment: copy plugin bundle to `/Volumes/Macintosh HD-1/Library/Application Support/Perceptive Automation/Indigo 2025.1/Plugins/`
-
-**Version Control:**
-- GitHub: `https://github.com/simons-plugins/netro-indigo.git`
-- Version in `Info.plist`: `PluginVersion = 2026.4.0`
-
-## Environment Configuration
-
-**Required configuration (set via Indigo plugin UI, stored in pluginPrefs):**
-- Netro device serial number or API key — per Indigo device
-- Tomorrow.io API key — plugin-level preference (optional; disables weather reporting if absent)
-- Tomorrow.io location string (lat,lon or place name) — plugin-level preference
-
-**Dev/test environment:**
-- `.env` file present but git-ignored; used for local testing (likely contains test API keys)
-- `docs/test_local_api.py` — manual local API testing script
-
-**Secrets location:**
-- Runtime: Indigo `pluginPrefs` (encrypted by Indigo/macOS Keychain)
-- Development: `.env` file (git-ignored)
-
-## Webhooks & Callbacks
-
-**Incoming:**
-- None — plugin polls Netro API on a timer; no webhooks received
-
-**Outgoing:**
-- `report_weather` POST to Netro API — plugin pushes local weather data to Netro to influence smart scheduling
-- All other interactions are GET/POST polling (not event-driven from the plugin's perspective)
+1. Timestamps sometimes returned as strings, not numbers — plugin normalises with
+   `float(raw) if isinstance(raw, str) else raw`
+2. Device info response uses singular `device` key, not `devices` array
+3. `STANDBY` status means offline OR user-set standby (ambiguous)
+4. `zones[].smart` can be boolean (v1) or string enum `SMART`/`ASSISTANT`/`TIMER` (v2)
+5. Moisture data updates once per day maximum
+6. Whisperer sensor reports every 4-6 hours (no force-refresh API)
+7. Weather units differ: v1 uses US units (°F, inches, mph, inHg); v2 uses metric
 
 ---
 
-*Integration audit: 2026-04-11*
+## 2. Tomorrow.io Weather API (optional)
+
+- **Purpose**: Fetch real-time and forecast weather to report to Netro for
+  smarter scheduling decisions
+- **Client**: `TomorrowClient` in
+  `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/tomorrow_client.py`
+- **Auth**: API key configured in plugin prefs (`tomorrowApiKey`)
+- **Location**: Lat/lon string configured in plugin prefs (`tomorrowLocation`)
+- **Endpoints used**:
+  - Realtime weather (current conditions)
+  - Daily forecast (multi-day ahead)
+- **Units**: Tomorrow.io returns metric; client passes metric through. `plugin.py`
+  converts to US units when forwarding to Netro v1 via
+  `convert_weather_metric_to_us()` in `utils.py`
+- **Condition mapping**: Tomorrow.io weather codes (1000–8000) mapped to Netro
+  condition codes (0=Clear, 1=Cloudy, 2=Rain, 3=Snow, 4=Wind) via
+  `_TOMORROW_TO_NETRO_CONDITION` dict in `tomorrow_client.py`
+- **Optional**: Feature disabled if `tomorrowEnabled` pref is False or API key /
+  location not set; `_tomorrow_client` will be `None`
+- **Polling intervals**: Realtime every 30 min (`DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES`),
+  forecast every 4 hours (`DEFAULT_FORECAST_INTERVAL_MINUTES`)
+
+### v1 vs v2 unit handling for weather
+
+`utils.py` provides bidirectional converters:
+
+| Function | Direction |
+|----------|-----------|
+| `convert_weather_metric_to_us()` | °C→°F, mm→in, m/s→mph, hPa→inHg |
+| `convert_weather_us_to_metric()` | reverse |
+
+Note: v1 Netro API does not accept `t_dew` field — plugin strips it before
+sending to v1 devices.
