@@ -1558,8 +1558,7 @@ class Plugin(indigo.PluginBase):
 
         # ZONE ON #
         if action.sprinklerAction == indigo.kSprinklerAction.ZoneOn:
-            zone_index = action.zoneIndex  # 1-based
-            # Validate against the device's configured zones.
+            zone_index = action.zoneIndex
             if zone_index < 1 or zone_index > len(dev.zoneMaxDurations):
                 self.logger.error(
                     f"Zone number {zone_index} doesn't exist on '{dev.name}' "
@@ -1567,21 +1566,36 @@ class Plugin(indigo.PluginBase):
                 self._fireTrigger("startZoneFailed", dev.id)
                 return
 
-            # Duration: dev.zoneMaxDurations is in seconds; Netro API expects minutes.
-            # Clamp to the plugin-wide maxZoneRunTime (also seconds).
+            # A zone with max duration 0 is configured as disabled in the plugin
+            # prefs — refuse rather than silently clamping to 1 minute, otherwise
+            # users running a supposedly-off zone would get no feedback.
             zone_max_seconds = dev.zoneMaxDurations[zone_index - 1]
+            if zone_max_seconds <= 0:
+                self.logger.error(
+                    f"Zone {zone_index} on '{dev.name}' is disabled "
+                    f"(max duration is 0) — cannot start")
+                self._fireTrigger("startZoneFailed", dev.id)
+                return
+
+            # dev.zoneMaxDurations is seconds, Netro API expects minutes.
             duration_seconds = min(zone_max_seconds, self.maxZoneRunTime)
             duration_minutes = max(1, int(round(duration_seconds / 60)))
 
             try:
                 zone_name = dev.zoneNames[zone_index - 1]
-            except (IndexError, AttributeError):
+            except IndexError:
                 zone_name = f"Zone {zone_index}"
 
             try:
                 key, api_version = self._get_device_auth(dev)
                 zones = [{"id": zone_index, "duration": duration_minutes}]
-                self.api_client.start_watering(key, zones, api_version=api_version)
+                response = self.api_client.start_watering(key, zones, api_version=api_version)
+                response_status = response.get("status") if isinstance(response, dict) else None
+                if response_status != "OK":
+                    self.logger.error(
+                        f'send "{dev.name} - {zone_name}" on rejected by Netro: {response}')
+                    self._fireTrigger("startZoneFailed", dev.id)
+                    return
                 self.logger.info(
                     f'sent "{dev.name} - {zone_name}" on for {duration_minutes}min')
                 dev.updateStateOnServer("activeZone", zone_index)
@@ -1591,6 +1605,12 @@ class Plugin(indigo.PluginBase):
             except ThrottleDelayError:
                 self.logger.warning(
                     f'send "{dev.name} - {zone_name}" throttled - in rate limit period')
+                self._fireTrigger("startZoneFailed", dev.id)
+            except Exception:  # pylint: disable=broad-exception-caught
+                # Anything else — auth lookup failure, stale dev props, malformed
+                # zone payload from api_client — surface loudly and mark failed so
+                # the user sees something actionable instead of a silent miss.
+                self.logger.exception(f'send "{dev.name} - {zone_name}" on errored')
                 self._fireTrigger("startZoneFailed", dev.id)
 
         # ALL ZONES OFF #
