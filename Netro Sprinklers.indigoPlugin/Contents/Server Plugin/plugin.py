@@ -54,7 +54,6 @@ from constants import (
     DEFAULT_SENSOR_INTERVAL_MINUTES,
     DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES,
     DEFAULT_FORECAST_INTERVAL_MINUTES,
-    ZONE_START_ENDPOINT,
     OPERATIONAL_ERROR_EVENTS,
     COMM_ERROR_EVENTS,
     DEVICE_EVENT_TYPES,
@@ -1559,30 +1558,39 @@ class Plugin(indigo.PluginBase):
 
         # ZONE ON #
         if action.sprinklerAction == indigo.kSprinklerAction.ZoneOn:
-            zone_dict = self._get_zone_dict(dev.states["id"], action.zoneIndex)
-            self.logger.debug(f"zone_dict: {zone_dict}")
-            if zone_dict:
-                zoneName = zone_dict["name"]
-                data = {
-                    "id": zone_dict["id"],
-                    "duration": (zone_dict["maxRuntime"] if zone_dict["maxRuntime"] <= self.maxZoneRunTime
-                                 else self.maxZoneRunTime),
-                }
-                try:
-                    self.api_client.make_request(ZONE_START_ENDPOINT, method="put", data=data)
-                    self.logger.info(f'sent "{dev.name} - {zoneName}" on')
-                    dev.updateStateOnServer("activeZone", action.zoneIndex)
-                except requests.exceptions.RequestException:
-                    # Network/HTTP error - log with traceback and fire trigger
-                    self.logger.exception(f'send "{dev.name} - {zoneName}" on failed')
-                    self._fireTrigger("startZoneFailed", dev.id)
-                except ThrottleDelayError:
-                    self.logger.warning(f'send "{dev.name} - {zoneName}" throttled - in rate limit period')
-                    self._fireTrigger("startZoneFailed", dev.id)
-            else:
+            zone_index = action.zoneIndex  # 1-based
+            # Validate against the device's configured zones.
+            if zone_index < 1 or zone_index > len(dev.zoneMaxDurations):
                 self.logger.error(
-                    f"Zone number {action.zoneIndex} doesn't exist in this controller "
-                    f"and can't be enabled.")
+                    f"Zone number {zone_index} doesn't exist on '{dev.name}' "
+                    f"(has {len(dev.zoneMaxDurations)} zones)")
+                self._fireTrigger("startZoneFailed", dev.id)
+                return
+
+            # Duration: dev.zoneMaxDurations is in seconds; Netro API expects minutes.
+            # Clamp to the plugin-wide maxZoneRunTime (also seconds).
+            zone_max_seconds = dev.zoneMaxDurations[zone_index - 1]
+            duration_seconds = min(zone_max_seconds, self.maxZoneRunTime)
+            duration_minutes = max(1, int(round(duration_seconds / 60)))
+
+            try:
+                zone_name = dev.zoneNames[zone_index - 1]
+            except (IndexError, AttributeError):
+                zone_name = f"Zone {zone_index}"
+
+            try:
+                key, api_version = self._get_device_auth(dev)
+                zones = [{"id": zone_index, "duration": duration_minutes}]
+                self.api_client.start_watering(key, zones, api_version=api_version)
+                self.logger.info(
+                    f'sent "{dev.name} - {zone_name}" on for {duration_minutes}min')
+                dev.updateStateOnServer("activeZone", zone_index)
+            except requests.exceptions.RequestException:
+                self.logger.exception(f'send "{dev.name} - {zone_name}" on failed')
+                self._fireTrigger("startZoneFailed", dev.id)
+            except ThrottleDelayError:
+                self.logger.warning(
+                    f'send "{dev.name} - {zone_name}" throttled - in rate limit period')
                 self._fireTrigger("startZoneFailed", dev.id)
 
         # ALL ZONES OFF #
