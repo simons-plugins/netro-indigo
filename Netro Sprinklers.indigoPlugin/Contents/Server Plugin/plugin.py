@@ -54,7 +54,6 @@ from constants import (
     DEFAULT_SENSOR_INTERVAL_MINUTES,
     DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES,
     DEFAULT_FORECAST_INTERVAL_MINUTES,
-    ZONE_START_ENDPOINT,
     OPERATIONAL_ERROR_EVENTS,
     COMM_ERROR_EVENTS,
     DEVICE_EVENT_TYPES,
@@ -1559,30 +1558,59 @@ class Plugin(indigo.PluginBase):
 
         # ZONE ON #
         if action.sprinklerAction == indigo.kSprinklerAction.ZoneOn:
-            zone_dict = self._get_zone_dict(dev.states["id"], action.zoneIndex)
-            self.logger.debug(f"zone_dict: {zone_dict}")
-            if zone_dict:
-                zoneName = zone_dict["name"]
-                data = {
-                    "id": zone_dict["id"],
-                    "duration": (zone_dict["maxRuntime"] if zone_dict["maxRuntime"] <= self.maxZoneRunTime
-                                 else self.maxZoneRunTime),
-                }
-                try:
-                    self.api_client.make_request(ZONE_START_ENDPOINT, method="put", data=data)
-                    self.logger.info(f'sent "{dev.name} - {zoneName}" on')
-                    dev.updateStateOnServer("activeZone", action.zoneIndex)
-                except requests.exceptions.RequestException:
-                    # Network/HTTP error - log with traceback and fire trigger
-                    self.logger.exception(f'send "{dev.name} - {zoneName}" on failed')
-                    self._fireTrigger("startZoneFailed", dev.id)
-                except ThrottleDelayError:
-                    self.logger.warning(f'send "{dev.name} - {zoneName}" throttled - in rate limit period')
-                    self._fireTrigger("startZoneFailed", dev.id)
-            else:
+            zone_index = action.zoneIndex
+            if zone_index < 1 or zone_index > len(dev.zoneMaxDurations):
                 self.logger.error(
-                    f"Zone number {action.zoneIndex} doesn't exist in this controller "
-                    f"and can't be enabled.")
+                    f"Zone number {zone_index} doesn't exist on '{dev.name}' "
+                    f"(has {len(dev.zoneMaxDurations)} zones)")
+                self._fireTrigger("startZoneFailed", dev.id)
+                return
+
+            # A zone with max duration 0 is configured as disabled in the plugin
+            # prefs — refuse rather than silently clamping to 1 minute, otherwise
+            # users running a supposedly-off zone would get no feedback.
+            zone_max_seconds = dev.zoneMaxDurations[zone_index - 1]
+            if zone_max_seconds <= 0:
+                self.logger.error(
+                    f"Zone {zone_index} on '{dev.name}' is disabled "
+                    f"(max duration is 0) — cannot start")
+                self._fireTrigger("startZoneFailed", dev.id)
+                return
+
+            # dev.zoneMaxDurations is seconds, Netro API expects minutes.
+            duration_seconds = min(zone_max_seconds, self.maxZoneRunTime)
+            duration_minutes = max(1, int(round(duration_seconds / 60)))
+
+            try:
+                zone_name = dev.zoneNames[zone_index - 1]
+            except IndexError:
+                zone_name = f"Zone {zone_index}"
+
+            try:
+                key, api_version = self._get_device_auth(dev)
+                zones = [{"id": zone_index, "duration": duration_minutes}]
+                response = self.api_client.start_watering(key, zones, api_version=api_version)
+                response_status = response.get("status") if isinstance(response, dict) else None
+                if response_status != "OK":
+                    self.logger.error(
+                        f'send "{dev.name} - {zone_name}" on rejected by Netro: {response}')
+                    self._fireTrigger("startZoneFailed", dev.id)
+                    return
+                self.logger.info(
+                    f'sent "{dev.name} - {zone_name}" on for {duration_minutes}min')
+                dev.updateStateOnServer("activeZone", zone_index)
+            except requests.exceptions.RequestException:
+                self.logger.exception(f'send "{dev.name} - {zone_name}" on failed')
+                self._fireTrigger("startZoneFailed", dev.id)
+            except ThrottleDelayError:
+                self.logger.warning(
+                    f'send "{dev.name} - {zone_name}" throttled - in rate limit period')
+                self._fireTrigger("startZoneFailed", dev.id)
+            except Exception:  # pylint: disable=broad-exception-caught
+                # Anything else — auth lookup failure, stale dev props, malformed
+                # zone payload from api_client — surface loudly and mark failed so
+                # the user sees something actionable instead of a silent miss.
+                self.logger.exception(f'send "{dev.name} - {zone_name}" on errored')
                 self._fireTrigger("startZoneFailed", dev.id)
 
         # ALL ZONES OFF #

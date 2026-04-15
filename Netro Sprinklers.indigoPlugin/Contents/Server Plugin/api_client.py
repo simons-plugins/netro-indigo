@@ -736,15 +736,57 @@ class NetroAPIClient:
 
         Args:
             key: Device serial number (v1) or API key (v2)
-            zones: List of zone dicts with id and duration
+            zones: Non-empty list of zone dicts with ``id`` (1-based zone
+                index, int) and ``duration`` (minutes, int — the Netro API
+                takes minutes on the wire for both v1 and v2). On v1 the
+                whole list is forwarded so each zone may have its own
+                duration. On v2 the API accepts only a flat ``zones`` array
+                of zone index integers plus a single top-level ``duration``
+                that applies to every zone, so passing mixed durations to v2
+                is a caller error and raises ``ValueError``.
             delay: Delay in minutes before starting (default 0)
             start_time: Optional epoch timestamp for scheduled start
             api_version: API version to use ("1" or "2")
 
+        Raises:
+            ValueError: ``zones`` is empty, a zone dict is missing ``id``
+                or ``duration``, or v2 is called with per-zone durations
+                that aren't all identical.
+
         Returns:
             API response confirming watering started
         """
-        data: Dict[str, Any] = {"key": key, "zones": zones}
+        if not zones:
+            raise ValueError("start_watering requires at least one zone")
+
+        # Validate shape once up front so callers get a single clear error
+        # rather than a bare KeyError/IndexError from deeper in the method.
+        parsed_zones: List[Dict[str, int]] = []
+        for idx, z in enumerate(zones):
+            try:
+                parsed_zones.append({
+                    "id": int(z["id"]),
+                    "duration": int(z["duration"]),
+                })
+            except (KeyError, TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"start_watering: zones[{idx}] must be a dict with int "
+                    f"'id' and 'duration' (got {z!r})"
+                ) from exc
+
+        data: Dict[str, Any] = {"key": key}
+        if str(api_version) == "2":
+            durations = {z["duration"] for z in parsed_zones}
+            if len(durations) > 1:
+                raise ValueError(
+                    "Netro v2 water.json only supports a single duration for "
+                    "all zones; per-zone durations are not expressible on v2 "
+                    f"(got {[(z['id'], z['duration']) for z in parsed_zones]})"
+                )
+            data["zones"] = [z["id"] for z in parsed_zones]
+            data["duration"] = parsed_zones[0]["duration"]
+        else:
+            data["zones"] = parsed_zones
         if delay > 0:
             data["delay"] = delay
         if start_time:
