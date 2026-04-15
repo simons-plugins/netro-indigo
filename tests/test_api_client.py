@@ -1076,6 +1076,39 @@ class TestAPIClientV2:
             called_data = json.loads(mock_post.call_args[1]["data"])
             assert called_data["key"] == "API_KEY_V2"
 
+    def test_start_watering_v2_flattens_zones_payload(self, client):
+        """V2 water.json requires zones as flat ints + top-level duration."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.post", return_value=mock_response) as mock_post:
+            client.start_watering(
+                "API_KEY_V2",
+                [{"id": 3, "duration": 15}, {"id": 5, "duration": 15}],
+                api_version="2",
+            )
+            called_data = json.loads(mock_post.call_args[1]["data"])
+            assert called_data["zones"] == [3, 5]
+            assert called_data["duration"] == 15
+            # Should NOT carry the v1 nested shape on v2.
+            assert not any(isinstance(z, dict) for z in called_data["zones"])
+
+    def test_start_watering_v1_preserves_nested_zones(self, client):
+        """V1 water should preserve per-zone durations in the zones list."""
+        mock_response = Mock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"status": "OK", "data": {}, "meta": {"token_remaining": 1900}}
+
+        with patch("api_client.requests.post", return_value=mock_response) as mock_post:
+            client.start_watering(
+                "SERIAL123",
+                [{"id": 1, "duration": 10}, {"id": 2, "duration": 20}],
+            )
+            called_data = json.loads(mock_post.call_args[1]["data"])
+            assert called_data["zones"] == [{"id": 1, "duration": 10}, {"id": 2, "duration": 20}]
+            assert "duration" not in called_data
+
     def test_get_events_uses_v2_endpoint(self, client):
         """get_events should always use v2 endpoint."""
         mock_response = Mock()

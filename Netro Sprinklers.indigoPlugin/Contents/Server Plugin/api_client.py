@@ -736,7 +736,13 @@ class NetroAPIClient:
 
         Args:
             key: Device serial number (v1) or API key (v2)
-            zones: List of zone dicts with id and duration
+            zones: List of zone dicts with ``id`` (1-based zone index) and
+                ``duration`` (minutes). On v1 the whole list is sent verbatim
+                so each zone can have its own duration. On v2 the API accepts
+                only a flat ``zones`` array of integers plus a single
+                top-level ``duration`` that applies to every zone in the list,
+                so this method picks the first zone's duration and emits a
+                warning if the input mixes durations.
             delay: Delay in minutes before starting (default 0)
             start_time: Optional epoch timestamp for scheduled start
             api_version: API version to use ("1" or "2")
@@ -744,7 +750,20 @@ class NetroAPIClient:
         Returns:
             API response confirming watering started
         """
-        data: Dict[str, Any] = {"key": key, "zones": zones}
+        data: Dict[str, Any] = {"key": key}
+        if str(api_version) == "2":
+            zone_ids = [int(z["id"]) for z in zones]
+            durations = {int(z.get("duration", 0)) for z in zones}
+            if len(durations) > 1:
+                self.logger.warning(
+                    "Netro v2 water.json only supports one duration for all zones; "
+                    "using the first zone's duration (%d min) for zones %s",
+                    int(zones[0].get("duration", 0)), zone_ids,
+                )
+            data["zones"] = zone_ids
+            data["duration"] = int(zones[0].get("duration", 0))
+        else:
+            data["zones"] = zones
         if delay > 0:
             data["delay"] = delay
         if start_time:
