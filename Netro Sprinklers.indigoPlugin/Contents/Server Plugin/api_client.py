@@ -459,10 +459,15 @@ class NetroAPIClient:
             if reset_str:
                 reset_time = datetime.fromisoformat(reset_str).replace(tzinfo=timezone.utc)
         except (ValueError, TypeError) as exc:
-            self.logger.warning(f"Could not parse token info from response: {exc}")
-            remaining = TOKEN_PAUSE_THRESHOLD - 1
             # Set near-future reset so auto-reset can unlock this device
             reset_time = datetime.now(timezone.utc) + timedelta(hours=1)
+            remaining = TOKEN_PAUSE_THRESHOLD - 1
+            key_display = device_key[:8] + "..." if len(device_key) > 8 else device_key
+            self.logger.warning(
+                f"Could not parse token info from response: {exc}. "
+                f"Pausing device {key_display} until {reset_time:%H:%M:%S UTC} "
+                f"as a safety fallback."
+            )
 
         # Update or create per-device state
         self._device_tokens[device_key] = DeviceTokenState(

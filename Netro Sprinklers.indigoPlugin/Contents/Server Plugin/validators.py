@@ -27,7 +27,6 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from constants import (
-    MINIMUM_POLLING_INTERVAL_MINUTES,
     MINIMUM_EVENTS_INTERVAL_MINUTES,
     MINIMUM_DEVICE_INFO_INTERVAL_MINUTES,
     MINIMUM_SCHEDULES_INTERVAL_MINUTES,

@@ -395,6 +395,26 @@ class TestProactivePause:
         assert client.should_pause_polling_for("KEY_A") is True
         mock_logger.warning.assert_called()
 
+    def test_update_token_budget_parse_failure_sets_near_future_reset(self, client):
+        """Parse failure sets reset_time ~1h in future so device auto-unlocks."""
+        before = datetime.now(timezone.utc)
+        client._update_token_budget({"token_remaining": "invalid"}, device_key="KEY_A")
+        reset = client._device_tokens["KEY_A"].token_reset
+
+        assert reset is not None
+        delta = (reset - before).total_seconds()
+        assert 3500 < delta < 3700  # roughly 1 hour
+
+    def test_update_token_budget_parse_failure_log_states_consequence(self, client, mock_logger):
+        """Parse-failure warning must mention pause + device + reset time."""
+        client._update_token_budget({"token_remaining": "invalid"}, device_key="KEY_ABCD1234")
+        # First warning is the parse-failure message; a second (threshold)
+        # warning may also fire because we set remaining below the threshold.
+        parse_msg = mock_logger.warning.call_args_list[0][0][0]
+        assert "Pausing" in parse_msg
+        assert "KEY_ABCD" in parse_msg
+        assert "safety fallback" in parse_msg
+
     def test_auto_resets_past_reset_time(self, client, mock_logger):
         """Auto-resets token count when past token_reset time."""
         from api_client import DeviceTokenState

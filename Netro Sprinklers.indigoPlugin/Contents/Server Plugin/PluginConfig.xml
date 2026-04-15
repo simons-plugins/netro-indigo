@@ -35,7 +35,7 @@
         <Label>Moistures interval (minutes):</Label>
     </Field>
     <Field id="moisturesIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
-        <Label>Zone moisture levels. 1 call per controller. Default: 10 min.</Label>
+        <Label>Zone moisture levels. 1 call per controller. Default: 10 min. Note: will not fire more often than the Device info interval.</Label>
     </Field>
 
     <!-- Schedules Interval -->
@@ -43,7 +43,7 @@
         <Label>Schedules interval (minutes):</Label>
     </Field>
     <Field id="schedulesIntervalLabel" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
-        <Label>Upcoming watering schedules. 1 call per controller. Default: 30 min.</Label>
+        <Label>Upcoming watering schedules. 1 call per controller. Default: 30 min. Note: will not fire more often than the Device info interval.</Label>
     </Field>
 
     <!-- Sensor Interval -->

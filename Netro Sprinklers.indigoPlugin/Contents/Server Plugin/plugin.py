@@ -54,7 +54,6 @@ from constants import (
     DEFAULT_SENSOR_INTERVAL_MINUTES,
     DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES,
     DEFAULT_FORECAST_INTERVAL_MINUTES,
-    MINIMUM_POLLING_INTERVAL_MINUTES,
     ZONE_START_ENDPOINT,
     OPERATIONAL_ERROR_EVENTS,
     COMM_ERROR_EVENTS,
@@ -84,7 +83,11 @@ class Plugin(indigo.PluginBase):
 
     Attributes:
         serial_number: Netro controller serial number for API authentication
-        pollingInterval: Minutes between API polls (default 3, minimum 3)
+        _events_interval: Minutes between event polls (default 5)
+        _device_info_interval: Minutes between device_info polls (default 10)
+        _moistures_interval: Minutes between moisture polls (default 10)
+        _schedules_interval: Minutes between schedule polls (default 30)
+        _sensor_interval: Minutes between Whisperer sensor polls (default 30)
         timeout: API request timeout in seconds (default 5)
         maxZoneRunTime: Maximum allowed zone runtime in seconds (default 3600)
         api_client: NetroAPIClient instance for all API communication
@@ -102,6 +105,36 @@ class Plugin(indigo.PluginBase):
         self.pluginId = pluginId
         self.debug = pluginPrefs.get("showDebugInfo", False)
         self.timeout = int(pluginPrefs.get("apiTimeout", DEFAULT_API_TIMEOUT_SECONDS))
+
+        # One-time migration: if legacy `pollingInterval` is present and new
+        # per-endpoint fields are absent, seed the new fields from it so
+        # upgrading users keep approximately their old call budget instead of
+        # silently jumping to the more aggressive per-endpoint defaults.
+        legacy_interval = pluginPrefs.get("pollingInterval")
+        has_new_fields = any(
+            pluginPrefs.get(f) for f in (
+                "eventsInterval", "deviceInfoInterval", "moisturesInterval",
+                "schedulesInterval", "sensorInterval",
+            )
+        )
+        if legacy_interval and not has_new_fields:
+            try:
+                seed = int(legacy_interval)
+                pluginPrefs["eventsInterval"] = max(seed, DEFAULT_EVENTS_INTERVAL_MINUTES)
+                pluginPrefs["deviceInfoInterval"] = max(seed, DEFAULT_DEVICE_INFO_INTERVAL_MINUTES)
+                pluginPrefs["moisturesInterval"] = max(seed, DEFAULT_MOISTURES_INTERVAL_MINUTES)
+                pluginPrefs["schedulesInterval"] = max(seed, DEFAULT_SCHEDULES_INTERVAL_MINUTES)
+                pluginPrefs["sensorInterval"] = max(seed, DEFAULT_SENSOR_INTERVAL_MINUTES)
+                self.logger.info(
+                    f"Migrated legacy pollingInterval={seed}min to per-endpoint "
+                    f"intervals. Review them in Plugin Config if you want to tune further."
+                )
+                pluginPrefs["pollingInterval"] = ""
+            except (ValueError, TypeError):
+                self.logger.warning(
+                    f"Could not migrate legacy pollingInterval value "
+                    f"{legacy_interval!r}; using defaults."
+                )
 
         # Per-endpoint polling intervals (minutes)
         self._events_interval = int(pluginPrefs.get("eventsInterval", DEFAULT_EVENTS_INTERVAL_MINUTES))
@@ -798,9 +831,13 @@ class Plugin(indigo.PluginBase):
                             schedule_dict, api_version=api_version
                         )
                         update_list.extend(schedule_states)
-                    except Exception:
+                    except Exception as exc:
                         update_list.append(
                             {"key": "activeSchedule", "value": "Error getting current schedule"})
+                        self.logger.warning(
+                            f"Schedule fetch failed for '{dev.name}': "
+                            f"{type(exc).__name__}: {exc}"
+                        )
                         self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
                         self._fireTrigger("getScheduleCall")
 
@@ -826,8 +863,11 @@ class Plugin(indigo.PluginBase):
                 if now >= self._next_moistures_update:
                     try:
                         moisture_dict = self.api_client.get_moistures(key, api_version=api_version)
-                    except Exception:
-                        self.logger.warning(f"Moisture API unavailable for '{dev.name}' - zone moisture states may be stale")
+                    except Exception as exc:
+                        self.logger.warning(
+                            f"Moisture fetch failed for '{dev.name}' "
+                            f"({type(exc).__name__}: {exc}) - zone moisture states may be stale"
+                        )
                         self.logger.debug(f"Moisture API error: \n{traceback.format_exc(10)}")
 
                 # Update zone devices (uses info + schedule + moisture data)
@@ -873,7 +913,9 @@ class Plugin(indigo.PluginBase):
                     self.logger.warning(f"Events API error for '{dev.name}': \n{traceback.format_exc(10)}")
 
         except ThrottleDelayError:
-            pass
+            # Already logged in api_client with device-level detail; skip remainder
+            # of this device's update cycle silently to avoid duplicate warnings.
+            self.logger.debug(f"Skipping remainder of update for '{dev.name}' due to throttle")
         except requests.exceptions.HTTPError as exc:
             self._handle_http_error(exc)
             self._fireTrigger("personInfoCall")
