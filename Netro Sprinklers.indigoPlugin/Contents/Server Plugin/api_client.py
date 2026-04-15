@@ -19,6 +19,7 @@ Note:
 
 import json
 import logging
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, Final, List, Optional, Set, Union
 
@@ -54,8 +55,18 @@ from constants import (
 from exceptions import NetroAPIError, ThrottleDelayError
 
 
+@dataclass
+class DeviceTokenState:
+    """Per-device API token budget tracking.
+
+    Each Netro device has its own independent 2000/day token limit.
+    """
+    token_remaining: int = 2000
+    token_reset: Optional[datetime] = None
+
+
 # Re-export threshold constants for convenient access
-__all__ = ["NetroAPIClient", "TOKEN_PAUSE_THRESHOLD", "TOKEN_WARNING_THRESHOLD"]
+__all__ = ["NetroAPIClient", "DeviceTokenState", "TOKEN_PAUSE_THRESHOLD", "TOKEN_WARNING_THRESHOLD"]
 
 # =============================================================================
 # Expected Response Keys (for schema validation)
@@ -118,10 +129,11 @@ class NetroAPIClient:
         self._prefs_getter = prefs_getter
         self._prefs_setter = prefs_setter
 
-        # Throttle state
+        # Throttle state (global — HTTP 429 is account-level)
         self._throttle_until: Optional[datetime] = None
-        self._token_remaining: int = 2000
-        self._token_reset: Optional[datetime] = None
+
+        # Per-device token budgets (keyed by API key or serial number)
+        self._device_tokens: Dict[str, DeviceTokenState] = {}
 
         # HTTP configuration
         self.headers: Dict[str, str] = {
@@ -168,36 +180,63 @@ class NetroAPIClient:
 
     @property
     def token_remaining(self) -> int:
-        """Get current API token count.
+        """Get minimum API token count across all tracked devices.
 
         Returns:
-            Number of API tokens remaining (max 2000 per day)
+            Minimum tokens remaining across devices, or 2000 if none tracked
         """
-        return self._token_remaining
+        if not self._device_tokens:
+            return 2000
+        return min(s.token_remaining for s in self._device_tokens.values())
+
+    def token_remaining_for(self, device_key: str) -> int:
+        """Get API token count for a specific device.
+
+        Args:
+            device_key: Device API key or serial number
+
+        Returns:
+            Tokens remaining for this device, or 2000 if not yet tracked
+        """
+        state = self._device_tokens.get(device_key)
+        return state.token_remaining if state else 2000
 
     @property
     def should_pause_polling(self) -> bool:
-        """Check if polling should pause due to low token budget.
+        """Check if any device should pause due to low token budget.
 
-        This is PROACTIVE prevention - the plugin should check this
-        before making API calls to avoid exhausting the daily limit.
+        Returns:
+            True if any tracked device is below the pause threshold
+        """
+        return any(
+            self.should_pause_polling_for(k) for k in self._device_tokens
+        )
+
+    def should_pause_polling_for(self, device_key: str) -> bool:
+        """Check if polling should pause for a specific device.
 
         Auto-resets token count if past reset time to prevent self-locking.
 
-        Returns:
-            True if remaining tokens are below pause threshold
-        """
-        # Check if we're past the token reset time and should auto-reset
-        if self._token_reset:
-            now = datetime.now(timezone.utc) if self._token_reset.tzinfo else datetime.now()
-            if now >= self._token_reset:
-                # Past reset time - automatically reset to daily limit
-                self._token_remaining = 2000
-                self._token_reset = None
-                self._save_throttle_state()
-                self.logger.info("API token budget has reset to daily limit (2000)")
+        Args:
+            device_key: Device API key or serial number
 
-        return self._token_remaining < TOKEN_PAUSE_THRESHOLD
+        Returns:
+            True if this device's tokens are below the pause threshold
+        """
+        state = self._device_tokens.get(device_key)
+        if state is None:
+            return False  # Unknown device — assume full budget
+
+        # Auto-reset if past token reset time
+        if state.token_reset:
+            now = datetime.now(timezone.utc) if state.token_reset.tzinfo else datetime.now()
+            if now >= state.token_reset:
+                state.token_remaining = 2000
+                state.token_reset = None
+                self._save_throttle_state()
+                self.logger.info(f"API token budget reset for device {device_key[:8]}...")
+
+        return state.token_remaining < TOKEN_PAUSE_THRESHOLD
 
     # =========================================================================
     # Core Request Method
@@ -207,7 +246,8 @@ class NetroAPIClient:
         self,
         url: str,
         method: str = "get",
-        data: Optional[Dict[str, Any]] = None
+        data: Optional[Dict[str, Any]] = None,
+        device_key: Optional[str] = None
     ) -> Union[Dict[str, Any], bool]:
         """Make API request with error handling and throttle enforcement.
 
@@ -215,13 +255,14 @@ class NetroAPIClient:
         - Throttle state checking before requests
         - HTTP method selection (GET/POST/PUT)
         - Response parsing and error handling
-        - Token budget tracking from response metadata
+        - Per-device token budget tracking from response metadata
         - Connection error suppression (log once)
 
         Args:
             url: Full URL for the API endpoint
             method: HTTP method ('get', 'post', or 'put')
             data: Optional request body data (for POST/PUT)
+            device_key: Optional device API key or serial for per-device token tracking
 
         Returns:
             Parsed JSON response dict, or True for 204 responses
@@ -279,7 +320,7 @@ class NetroAPIClient:
                 if "meta" in result:
                     # Validate meta structure
                     self._validate_response_schema(result["meta"], EXPECTED_META_KEYS, f"{url}/meta")
-                    self._update_token_budget(result["meta"])
+                    self._update_token_budget(result["meta"], device_key=device_key)
 
                 return result
 
@@ -396,32 +437,50 @@ class NetroAPIClient:
     # Token Budget Management
     # =========================================================================
 
-    def _update_token_budget(self, meta: Dict[str, Any]) -> None:
-        """Update token tracking from API response metadata.
+    def _update_token_budget(
+        self, meta: Dict[str, Any], device_key: Optional[str] = None
+    ) -> None:
+        """Update per-device token tracking from API response metadata.
 
         Parses token_remaining and token_reset from the response meta
         section, logs warnings at thresholds, and saves state.
 
-        Handles both v1 (strptime) and v2 (fromisoformat) timestamp formats.
-
         Args:
             meta: Response meta dict containing token info
+            device_key: Device API key or serial number (None to skip tracking)
         """
+        if device_key is None:
+            return
+
         try:
-            self._token_remaining = int(meta.get("token_remaining", 2000))
+            remaining = int(meta.get("token_remaining", 2000))
+            reset_time = None
             reset_str = meta.get("token_reset", "")
             if reset_str:
-                self._token_reset = datetime.fromisoformat(reset_str).replace(tzinfo=timezone.utc)
+                reset_time = datetime.fromisoformat(reset_str).replace(tzinfo=timezone.utc)
         except (ValueError, TypeError) as exc:
-            self.logger.warning(f"Could not parse token info from response: {exc}")
-            # Set safe default to trigger proactive pause and prevent exhausting token budget
-            self._token_remaining = TOKEN_PAUSE_THRESHOLD - 1
+            # Set near-future reset so auto-reset can unlock this device
+            reset_time = datetime.now(timezone.utc) + timedelta(hours=1)
+            remaining = TOKEN_PAUSE_THRESHOLD - 1
+            key_display = device_key[:8] + "..." if len(device_key) > 8 else device_key
+            self.logger.warning(
+                f"Could not parse token info from response: {exc}. "
+                f"Pausing device {key_display} until {reset_time:%H:%M:%S UTC} "
+                f"as a safety fallback."
+            )
+
+        # Update or create per-device state
+        self._device_tokens[device_key] = DeviceTokenState(
+            token_remaining=remaining,
+            token_reset=reset_time,
+        )
 
         # Log warnings at thresholds
-        if self._token_remaining < TOKEN_WARNING_THRESHOLD:
-            reset_info = f", resets at {self._token_reset}" if self._token_reset else ""
+        if remaining < TOKEN_WARNING_THRESHOLD:
+            key_display = device_key[:8] + "..." if len(device_key) > 8 else device_key
+            reset_info = f", resets at {reset_time}" if reset_time else ""
             self.logger.warning(
-                f"API tokens low: {self._token_remaining} remaining{reset_info}"
+                f"API tokens low for {key_display}: {remaining} remaining{reset_info}"
             )
 
         # Persist state
@@ -432,32 +491,40 @@ class NetroAPIClient:
     # =========================================================================
 
     def _save_throttle_state(self) -> None:
-        """Persist throttle state to pluginPrefs.
+        """Persist throttle and per-device token state to pluginPrefs.
 
-        Serializes current throttle and token state to JSON and saves
-        via the prefs_setter callback. Does nothing if no setter provided.
+        Serializes current throttle and per-device token state to JSON
+        and saves via the prefs_setter callback. Uses version 2 format
+        with per-device token tracking.
         """
         if not self._prefs_setter:
             return
 
-        state = {
+        device_tokens = {}
+        for key, state in self._device_tokens.items():
+            device_tokens[key] = {
+                "token_remaining": state.token_remaining,
+                "token_reset": state.token_reset.isoformat() if state.token_reset else None,
+            }
+
+        save_state = {
+            "version": 2,
             "throttle_until": self._throttle_until.isoformat() if self._throttle_until else None,
-            "token_remaining": self._token_remaining,
-            "token_reset": self._token_reset.isoformat() if self._token_reset else None,
+            "device_tokens": device_tokens,
             "last_saved": datetime.now(timezone.utc).isoformat()
         }
 
         try:
-            self._prefs_setter("throttle_state", json.dumps(state))
+            self._prefs_setter("throttle_state", json.dumps(save_state))
         except (TypeError, ValueError) as exc:
             self.logger.warning(f"Could not save throttle state: {exc}")
 
     def _restore_throttle_state(self) -> None:
-        """Restore throttle state from pluginPrefs on startup.
+        """Restore throttle and per-device token state from pluginPrefs.
 
-        Loads and parses throttle state JSON from prefs. Only applies
-        throttle_until if it's still in the future. Does nothing if
-        no prefs_getter provided or state is missing/invalid.
+        Supports both v1 (global token) and v2 (per-device token) formats.
+        V1 format: restores only throttle_until, tokens populate on first poll.
+        V2 format: restores per-device token budgets.
         """
         if not self._prefs_getter:
             return
@@ -473,11 +540,13 @@ class NetroAPIClient:
 
         try:
             state = json.loads(state_json)
+            is_v2 = state.get("version", 1) >= 2
 
-            # Restore throttle expiry only if still in future
-            if state.get("throttle_until"):
+            # Restore throttle expiry only from v2 format and if still in future.
+            # V1 throttles were often triggered by incorrect global token tracking
+            # and should not carry over after the per-device migration.
+            if is_v2 and state.get("throttle_until"):
                 throttle_until = datetime.fromisoformat(state["throttle_until"])
-                # Ensure timezone-aware comparison
                 now = datetime.now(timezone.utc) if throttle_until.tzinfo else datetime.now()
                 if throttle_until > now:
                     self._throttle_until = throttle_until
@@ -485,12 +554,25 @@ class NetroAPIClient:
                         f"Restored throttle state: paused until {throttle_until:%H:%M:%S}"
                     )
 
-            # Restore token info
-            self._token_remaining = state.get("token_remaining", 2000)
-            if state.get("token_reset"):
-                self._token_reset = datetime.fromisoformat(state["token_reset"])
+            # V2 format: restore per-device token budgets
+            if is_v2 and "device_tokens" in state:
+                for key, token_state in state["device_tokens"].items():
+                    try:
+                        reset_time = None
+                        if token_state.get("token_reset"):
+                            reset_time = datetime.fromisoformat(token_state["token_reset"])
+                        self._device_tokens[key] = DeviceTokenState(
+                            token_remaining=int(token_state.get("token_remaining", 2000)),
+                            token_reset=reset_time,
+                        )
+                    except (ValueError, TypeError) as exc:
+                        key_display = key[:8] + "..." if len(key) > 8 else key
+                        self.logger.warning(f"Could not restore token state for device {key_display}: {exc}")
+            elif not is_v2 and state.get("throttle_until"):
+                # V1 format: log that legacy throttle is being discarded
+                self.logger.info("Migrating to per-device token tracking — discarding legacy throttle state")
 
-        except (json.JSONDecodeError, ValueError, KeyError) as exc:
+        except (json.JSONDecodeError, ValueError, KeyError, TypeError) as exc:
             self.logger.warning("Could not restore throttle state: %s", exc)
 
     # =========================================================================
@@ -577,7 +659,7 @@ class NetroAPIClient:
         Returns:
             API response containing device info
         """
-        return self.make_request(f"{self._endpoint('info', api_version)}?key={key}")
+        return self.make_request(f"{self._endpoint('info', api_version)}?key={key}", device_key=key)
 
     def get_schedules(self, key: str, api_version: str = "1") -> Dict[str, Any]:
         """Get device schedules from Netro API.
@@ -589,7 +671,7 @@ class NetroAPIClient:
         Returns:
             API response containing schedules
         """
-        return self.make_request(f"{self._endpoint('schedules', api_version)}?key={key}")
+        return self.make_request(f"{self._endpoint('schedules', api_version)}?key={key}", device_key=key)
 
     def get_moistures(self, key: str, api_version: str = "1") -> Dict[str, Any]:
         """Get moisture levels from Netro API.
@@ -601,7 +683,7 @@ class NetroAPIClient:
         Returns:
             API response containing moisture data
         """
-        return self.make_request(f"{self._endpoint('moistures', api_version)}?key={key}")
+        return self.make_request(f"{self._endpoint('moistures', api_version)}?key={key}", device_key=key)
 
     def get_sensor_data(self, key: str, api_version: str = "1") -> Dict[str, Any]:
         """Get Whisperer sensor data from Netro API.
@@ -613,7 +695,7 @@ class NetroAPIClient:
         Returns:
             API response containing sensor readings
         """
-        return self.make_request(f"{self._endpoint('sensor_data', api_version)}?key={key}")
+        return self.make_request(f"{self._endpoint('sensor_data', api_version)}?key={key}", device_key=key)
 
     def get_events(
         self,
@@ -640,7 +722,7 @@ class NetroAPIClient:
             url += f"&start_date={start_date}"
         if end_date:
             url += f"&end_date={end_date}"
-        return self.make_request(url)
+        return self.make_request(url, device_key=key)
 
     def start_watering(
         self,
@@ -668,7 +750,7 @@ class NetroAPIClient:
         if start_time:
             data["start_time"] = start_time
         return self.make_request(
-            self._endpoint("water", api_version), method="post", data=data
+            self._endpoint("water", api_version), method="post", data=data, device_key=key
         )
 
     def stop_watering(self, key: str, api_version: str = "1") -> Dict[str, Any]:
@@ -684,7 +766,8 @@ class NetroAPIClient:
         return self.make_request(
             self._endpoint("stop_water", api_version),
             method="post",
-            data={"key": key}
+            data={"key": key},
+            device_key=key
         )
 
     def set_device_status(self, key: str, status: int, api_version: str = "1") -> Dict[str, Any]:
@@ -701,7 +784,8 @@ class NetroAPIClient:
         return self.make_request(
             self._endpoint("set_status", api_version),
             method="post",
-            data={"key": key, "status": status}
+            data={"key": key, "status": status},
+            device_key=key
         )
 
     def set_no_water(self, key: str, days: int, api_version: str = "1") -> Dict[str, Any]:
@@ -718,7 +802,8 @@ class NetroAPIClient:
         return self.make_request(
             self._endpoint("no_water", api_version),
             method="post",
-            data={"key": key, "days": days}
+            data={"key": key, "days": days},
+            device_key=key
         )
 
     def report_weather(
@@ -738,7 +823,8 @@ class NetroAPIClient:
         return self.make_request(
             self._endpoint("report_weather", api_version),
             method="post",
-            data=data
+            data=data,
+            device_key=key
         )
 
     def set_moisture(
@@ -764,5 +850,6 @@ class NetroAPIClient:
         return self.make_request(
             self._endpoint("set_moisture", api_version),
             method="post",
-            data=data
+            data=data,
+            device_key=key
         )

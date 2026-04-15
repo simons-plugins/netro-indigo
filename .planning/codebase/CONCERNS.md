@@ -1,243 +1,132 @@
-# Codebase Concerns
+# CONCERNS.md — Tech Debt, Known Issues, and TODOs
 
-**Analysis Date:** 2026-02-01
+## TODOs in Source
 
-## Code Quality & Maintainability
+### `plugin.py` — Sprinkler actions not fully wired
 
-**Bare Exception Handlers:**
-- Issue: Multiple bare `except (Exception,):` patterns that catch all exceptions
-- Files: `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/plugin.py` (lines 131, 827, 1230, 1285, 1306)
-- Impact: Masks unexpected errors, hides bugs, makes debugging difficult
-- Fix approach: Replace with specific exception types (e.g., `except requests.RequestException`, `except KeyError`, `except ValueError`). Only use bare except for intentional error suppression with clear documentation.
+```python
+# plugin.py line 1562
+# TODO: The next sprinkler actions won't currently be called because we haven't
+# set the OverrideScheduleActions property. If we wanted to hand off all
+# scheduling to the Netro, we would need to use these. However, their current
+# API doesn't implement enough required functionality (pause/resume, next/previous
+# zone, etc) for us to actually do that at the moment.
+```
 
-**Bare Except with Silent Pass:**
-- Issue: `except (Exception,): pass` at line 827 silently ignores all errors in `runConcurrentThread()`
-- Files: `plugin.py:827` in polling loop
-- Impact: Thread dies silently on unexpected errors; no logging makes debugging production issues impossible
-- Fix approach: Log exception before passing: `except Exception as exc: self.logger.error(f"Polling error: {exc}")` with traceback. Never silently ignore thread errors.
+`RunNewSchedule`, `RunPreviousSchedule`, `PauseSchedule`, `ResumeSchedule`,
+`StopSchedule`, `PreviousZone`, and `NextZone` sprinkler actions are silently
+ignored (`pass`). This is a Netro API limitation — those operations are not
+supported. The comment is correct but could be a confusing no-op for users
+who try these actions from the Indigo UI.
 
-**Large Single File (1635 lines):**
-- Issue: Monolithic plugin.py contains all logic - no separation of concerns
-- Files: `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/plugin.py`
-- Impact: Hard to test individual components; high cyclomatic complexity; difficult code navigation
-- Fix approach: Extract API client to `api_client.py`, validation to `validators.py`, actions to `actions.py`. Reduces main file to ~800 lines.
+## Tech Debt
 
-**Overly Broad Exception Handling in State Updates:**
-- Issue: Try-except blocks wrap entire update methods (lines 584-661), obscuring which operation failed
-- Files: `plugin.py:584-661` in `_update_from_netro()`
-- Impact: When schedule updates fail, hard to distinguish device info vs schedules vs moisture failures
-- Fix approach: Wrap each API call independently with specific error handling and logging for that operation.
+### `plugin.py` has no test coverage (0%)
 
-## Code Style & Conventions
+The main `Plugin` class cannot be unit-tested because it requires the Indigo
+runtime (`import indigo` fails outside the plugin host). The extracted modules
+(`api_client.py`, `device_handlers.py`, etc.) are testable, but `plugin.py`
+itself is not, meaning the coordination logic is only tested via real Indigo
+integration. See `TESTING.md` for coverage breakdown.
 
-**Inconsistent Logging Levels:**
-- Issue: `self.logger.info()` used for errors, `self.logger.error()` for warnings
-- Files: `plugin.py` lines 1308, 1374, 1376
-- Impact: Event log filtering unreliable; user can't distinguish serious vs informational messages
-- Fix approach: Use correct levels: `.error()` for failures, `.warning()` for conditions to avoid, `.info()` for normal operations.
+### Type hints absent in `plugin.py`
 
-**String Formatting Mix:**
-- Issue: Mix of f-strings, `.format()`, and string concatenation throughout
-- Files: `plugin.py` scattered (e.g., lines 1304 has `f'sent "{dev.name}" {"all zones off"}'` which is awkward)
-- Impact: Inconsistent style makes code harder to read
-- Fix approach: Use f-strings exclusively (Google Python Style Guide compliant). Replace old `.format()` calls.
+The main plugin file has no type annotations. The extracted modules
+(`api_client.py`, `validators.py`, `device_handlers.py`) use full type hints.
+The inconsistency makes refactoring harder.
 
-**Bare Tuple in Exception Handling:**
-- Issue: `except (Exception,):` uses trailing comma - unusual Python pattern
-- Files: Multiple locations (lines 131, 827, 1230, 1285, 1306)
-- Impact: Non-idiomatic Python; confuses linters and reviewers
-- Fix approach: Change to `except Exception:` (no parentheses/comma needed for single exception type).
+### Pylint disabled rules
 
-**Unused Variable Declarations:**
-- Issue: Variables assigned but not used (e.g., `exc` in multiple except blocks)
-- Files: `plugin.py` lines 1402, 1473, 1534
-- Impact: Code appears incomplete; may hide refactoring mistakes
-- Fix approach: Remove unused variables or use underscore convention `except Exception as _:`.
+Multiple `# pylint: disable=unused-argument` suppressions in `plugin.py` at
+lines 1081, 1103, 1122, 1137, 1151, 1304, 1318, 1835, 1911 — these are
+Indigo callback signatures that include parameters not used in the
+implementation. Correct by convention but noisy.
 
-## Performance & Scalability
+### `docs/TESTING.md` references non-existent `tests/fixtures/` directory
 
-**Single Device Per Plugin Instance:**
-- Issue: Plugin designed for single controller only; multiple controllers require multiple plugin instances
-- Files: `CLAUDE.md:377` documents as limitation
-- Impact: Reduces flexibility; users manage multiple Indigo plugin instances for multi-controller setups
-- Fix approach: Refactor state management to handle device dict per controller serial. Medium effort; would improve user experience significantly.
+`docs/TESTING.md` describes JSON fixture files (`info_response.json`, etc.) in
+a `tests/fixtures/` directory that does not exist. All fixture data is now
+inline in `conftest.py`. The docs are stale but not harmful.
 
-**All Devices Polled Sequentially in Single Thread:**
-- Issue: `runConcurrentThread()` polls all devices in series (lines 824-829); waits for all to complete before sleep
-- Files: `plugin.py:810-829` and `_update_from_netro():373-695`
-- Impact: If one device is slow (timeout), all others wait; timeout delays next poll cycle
-- Fix approach: Use thread pool for parallel device polling, with per-device timeouts. Improves responsiveness.
+### `test_api_client.py` duplicates `conftest.py` fixtures
 
-**Polling Interval Affects All Devices Equally:**
-- Issue: Plugin-level polling interval applies to all devices; no per-device configuration
-- Files: `plugin.py:163` and `runConcurrentThread():829`
-- Impact: Can't optimize polling for fast vs slow controllers; users forced to choose conservative interval for all
-- Fix approach: Add per-device polling configuration (overrides plugin default). Medium effort.
+`test_api_client.py` defines its own `mock_logger` and `mock_prefs` fixtures
+locally instead of using the shared ones from `conftest.py`. This is
+redundant and should be cleaned up.
 
-**Throttle Management Persists in Memory Only:**
-- Issue: `self.throttle_next_call` lost on plugin restart; no persistent state
-- Files: `plugin.py:180, 210-217`
-- Impact: If rate limit hit just before plugin restart, throttle timer immediately expires after restart (rate limit hit again)
-- Fix approach: Persist throttle state to pluginPrefs; restore on startup. Prevents immediate re-triggering.
+### Legacy `FORECAST_UPDATE_INTERVAL_MINUTES` constant
 
-## API Integration Fragility
+```python
+# constants.py
+FORECAST_UPDATE_INTERVAL_MINUTES: Final[int] = 240
+"""Default forecast interval (use DEFAULT_FORECAST_INTERVAL_MINUTES instead)."""
+```
 
-**Reliance on Undocumented API Behavior:**
-- Issue: Plugin handles 10 known API quirks documented in `API_NOTES.md`
-- Files: `API_NOTES.md` documents all; `plugin.py` implements workarounds
-- Impact: Netro API changes break plugin silently (e.g., timestamp format change from string to number)
-- Fix approach: Add comprehensive API response schema validation; detect format changes early. Implement API version detection.
+Kept for backward compatibility but flagged for removal. No other code should
+reference it — new code should use `DEFAULT_FORECAST_INTERVAL_MINUTES`.
 
-**Timestamp Type Handling Scattered:**
-- Issue: String/number timestamp conversion happens in 4+ places
-- Files: `plugin.py` lines 524-527, 554-560 (in _update_from_netro), plus test_local_api.py
-- Impact: Easy to miss one instance when API changes format; inconsistent conversions
-- Fix approach: Extract to single `_parse_timestamp(raw)` utility function called everywhere. Single source of truth.
+## Known API Issues and Workarounds
 
-**Error Response Format Variation:**
-- Issue: API sometimes returns JSON error body, sometimes just HTTP status
-- Files: `plugin.py:265-324` has defensive parsing for both cases
-- Impact: Complex error handling; easy to miss new error format variant
-- Fix approach: Wrap all API responses in normalized error object with detected format.
+These are Netro API quirks that require ongoing defensive code (documented
+fully in `docs/API_NOTES.md`):
 
-**No Rate Limit Prevention - Only Detection:**
-- Issue: Plugin detects rate limit *after* hitting it; requires 61-minute backoff
-- Files: `plugin.py:274-306` handles HTTP 400 error code 3
-- Impact: User gets service interruption every time they exceed daily quota
-- Fix approach: Implement token budget tracking; pause polling when <100 tokens remain (warn at <200). Proactive vs reactive.
+1. **Timestamp strings**: V1 API returns numeric timestamps as JSON strings.
+   Handled by `float(raw) if isinstance(raw, str) else raw` pattern throughout
+   `device_handlers.py`.
 
-## Security Considerations
+2. **`STANDBY` vs `OFFLINE`**: Ambiguous status — the plugin cannot
+   definitively distinguish between "controller is on standby" and "controller
+   is unreachable". Only `last_active` timestamp can help infer actual offline.
 
-**Serial Number in Log Messages:**
-- Issue: API calls logged with full URLs containing serial number (device authentication key)
-- Files: `plugin.py:220` logs URL with `?key={serial}`
-- Impact: Serial number exposed in Indigo Event Log (stored in database); potential unauthorized API access
-- Fix approach: Log redacted URL: `"API call: GET info.json?key=***redacted***"`. Add security note to CLAUDE.md.
+3. **Moisture data is always stale**: Netro updates moisture once per day at
+   most. Plugin cannot force a refresh. Users expect real-time data.
 
-**No Input Validation on External Actions:**
-- Issue: Plugin actions accept user input without comprehensive validation until API call
-- Files: `plugin.py:1408-1476` (startZoneWithDelay), `1479-1536` (reportWeather)
-- Impact: Invalid inputs cause API errors instead of being rejected early in UI validation
-- Fix approach: Expand `validateActionConfigUi()` to validate all parameter combinations and constraints.
+4. **Whisperer battery drain**: Sensors reporting every 4-6 hours degrade
+   to unreliable intervals when battery is below 20%. Plugin has no way to
+   detect this degradation — it just sees fewer readings.
 
-**Throttle Timer Not Validated:**
-- Issue: If Netro API returns invalid `token_reset` timestamp, fallback uses hardcoded 61 minutes (line 297)
-- Files: `plugin.py:281-302`
-- Impact: User could be throttled longer than necessary if API returns garbage timestamp
-- Fix approach: Parse with fallback to current_time + 61min, but log warning about invalid API response.
+5. **No pause/resume**: Indigo sprinkler device model supports
+   `PauseSchedule`/`ResumeSchedule`/`NextZone` but Netro API does not.
+   These actions are silently no-ops (see TODO above).
 
-## Test Coverage Gaps
+## Rate Limit Risk
 
-**High-Risk Untested Areas:**
-- Files: `plugin.py:662-694` (Whisperer sensor updates) - device type not well tested
-- Files: `plugin.py:696-732` (Moisture data handling) - edge cases with empty moisture list
-- Risk: Sensor devices could silently fail to update without error logging
-- Priority: **High** - affects user-visible features
+At default polling with all endpoints active and Tomorrow.io enabled:
 
-**Error Handling Not Tested:**
-- Files: Missing tests for network timeouts, API 500 errors, malformed JSON responses
-- Risk: Unknown behavior during actual failures; error messages may not display correctly
-- Priority: **High** - affects production reliability
+| Source | Calls/day |
+|--------|-----------|
+| Device info (10 min) | ~144 |
+| Schedules (30 min) | ~48 |
+| Moistures (10 min) | ~144 |
+| Events (5 min, v2) | ~288 |
+| Sensor (30 min) | ~48 |
+| Weather reports | ~48 (30 min × 1 device) |
+| Forecast reports | ~6 × 3 days = 18 |
+| Total | ~738 |
 
-**Validation Edge Cases:**
-- Files: No tests for unicode in device names, very long serial numbers, special characters in zone names
-- Risk: Could cause plugin crashes or Indigo database corruption
-- Priority: **Medium** - low probability but high impact
+Well within the 2,000/day limit for a single device. With multiple controllers
+each consuming tokens independently (per-device budget), the total could
+multiply. The proactive pause at 100 tokens prevents hard failures.
 
-**Schedule Parsing Edge Cases:**
-- Files: `plugin.py:515-582` - multiple schedule type formats handled but not thoroughly tested
-- Risk: New schedule type from API could cause exceptions
-- Priority: **Medium** - affected by API evolution
+## Security
 
-**Missing Integration Test for Throttle Recovery:**
-- Files: No test simulating 61-minute throttle expiry and recovery
-- Risk: Throttle state transitions untested; could get stuck permanently
-- Priority: **Medium** - important recovery path
+- Serial numbers and API keys are stored in `pluginPrefs` (Indigo-managed
+  SQLite). Not exposed in logs (plugin is careful about this).
+- `.env` file in repo root is gitignored — used for local test secrets only.
+- `test_local_api.py` reads `--serial` from CLI args, not hardcoded.
+- `docs/API_NOTES.md` includes a real serial number (`0cb8152f9f78`) in the
+  "Testing Observations" section — not a security issue (it is the test
+  controller serial, not a production device), but worth noting.
 
-## Known Limitations (Accepted Constraints)
+## Future Enhancements (from `docs/CLAUDE.md`)
 
-**API Limitations (Not Plugin Bugs):**
-- ❌ Cannot pause/resume schedules (Netro API limitation)
-- ❌ Cannot create/modify schedules (Netro API limitation)
-- ❌ Cannot change zone settings (Netro API limitation)
-- ❌ Moisture updates only once per day (Netro sensor limitation)
-
-These are documented in `CLAUDE.md:368-375` and `TROUBLESHOOTING.md:227-240`. Not actionable but important context for users.
-
-## Fragile Areas (Safe Modification Guidance)
-
-**Moisture Data Handling:**
-- Files: `plugin.py:696-732` (callMoisturesAPI method)
-- Why fragile: Assumes moisture list is sorted by ID (line 716), filters by date (line 721)
-- Safe modification: Add defensive checks for empty lists (done at line 711); add logging for unexpected data structure
-- Test coverage: Thin - only basic happy path tested
-
-**Schedule Data Extraction:**
-- Files: `plugin.py:515-582` in `_update_from_netro()`
-- Why fragile: Handles multiple timestamp formats (string/number), multiple schedule types, finds earliest start time
-- Safe modification: Use defensive `.get()` calls with defaults; test with API response variations
-- Test coverage: 70%+ - fairly comprehensive
-
-**Whisperer Sensor Updates:**
-- Files: `plugin.py:663-690` in `_update_from_netro()`
-- Why fragile: Device type rarely tested; different state structure than controller devices; onState/sensorValue handling complex
-- Safe modification: Add comprehensive logging for each operation; test with real Whisperer device
-- Test coverage: <50% - minimal testing
-
-**Action Parameter Validation:**
-- Files: `validateActionConfigUi()` at lines 923-1006
-- Why fragile: Validates but doesn't reject invalid combinations (e.g., duration=0)
-- Safe modification: Expand validation to prevent invalid parameter combinations; reject at UI level
-- Test coverage: 24 unit tests, but integration gaps
-
-## Technical Debt Summary
-
-| Item | Severity | Impact | Effort | Priority |
-|------|----------|--------|--------|----------|
-| Bare exception handlers | High | Debugging impossible | Low | High |
-| Single-file architecture | Medium | Maintenance hard | High | Medium |
-| Timestamp handling scattered | Medium | Bug-prone | Low | High |
-| No proactive throttle prevention | Medium | Service interruption | Medium | Medium |
-| Serial number in logs | High | Security exposure | Low | High |
-| Whisperer sensor untested | Medium | Silent failures | Medium | Medium |
-| Per-device polling config | Low | Feature request | High | Low |
-| Multi-controller support | Low | Usability | High | Low |
-
-## Code Quality Metrics
-
-**Current Status**:
-- Pylint score: ~6.5/10 (target 8.0)
-- Test coverage: >70% overall, gaps in Whisperer and error paths
-- Lines of code: 1635 (main plugin file only)
-- Cyclomatic complexity: High (large methods, nested conditionals)
-- Documentation: Excellent (CLAUDE.md, API_NOTES.md, TROUBLESHOOTING.md)
-
-**Blockers to Higher Quality**:
-1. Bare exception handlers obscure true error handling
-2. Single large file increases cognitive load
-3. Insufficient error path testing
-4. API quirk workarounds scattered throughout
-
-## Recommendations for Next Phase
-
-**Priority 1 (Do Now):**
-- [ ] Replace bare `except (Exception,):` with specific exception types
-- [ ] Add security note about serial number exposure; consider redacting in logs
-- [ ] Extract timestamp parsing to utility function
-- [ ] Add comprehensive Whisperer sensor tests
-
-**Priority 2 (Next Sprint):**
-- [ ] Split plugin.py into modules (api_client, validators, actions)
-- [ ] Add per-device error logging (identify which operation failed)
-- [ ] Implement proactive throttle prevention (pause polling when tokens <100)
-- [ ] Persist throttle state across plugin restarts
-
-**Priority 3 (Future):**
-- [ ] Multi-controller support in single plugin instance
-- [ ] Per-device polling interval configuration
-- [ ] API response schema validation layer
-- [ ] Comprehensive API error scenario testing
-
----
-
-*Concerns audit: 2026-02-01*
+- Multi-controller support in a single plugin instance (currently requires
+  separate plugin instances)
+- Forecast integration if Netro adds a forecast API
+- Historical moisture graphing
+- Zone usage statistics
+- Webhook support if Netro adds push
+- Increase pylint score to 9.0+ (target already set in `pyproject.toml`,
+  current status unclear for `plugin.py`)
+- Increase test coverage to 85%+
+- Add type hints to `plugin.py`

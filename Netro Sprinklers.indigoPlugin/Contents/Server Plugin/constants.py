@@ -126,19 +126,58 @@ DEFAULT_API_TIMEOUT_SECONDS: Final[int] = 5
 """Default timeout for API requests in seconds."""
 
 MINIMUM_POLLING_INTERVAL_MINUTES: Final[int] = 3
-"""Minimum polling interval in minutes to avoid API rate limits."""
+"""Minimum polling interval in minutes (used as main loop sleep)."""
+
+# Per-endpoint polling defaults (minutes)
+DEFAULT_EVENTS_INTERVAL_MINUTES: Final[int] = 5
+"""Default interval for device event polling (online/offline, v2 only)."""
+
+DEFAULT_DEVICE_INFO_INTERVAL_MINUTES: Final[int] = 10
+"""Default interval for device info polling (status, firmware, tokens)."""
+
+DEFAULT_MOISTURES_INTERVAL_MINUTES: Final[int] = 10
+"""Default interval for zone moisture polling."""
+
+DEFAULT_SCHEDULES_INTERVAL_MINUTES: Final[int] = 30
+"""Default interval for schedule polling."""
+
+DEFAULT_SENSOR_INTERVAL_MINUTES: Final[int] = 30
+"""Default interval for Whisperer sensor data polling."""
 
 DEFAULT_WEATHER_UPDATE_INTERVAL_MINUTES: Final[int] = 30
-"""Default interval for weather updates in minutes (matches PluginConfig.xml)."""
+"""Default interval for Tomorrow.io realtime weather updates."""
+
+DEFAULT_FORECAST_INTERVAL_MINUTES: Final[int] = 240
+"""Default interval for Tomorrow.io forecast updates (4 hours)."""
+
+# Per-endpoint minimum intervals (minutes)
+MINIMUM_EVENTS_INTERVAL_MINUTES: Final[int] = 3
+"""Minimum interval for event polling."""
+
+MINIMUM_DEVICE_INFO_INTERVAL_MINUTES: Final[int] = 5
+"""Minimum interval for device info polling."""
+
+MINIMUM_SCHEDULES_INTERVAL_MINUTES: Final[int] = 10
+"""Minimum interval for schedule polling."""
+
+MINIMUM_MOISTURES_INTERVAL_MINUTES: Final[int] = 5
+"""Minimum interval for moisture polling."""
+
+MINIMUM_SENSOR_INTERVAL_MINUTES: Final[int] = 10
+"""Minimum interval for sensor data polling."""
+
+MINIMUM_WEATHER_UPDATE_INTERVAL_MINUTES: Final[int] = 10
+"""Minimum interval for Tomorrow.io weather updates."""
+
+MINIMUM_FORECAST_INTERVAL_MINUTES: Final[int] = 60
+"""Minimum interval for Tomorrow.io forecast updates."""
 
 THROTTLE_LIMIT_MINUTES: Final[int] = 61
 """Duration to wait after rate limit error before retrying (minutes)."""
 
-FORECAST_UPDATE_INTERVAL_MINUTES: Final[int] = 60
-"""Interval between forecast updates in minutes."""
-
-MINIMUM_WEATHER_UPDATE_INTERVAL_MINUTES: Final[int] = 10
-"""Minimum interval for Tomorrow.io weather updates in minutes."""
+# Legacy constant — kept for backward compatibility during migration
+FORECAST_UPDATE_INTERVAL_MINUTES: Final[int] = 240
+"""Default forecast interval (use DEFAULT_FORECAST_INTERVAL_MINUTES instead)."""
 
 TOKEN_PAUSE_THRESHOLD: Final[int] = 100
 """Token count below which polling should pause proactively."""

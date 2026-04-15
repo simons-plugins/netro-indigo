@@ -443,13 +443,18 @@ class TestPrefsConfigValidation:
     def test_valid_prefs(self):
         """All valid values pass."""
         values = {
-            "pollingInterval": "10",
+            "eventsInterval": "5",
+            "deviceInfoInterval": "10",
+            "moisturesInterval": "10",
+            "schedulesInterval": "30",
+            "sensorInterval": "30",
             "apiTimeout": "30",
             "maxZoneRunTime": "3600",
         }
         is_valid, sanitized, errors = validate_prefs_config(values)
         assert is_valid is True
-        assert sanitized["pollingInterval"] == 10
+        assert sanitized["eventsInterval"] == 5
+        assert sanitized["deviceInfoInterval"] == 10
         assert sanitized["apiTimeout"] == 30
         assert sanitized["maxZoneRunTime"] == 3600
         assert errors == {}
@@ -459,33 +464,35 @@ class TestPrefsConfigValidation:
         values = {}
         is_valid, sanitized, errors = validate_prefs_config(values)
         assert is_valid is True
-        assert sanitized["pollingInterval"] == 3
+        assert sanitized["eventsInterval"] == 5
+        assert sanitized["deviceInfoInterval"] == 10
+        assert sanitized["schedulesInterval"] == 30
         assert sanitized["apiTimeout"] == 5
         assert sanitized["maxZoneRunTime"] == 3600
 
-    def test_polling_interval_too_low(self):
+    def test_events_interval_too_low(self):
         """< 3 minutes errors."""
-        values = {"pollingInterval": "1"}
+        values = {"eventsInterval": "1"}
         is_valid, sanitized, errors = validate_prefs_config(values)
         assert is_valid is False
-        assert "pollingInterval" in errors
-        assert "at least" in errors["pollingInterval"].lower()
+        assert "eventsInterval" in errors
+        assert "at least" in errors["eventsInterval"].lower()
 
-    def test_polling_interval_too_high(self):
+    def test_events_interval_too_high(self):
         """> 1440 minutes errors."""
-        values = {"pollingInterval": "2000"}
+        values = {"eventsInterval": "2000"}
         is_valid, sanitized, errors = validate_prefs_config(values)
         assert is_valid is False
-        assert "pollingInterval" in errors
-        assert "exceed" in errors["pollingInterval"].lower()
+        assert "eventsInterval" in errors
+        assert "exceed" in errors["eventsInterval"].lower()
 
-    def test_polling_interval_non_numeric(self):
+    def test_events_interval_non_numeric(self):
         """Non-numeric errors."""
-        values = {"pollingInterval": "fast"}
+        values = {"eventsInterval": "fast"}
         is_valid, sanitized, errors = validate_prefs_config(values)
         assert is_valid is False
-        assert "pollingInterval" in errors
-        assert "valid number" in errors["pollingInterval"].lower()
+        assert "eventsInterval" in errors
+        assert "valid number" in errors["eventsInterval"].lower()
 
     def test_api_timeout_too_low(self):
         """< 1 second errors."""

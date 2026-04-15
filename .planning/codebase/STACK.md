@@ -1,124 +1,100 @@
-# Technology Stack
+# STACK.md — Netro Sprinklers Plugin
 
-**Analysis Date:** 2026-02-01
+## Runtime Environment
 
-## Languages
+- **Python**: 3.10+ (Indigo 2023+ requirement). Dev machine runs Python 3.11.6.
+  - Interpreter: `/Library/Frameworks/Python.framework/Versions/Current/bin/python3`
+  - All code uses f-strings, `match`-compatible syntax, `typing.Final`, `dataclasses`
+- **Platform**: macOS (Indigo runs as a macOS daemon)
+- **Indigo SDK**: ServerApiVersion `3.6` (declared in
+  `Netro Sprinklers.indigoPlugin/Contents/Info.plist`)
+  - Plugin inherits from `indigo.PluginBase`
+  - Indigo object model accessed via the `indigo` module (injected at runtime)
+  - `indigo` is NOT importable outside Indigo runtime — tests must mock it
 
-**Primary:**
-- Python 3.10+ - Main plugin implementation
-- XML - Device types, actions, events, plugin configuration
+## Plugin Identity
 
-**Secondary:**
-- Plist/XML - Plugin metadata and Info.plist
+- **CFBundleIdentifier**: `com.simons-plugins.netro`
+- **PluginVersion**: `2026.4.0` (format: `YYYY.R.patch`)
+- **CFBundleDisplayName**: Netro Smart Sprinklers
 
-## Runtime
+## Runtime Dependencies
 
-**Environment:**
-- Indigo 2023+ (macOS home automation server)
-- Python 3.10+ (managed by Indigo)
+Declared in
+`Netro Sprinklers.indigoPlugin/Contents/Server Plugin/requirements.txt`:
 
-**Package Manager:**
-- pip (Indigo handles automatic installation)
-- Lockfile: `requirements.txt` present
-
-## Frameworks
-
-**Core:**
-- Indigo PluginBase 3.6 - Plugin framework, inherits from `indigo.PluginBase`
-- requests 2.32.5 - HTTP client for Netro API calls
-
-**Testing:**
-- pytest 8.0.0+ - Test framework
-- pytest-cov 4.1.0+ - Coverage reporting
-- pytest-mock 3.12.0+ - Mocking support
-
-**Build/Dev:**
-- pylint - Code quality analysis (target score 8.0)
-
-## Key Dependencies
-
-**Critical:**
-- requests 2.32.5 - HTTP client for all Netro API communication
-  - Location: `Netro Sprinklers.indigoPlugin/Contents/Server Plugin/requirements.txt`
-  - Installed automatically by Indigo on plugin load
-
-**Infrastructure:**
-- dateutil - Timezone handling in `plugin.py:47`
-  - Used for timestamp conversion from UTC to local timezone
-  - Pre-installed with Indigo
-
-**Built-in Libraries:**
-- json - JSON parsing for API responses
-- copy - Deep copying device dictionaries
-- traceback - Exception logging
-- datetime - Schedule timestamp handling
-- operator - itemgetter for sorting zones
-
-## Configuration
-
-**Environment:**
-- Plugin preferences stored in Indigo database
-- Device configuration per controller (serial number as unique ID)
-
-**Configuration Files:**
-- `Info.plist` - Plugin metadata, version (2025.1.7), API versions
-- `PluginConfig.xml` - Plugin-level settings UI (polling interval, timeout, max zone runtime)
-- `Devices.xml` - Device type definitions (sprinkler, Whisperer)
-- `Actions.xml` - Custom action definitions (rain delay, weather reporting, zone delay)
-- `Events.xml` - Trigger event definitions
-- `MenuItems.xml` - Plugin menu items (debug toggle, force update)
-
-**Key Configuration Settings:**
-- `pollingInterval` - Minutes between API polls (minimum 3, default 3)
-- `apiTimeout` - API request timeout in seconds (default 5)
-- `maxZoneRunTime` - Maximum zone runtime in seconds (default 3600)
-- `showDebugInfo` - Debug logging flag (default false)
-
-## Platform Requirements
-
-**Development:**
-- macOS (Indigo runs on macOS only)
-- Indigo 2023.2+ installed and running
-- Python 3.10+ (provided by Indigo)
-- Git (for version control)
-- pytest, pytest-cov, pytest-mock (for running tests)
-
-**Production:**
-- Indigo 2023.2+ running on macOS
-- Active internet connection (required for Netro API)
-- Netro controller with known serial number
-- Indigo server address in DNS/network configuration
-
-**API Requirements:**
-- Netro API base: `http://api.netrohome.com/npa/v1/`
-- No additional auth beyond device serial number
-- Network access to api.netrohome.com on port 80 (HTTP)
-
-## Build & Deployment
-
-**Plugin Installation:**
-```bash
-# Copy plugin to Indigo plugins directory
-cp -r "Netro Sprinklers.indigoPlugin" "/Library/Application Support/Perceptive Automation/Indigo 2023.2/Plugins/"
-
-# Or disabled plugins for development
-cp -r "Netro Sprinklers.indigoPlugin" "/Library/Application Support/Perceptive Automation/Indigo 2023.2/Plugins (Disabled)/"
+```
+requests==2.32.5
 ```
 
-**Testing:**
-```bash
-# Run all tests with coverage
-pytest tests/ --cov="Netro Sprinklers.indigoPlugin/Contents/Server Plugin"
+Indigo auto-installs packages from `requirements.txt` when the plugin loads.
+No `Contents/Packages/` bundle directory is used — `requests` is installed
+to the system Python by Indigo's package manager.
 
-# Generate HTML coverage report
-pytest tests/ --cov --cov-report=html
+## Development Dependencies
+
+Declared in `pyproject.toml` (not `requirements.txt` — kept separate):
+
+```
+pytest>=7.4
+pytest-cov>=4.1
+pytest-mock>=3.12
 ```
 
-**Distribution:**
-- Plugin packaged as `.indigoPlugin` bundle (contains Contents directory)
-- Distributed via GitHub releases
-- Double-click to install in Indigo
+Install manually:
+```bash
+pip3 install pytest pytest-cov pytest-mock requests
+```
 
----
+## Linting
 
-*Stack analysis: 2026-02-01*
+Configured via `pyproject.toml`:
+
+- **Tool**: `pylint`
+- **Target score**: 9.0 (`fail-under = 9.0`)
+- **Max line length**: 120
+- **py-version**: 3.10
+- **Disabled rules** (Indigo-specific exceptions):
+  - `too-many-lines` — single-file plugin pattern
+  - `too-many-public-methods` — required by Indigo callback API
+  - `invalid-name` — Indigo requires camelCase callbacks
+- **Method name regex**: `[a-z_][a-zA-Z0-9_]{2,}$` (allows Indigo camelCase)
+- **Run**: `python3 -m pylint plugin.py --max-line-length=120`
+- **Ignore paths**: `tests/`, `__pycache__/`
+
+## Test Runner
+
+- **Tool**: `pytest`
+- **Config**: `pytest.ini` (root) + `pyproject.toml` `[tool.pytest.ini_options]`
+- **Test paths**: `tests/`
+- **File pattern**: `test_*.py`
+- **Coverage**: `pytest-cov` generates HTML to `htmlcov/`
+- **Total tests**: 427 collected (as of April 2026)
+- **Run**:
+  ```bash
+  pytest tests/
+  pytest tests/ --cov --cov-report=html
+  ```
+
+## Module Layout (Server Plugin)
+
+All Python lives in
+`Netro Sprinklers.indigoPlugin/Contents/Server Plugin/`:
+
+| File | Purpose |
+|------|---------|
+| `plugin.py` | Main `Plugin(indigo.PluginBase)` class, ~1900 lines |
+| `api_client.py` | `NetroAPIClient` — HTTP + throttle management |
+| `device_handlers.py` | `SprinklerHandler`, `WhispererHandler`, `ZoneHandler` |
+| `validators.py` | Pure validation functions for ConfigUi callbacks |
+| `constants.py` | All URL constants, defaults, thresholds |
+| `exceptions.py` | `NetroError` hierarchy |
+| `utils.py` | Unit conversion helpers |
+| `tomorrow_client.py` | Tomorrow.io weather API client |
+
+## CI / Release
+
+- **Version check**: CI fails if `Info.plist` `PluginVersion` already exists as a git tag
+- **Release**: `create-release` workflow auto-creates a GitHub Release with a `.zip`
+  bundle on merge to `main`
+- **Repo**: https://github.com/simons-plugins/netro-indigo

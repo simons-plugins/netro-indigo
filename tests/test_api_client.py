@@ -98,7 +98,7 @@ class TestThrottleState:
         assert client.throttle_expires is None
 
     def test_save_throttle_state_calls_prefs_setter(self, mock_logger, mock_prefs):
-        """Save should call prefs_setter with JSON."""
+        """Save should call prefs_setter with v2 JSON format."""
         prefs_getter, prefs_setter, prefs_data = mock_prefs
         client = NetroAPIClient(
             logger=mock_logger,
@@ -110,12 +110,13 @@ class TestThrottleState:
 
         assert "throttle_state" in prefs_data
         saved_state = json.loads(prefs_data["throttle_state"])
+        assert saved_state["version"] == 2
         assert "throttle_until" in saved_state
-        assert "token_remaining" in saved_state
+        assert "device_tokens" in saved_state
         assert "last_saved" in saved_state
 
-    def test_restore_throttle_state_from_valid_prefs(self, mock_logger):
-        """Restore should parse JSON and set state."""
+    def test_restore_v1_format_ignores_stale_throttle(self, mock_logger):
+        """V1 format (no version key) does not restore throttle — may be from incorrect global tracking."""
         future_time = datetime.now() + timedelta(minutes=30)
         state = {
             "throttle_until": future_time.isoformat(),
@@ -130,13 +131,99 @@ class TestThrottleState:
             prefs_setter=lambda k, v: None
         )
 
-        assert client._token_remaining == 500
+        # V1 throttle not restored — was likely caused by incorrect global token tracking
+        assert client._throttle_until is None
+        assert len(client._device_tokens) == 0
+
+    def test_restore_v2_format_restores_per_device_tokens(self, mock_logger):
+        """V2 format restores per-device token budgets."""
+        from api_client import DeviceTokenState
+        state = {
+            "version": 2,
+            "throttle_until": None,
+            "device_tokens": {
+                "key_A": {"token_remaining": 1500, "token_reset": "2026-04-11T00:00:00+00:00"},
+                "key_B": {"token_remaining": 1800, "token_reset": None},
+            },
+        }
+        prefs_data = {"throttle_state": json.dumps(state)}
+
+        client = NetroAPIClient(
+            logger=mock_logger,
+            prefs_getter=lambda: prefs_data,
+            prefs_setter=lambda k, v: None
+        )
+
+        assert len(client._device_tokens) == 2
+        assert client._device_tokens["key_A"].token_remaining == 1500
+        assert client._device_tokens["key_B"].token_remaining == 1800
+
+    def test_restore_v2_throttle_future(self, mock_logger):
+        """V2 format restores throttle_until if still in future."""
+        future_time = datetime.now() + timedelta(minutes=30)
+        state = {
+            "version": 2,
+            "throttle_until": future_time.isoformat(),
+            "device_tokens": {},
+        }
+        prefs_data = {"throttle_state": json.dumps(state)}
+
+        client = NetroAPIClient(
+            logger=mock_logger,
+            prefs_getter=lambda: prefs_data,
+            prefs_setter=lambda k, v: None
+        )
+
         assert client._throttle_until is not None
-        # Check throttle is approximately correct (within 1 second)
         assert abs((client._throttle_until - future_time).total_seconds()) < 1
 
+    def test_restore_v2_throttle_expired(self, mock_logger):
+        """V2 format ignores throttle_until if in past."""
+        past_time = datetime.now() - timedelta(minutes=30)
+        state = {
+            "version": 2,
+            "throttle_until": past_time.isoformat(),
+            "device_tokens": {},
+        }
+        prefs_data = {"throttle_state": json.dumps(state)}
+
+        client = NetroAPIClient(
+            logger=mock_logger,
+            prefs_getter=lambda: prefs_data,
+            prefs_setter=lambda k, v: None
+        )
+
+        assert client._throttle_until is None
+
+    def test_restore_v2_bad_device_timestamp_skips_device(self, mock_logger):
+        """Malformed token_reset for one device doesn't abort others."""
+        state = {
+            "version": 2,
+            "throttle_until": None,
+            "device_tokens": {
+                "key_A": {"token_remaining": 1500, "token_reset": None},
+                "key_B": {"token_remaining": 1200, "token_reset": "not-a-date"},
+                "key_C": {"token_remaining": 900, "token_reset": None},
+            },
+        }
+        prefs_data = {"throttle_state": json.dumps(state)}
+
+        client = NetroAPIClient(
+            logger=mock_logger,
+            prefs_getter=lambda: prefs_data,
+            prefs_setter=lambda k, v: None
+        )
+
+        # key_A and key_C should be restored, key_B skipped
+        assert "key_A" in client._device_tokens
+        assert client._device_tokens["key_A"].token_remaining == 1500
+        assert "key_B" not in client._device_tokens
+        assert "key_C" in client._device_tokens
+        assert client._device_tokens["key_C"].token_remaining == 900
+        mock_logger.warning.assert_called()
+
     def test_restore_throttle_state_ignores_expired(self, mock_logger):
-        """Restore ignores throttle_until if in past."""
+        """V1 format with past throttle — ignored entirely."""
         past_time = datetime.now() - timedelta(minutes=30)
         state = {
             "throttle_until": past_time.isoformat(),
@@ -152,7 +239,6 @@ class TestThrottleState:
         )
 
         assert client._throttle_until is None
-        assert client._token_remaining == 500
 
     def test_restore_throttle_state_handles_invalid_json(self, mock_logger):
         """Invalid JSON doesn't crash, logs warning."""
@@ -187,50 +273,102 @@ class TestThrottleState:
 class TestProactivePause:
     """Tests for proactive pause logic at threshold boundaries."""
 
-    def test_should_pause_when_below_threshold(self, client):
-        """token_remaining < 100 returns True."""
-        client._token_remaining = TOKEN_PAUSE_THRESHOLD - 1
+    def test_should_pause_for_below_threshold(self, client):
+        """should_pause_polling_for returns True when device below threshold."""
+        from api_client import DeviceTokenState
+        client._device_tokens["KEY_A"] = DeviceTokenState(token_remaining=TOKEN_PAUSE_THRESHOLD - 1)
+        assert client.should_pause_polling_for("KEY_A") is True
+
+    def test_should_not_pause_for_at_exactly_threshold(self, client):
+        """should_pause_polling_for returns False at exactly threshold (< not <=)."""
+        from api_client import DeviceTokenState
+        client._device_tokens["KEY_A"] = DeviceTokenState(token_remaining=TOKEN_PAUSE_THRESHOLD)
+        assert client.should_pause_polling_for("KEY_A") is False
+
+    def test_should_not_pause_for_above_threshold(self, client):
+        """should_pause_polling_for returns False when device above threshold."""
+        from api_client import DeviceTokenState
+        client._device_tokens["KEY_A"] = DeviceTokenState(token_remaining=TOKEN_PAUSE_THRESHOLD + 100)
+        assert client.should_pause_polling_for("KEY_A") is False
+
+    def test_should_not_pause_for_unknown_device(self, client):
+        """should_pause_polling_for returns False for unknown device key."""
+        assert client.should_pause_polling_for("UNKNOWN_KEY") is False
+
+    def test_should_pause_property_any_device(self, client):
+        """should_pause_polling returns True if any device is below threshold."""
+        from api_client import DeviceTokenState
+        client._device_tokens["KEY_A"] = DeviceTokenState(token_remaining=50)
+        client._device_tokens["KEY_B"] = DeviceTokenState(token_remaining=1500)
         assert client.should_pause_polling is True
 
-    def test_should_not_pause_when_above_threshold(self, client):
-        """token_remaining > 100 returns False."""
-        client._token_remaining = TOKEN_PAUSE_THRESHOLD + 100
+    def test_should_not_pause_property_all_above(self, client):
+        """should_pause_polling returns False if all devices above threshold."""
+        from api_client import DeviceTokenState
+        client._device_tokens["KEY_A"] = DeviceTokenState(token_remaining=500)
+        client._device_tokens["KEY_B"] = DeviceTokenState(token_remaining=1500)
         assert client.should_pause_polling is False
 
-    def test_should_not_pause_at_exactly_threshold(self, client):
-        """token_remaining == 100 returns False (boundary test)."""
-        client._token_remaining = TOKEN_PAUSE_THRESHOLD
+    def test_should_not_pause_property_no_devices(self, client):
+        """should_pause_polling returns False when no devices tracked."""
         assert client.should_pause_polling is False
 
-    def test_token_remaining_property(self, client):
-        """Verify property returns current count."""
-        client._token_remaining = 1500
-        assert client.token_remaining == 1500
+    def test_token_remaining_returns_minimum(self, client):
+        """token_remaining returns minimum across all tracked devices."""
+        from api_client import DeviceTokenState
+        client._device_tokens["KEY_A"] = DeviceTokenState(token_remaining=500)
+        client._device_tokens["KEY_B"] = DeviceTokenState(token_remaining=1500)
+        assert client.token_remaining == 500
 
-    def test_update_token_budget_from_meta(self, client):
-        """_update_token_budget parses meta correctly."""
+    def test_token_remaining_default_when_no_devices(self, client):
+        """token_remaining returns 2000 when no devices tracked."""
+        assert client.token_remaining == 2000
+
+    def test_token_remaining_for_device(self, client):
+        """token_remaining_for returns per-device count."""
+        from api_client import DeviceTokenState
+        client._device_tokens["KEY_A"] = DeviceTokenState(token_remaining=750)
+        assert client.token_remaining_for("KEY_A") == 750
+
+    def test_token_remaining_for_unknown_device(self, client):
+        """token_remaining_for returns 2000 for unknown device."""
+        assert client.token_remaining_for("UNKNOWN") == 2000
+
+    def test_update_token_budget_per_device(self, client):
+        """_update_token_budget stores tokens per device key."""
         meta = {
             "token_remaining": 750,
             "token_reset": "2026-02-02T00:00:00"
         }
-        client._update_token_budget(meta)
-        assert client._token_remaining == 750
-        assert client._token_reset == datetime(2026, 2, 2, 0, 0, 0, tzinfo=timezone.utc)
+        client._update_token_budget(meta, device_key="KEY_A")
+        assert client._device_tokens["KEY_A"].token_remaining == 750
+        assert client._device_tokens["KEY_A"].token_reset == datetime(2026, 2, 2, 0, 0, 0, tzinfo=timezone.utc)
+
+    def test_update_token_budget_independent_devices(self, client):
+        """Two devices maintain independent token counts."""
+        client._update_token_budget({"token_remaining": 500}, device_key="KEY_A")
+        client._update_token_budget({"token_remaining": 1800}, device_key="KEY_B")
+        assert client._device_tokens["KEY_A"].token_remaining == 500
+        assert client._device_tokens["KEY_B"].token_remaining == 1800
+
+    def test_update_token_budget_skips_without_device_key(self, client):
+        """_update_token_budget with no device_key does not track tokens."""
+        client._update_token_budget({"token_remaining": 500})
+        assert len(client._device_tokens) == 0
 
     def test_update_token_budget_logs_warning_below_200(self, client, mock_logger):
-        """Logs warning when tokens < 200."""
+        """Logs warning when device tokens < 200."""
         meta = {"token_remaining": TOKEN_WARNING_THRESHOLD - 1}
-        client._update_token_budget(meta)
+        client._update_token_budget(meta, device_key="KEY_A")
         mock_logger.warning.assert_called()
-        # Verify warning contains token info
         warning_call = mock_logger.warning.call_args[0][0]
-        assert "tokens" in warning_call.lower() or str(TOKEN_WARNING_THRESHOLD - 1) in warning_call
+        assert str(TOKEN_WARNING_THRESHOLD - 1) in warning_call
 
     def test_update_token_budget_no_warning_above_200(self, client, mock_logger):
-        """No warning when tokens >= 200."""
+        """No warning when device tokens >= 200."""
         mock_logger.warning.reset_mock()
         meta = {"token_remaining": TOKEN_WARNING_THRESHOLD + 100}
-        client._update_token_budget(meta)
+        client._update_token_budget(meta, device_key="KEY_A")
         mock_logger.warning.assert_not_called()
 
     def test_update_token_budget_saves_state(self, mock_logger, mock_prefs):
@@ -244,37 +382,52 @@ class TestProactivePause:
         prefs_data.clear()
 
         meta = {"token_remaining": 1500}
-        client._update_token_budget(meta)
+        client._update_token_budget(meta, device_key="KEY_A")
 
         assert "throttle_state" in prefs_data
 
     def test_update_token_budget_sets_safe_default_on_parse_failure(self, client, mock_logger):
         """Sets safe token count on parsing failure to trigger proactive pause."""
-        # Start with high token count
-        client._token_remaining = 1500
-
-        # Try to parse invalid token data
         meta = {"token_remaining": "invalid"}
-        client._update_token_budget(meta)
+        client._update_token_budget(meta, device_key="KEY_A")
 
-        # Should set to safe default (below pause threshold)
-        assert client._token_remaining == TOKEN_PAUSE_THRESHOLD - 1
-        assert client.should_pause_polling is True
+        assert client._device_tokens["KEY_A"].token_remaining == TOKEN_PAUSE_THRESHOLD - 1
+        assert client.should_pause_polling_for("KEY_A") is True
         mock_logger.warning.assert_called()
 
-    def test_should_pause_polling_auto_resets_past_reset_time(self, client, mock_logger):
-        """Auto-resets token count when past token_reset time to prevent self-locking."""
-        # Set low tokens and a reset time in the past
-        client._token_remaining = 50  # Below threshold
-        client._token_reset = datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc)  # Past date
+    def test_update_token_budget_parse_failure_sets_near_future_reset(self, client):
+        """Parse failure sets reset_time ~1h in future so device auto-unlocks."""
+        before = datetime.now(timezone.utc)
+        client._update_token_budget({"token_remaining": "invalid"}, device_key="KEY_A")
+        reset = client._device_tokens["KEY_A"].token_reset
 
-        # Check should_pause_polling - will auto-reset tokens since reset time passed
-        should_pause = client.should_pause_polling
+        assert reset is not None
+        delta = (reset - before).total_seconds()
+        assert 3500 < delta < 3700  # roughly 1 hour
 
-        # Tokens should be auto-reset to 2000 (not paused)
+    def test_update_token_budget_parse_failure_log_states_consequence(self, client, mock_logger):
+        """Parse-failure warning must mention pause + device + reset time."""
+        client._update_token_budget({"token_remaining": "invalid"}, device_key="KEY_ABCD1234")
+        # First warning is the parse-failure message; a second (threshold)
+        # warning may also fire because we set remaining below the threshold.
+        parse_msg = mock_logger.warning.call_args_list[0][0][0]
+        assert "Pausing" in parse_msg
+        assert "KEY_ABCD" in parse_msg
+        assert "safety fallback" in parse_msg
+
+    def test_auto_resets_past_reset_time(self, client, mock_logger):
+        """Auto-resets token count when past token_reset time."""
+        from api_client import DeviceTokenState
+        client._device_tokens["KEY_A"] = DeviceTokenState(
+            token_remaining=50,
+            token_reset=datetime(2026, 1, 1, 0, 0, 0, tzinfo=timezone.utc),
+        )
+
+        should_pause = client.should_pause_polling_for("KEY_A")
+
         assert should_pause is False
-        assert client._token_remaining == 2000
-        assert client._token_reset is None
+        assert client._device_tokens["KEY_A"].token_remaining == 2000
+        assert client._device_tokens["KEY_A"].token_reset is None
         mock_logger.info.assert_called()
         assert "reset" in mock_logger.info.call_args[0][0].lower()
 
@@ -454,13 +607,12 @@ class TestMakeRequest:
 
     def test_make_request_timeout_preserves_throttle_state(self, client, mock_logger):
         """Timeout doesn't affect throttle state."""
-        import requests as req
-        from datetime import timedelta
+        from api_client import DeviceTokenState
 
         # Set throttle state
         future_time = datetime.now() + timedelta(minutes=30)
         client._throttle_until = future_time
-        client._token_remaining = 500
+        client._device_tokens["KEY_A"] = DeviceTokenState(token_remaining=500)
 
         # Cause timeout (should raise ThrottleDelayError before hitting network)
         with pytest.raises(ThrottleDelayError):
@@ -468,7 +620,7 @@ class TestMakeRequest:
 
         # Throttle state should be preserved
         assert client._throttle_until == future_time
-        assert client._token_remaining == 500
+        assert client._device_tokens["KEY_A"].token_remaining == 500
 
     def test_make_request_timeout_with_custom_timeout_value(self, client):
         """Client timeout attribute passed to requests library."""
@@ -744,8 +896,8 @@ class TestMakeRequest:
         assert response1["data"]["device"]["serial"] == "SERIAL1"
         assert response2["data"]["device"]["serial"] == "SERIAL2"
 
-    def test_api_client_token_budget_tracks_across_requests(self, client):
-        """Token budget is tracked across multiple requests."""
+    def test_api_client_token_budget_tracks_per_device(self, client):
+        """Token budget is tracked independently per device key."""
         mock_response1 = Mock()
         mock_response1.status_code = 200
         mock_response1.json.return_value = {
@@ -759,15 +911,17 @@ class TestMakeRequest:
         mock_response2.json.return_value = {
             "status": "OK",
             "data": {},
-            "meta": {"token_remaining": 1300}
+            "meta": {"token_remaining": 1800}
         }
 
         with patch("api_client.requests.get", side_effect=[mock_response1, mock_response2]):
-            client.make_request("https://api.test.com/endpoint1")
-            assert client._token_remaining == 1500
+            client.make_request("https://api.test.com/endpoint1", device_key="KEY_A")
+            assert client.token_remaining_for("KEY_A") == 1500
 
-            client.make_request("https://api.test.com/endpoint2")
-            assert client._token_remaining == 1300
+            client.make_request("https://api.test.com/endpoint2", device_key="KEY_B")
+            assert client.token_remaining_for("KEY_B") == 1800
+            # KEY_A's count should be unchanged
+            assert client.token_remaining_for("KEY_A") == 1500
 
 
 # =============================================================================
