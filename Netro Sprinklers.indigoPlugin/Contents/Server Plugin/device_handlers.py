@@ -25,6 +25,7 @@ Example:
 """
 
 import logging
+import time
 from datetime import datetime, timezone
 from operator import itemgetter
 from typing import Any, Dict, List, Optional, Tuple
@@ -167,8 +168,9 @@ class SprinklerHandler:
             earliest_start_time: Optional[float] = None
 
             for sch_dict in all_schedules:
-                # Find currently executing schedule
-                if sch_dict.get("status") == "EXECUTING":
+                # Find currently executing schedule (guard against stale
+                # EXECUTING entries left behind by Netro cloud)
+                if self._schedule_actually_executing(sch_dict, api_version):
                     current_schedule_dict = sch_dict
                 # Find next valid (upcoming) schedule with earliest start time
                 elif sch_dict.get("status") == "VALID":
@@ -230,6 +232,36 @@ class SprinklerHandler:
                 return float(raw_value) if isinstance(raw_value, str) else float(raw_value)
         except (ValueError, TypeError):
             return float('inf')  # Unparseable schedules sort last (never "next")
+
+    @staticmethod
+    def _schedule_actually_executing(
+        schedule: Dict[str, Any],
+        api_version: str = "1",
+    ) -> bool:
+        """Check if an EXECUTING schedule is truly still running.
+
+        Why: Netro cloud sometimes leaves a completed schedule marked
+        EXECUTING long after its end_time has passed (seen with MANUAL
+        runs). Trusting status alone leaves the controller's activeZone
+        and the zone's isIrrigating state stuck on True for days.
+
+        Returns True if status is "EXECUTING" and either the end_time
+        is missing/unparseable (fall back to trusting status) or the
+        end_time is in the future. Returns False for a "stale" EXECUTING
+        whose end_time has already passed.
+        """
+        if schedule.get("status") != "EXECUTING":
+            return False
+        end_raw = schedule.get("end_time")
+        if end_raw in (None, ""):
+            return True  # can't verify — trust cloud
+        end_seconds = SprinklerHandler._parse_schedule_sort_key(end_raw, api_version)
+        if api_version != "2":
+            # V1 returned raw ms; convert to seconds for comparison
+            end_seconds = end_seconds / 1000.0
+        if end_seconds == float('inf'):
+            return True  # unparseable — trust cloud
+        return end_seconds > time.time()
 
     def _format_next_schedule(
         self,
@@ -617,7 +649,12 @@ class ZoneHandler:
             for sch in zone_schedules:
                 status = sch.get("status", "")
                 if status == "EXECUTING":
-                    is_irrigating = True
+                    if SprinklerHandler._schedule_actually_executing(sch, api_version):
+                        is_irrigating = True
+                    else:
+                        # Stale EXECUTING (end_time in past) — treat as completed
+                        if last_schedule is None or sch.get("id", 0) > last_schedule.get("id", 0):
+                            last_schedule = sch
                 elif status in ("EXECUTED", "CANCELLED"):
                     if last_schedule is None or sch.get("id", 0) > last_schedule.get("id", 0):
                         last_schedule = sch

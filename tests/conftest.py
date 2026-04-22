@@ -160,9 +160,9 @@ def sample_v2_schedules():
                 {
                     "id": 100,
                     "zone": 1,
-                    "start_time": "2026-04-07T06:00:00",
-                    "end_time": "2026-04-07T06:15:00",
-                    "local_date": "2026-04-07",
+                    "start_time": "2099-04-07T06:00:00",
+                    "end_time": "2099-04-07T06:15:00",
+                    "local_date": "2099-04-07",
                     "local_start_time": "06:00:00",
                     "local_end_time": "06:15:00",
                     "source": "SMART",

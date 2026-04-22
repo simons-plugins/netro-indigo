@@ -510,6 +510,76 @@ class TestSprinklerHandlerSchedules:
         assert next_duration["value"] == 20
 
     # -------------------------------------------------------------------------
+    # Stale-EXECUTING regression — Netro sometimes leaves a completed schedule
+    # marked EXECUTING. When its end_time is in the past, don't treat the
+    # controller as actively watering.
+    # -------------------------------------------------------------------------
+
+    def test_process_schedules_stale_executing_past_end_time_v1(self, sprinkler_handler):
+        """V1: EXECUTING schedule with past end_time → no active schedule."""
+        response = {
+            "status": "OK",
+            "data": {
+                "schedules": [
+                    {
+                        "status": "EXECUTING", "zone": 1, "source": "MANUAL",
+                        "start_time": 1000000000 * 1000,
+                        "end_time": 1000000900 * 1000,
+                        "zone_name": "Stale",
+                    }
+                ]
+            }
+        }
+        states, active_name = sprinkler_handler.process_schedules(response)
+        active_schedule = next(s for s in states if s["key"] == "activeSchedule")
+        active_zone = next(s for s in states if s["key"] == "activeZone")
+        assert active_schedule["value"] == "No active schedule"
+        assert active_zone["value"] == 0
+        assert active_name is None
+
+    def test_process_schedules_stale_executing_past_end_time_v2(self, sprinkler_handler):
+        """V2: EXECUTING schedule with past end_time → no active schedule."""
+        response = {
+            "status": "OK",
+            "data": {
+                "schedules": [
+                    {
+                        "status": "EXECUTING", "zone": 1, "source": "MANUAL",
+                        "start_time": "2026-04-19T18:57:05",
+                        "end_time": "2026-04-19T19:07:05",
+                        "zone_name": "Front Garden",
+                    }
+                ]
+            }
+        }
+        states, active_name = sprinkler_handler.process_schedules(
+            response, api_version="2"
+        )
+        active_zone = next(s for s in states if s["key"] == "activeZone")
+        assert active_zone["value"] == 0
+        assert active_name is None
+
+    def test_process_schedules_executing_future_end_time_still_active(self, sprinkler_handler):
+        """Genuinely-running schedule (end_time in future) is still active."""
+        response = {
+            "status": "OK",
+            "data": {
+                "schedules": [
+                    {
+                        "status": "EXECUTING", "zone": 4, "source": "MANUAL",
+                        "start_time": 9999999000 * 1000,
+                        "end_time": 9999999900 * 1000,
+                        "zone_name": "Lawn",
+                    }
+                ]
+            }
+        }
+        states, active_name = sprinkler_handler.process_schedules(response)
+        active_zone = next(s for s in states if s["key"] == "activeZone")
+        assert active_zone["value"] == 4
+        assert active_name == "Manual"
+
+    # -------------------------------------------------------------------------
     # Malformed JSON Tests (TEST-04)
     # -------------------------------------------------------------------------
 
