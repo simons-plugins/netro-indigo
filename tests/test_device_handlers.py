@@ -509,12 +509,6 @@ class TestSprinklerHandlerSchedules:
         # 1200 seconds = 20 minutes
         assert next_duration["value"] == 20
 
-    # -------------------------------------------------------------------------
-    # Stale-EXECUTING regression — Netro sometimes leaves a completed schedule
-    # marked EXECUTING. When its end_time is in the past, don't treat the
-    # controller as actively watering.
-    # -------------------------------------------------------------------------
-
     def test_process_schedules_stale_executing_past_end_time_v1(self, sprinkler_handler):
         """V1: EXECUTING schedule with past end_time → no active schedule."""
         response = {
@@ -545,8 +539,8 @@ class TestSprinklerHandlerSchedules:
                 "schedules": [
                     {
                         "status": "EXECUTING", "zone": 1, "source": "MANUAL",
-                        "start_time": "2026-04-19T18:57:05",
-                        "end_time": "2026-04-19T19:07:05",
+                        "start_time": "2000-01-01T00:00:00",
+                        "end_time": "2000-01-01T00:10:00",
                         "zone_name": "Front Garden",
                     }
                 ]
@@ -578,6 +572,79 @@ class TestSprinklerHandlerSchedules:
         active_zone = next(s for s in states if s["key"] == "activeZone")
         assert active_zone["value"] == 4
         assert active_name == "Manual"
+
+    def test_process_schedules_prefers_genuine_over_stale_executing(self, sprinkler_handler):
+        """With stale + genuine EXECUTING in same payload, pick the genuine one."""
+        response = {
+            "status": "OK",
+            "data": {
+                "schedules": [
+                    {
+                        "status": "EXECUTING", "zone": 1, "source": "MANUAL",
+                        "start_time": 1000000000 * 1000,
+                        "end_time": 1000000900 * 1000,
+                        "zone_name": "Stale",
+                    },
+                    {
+                        "status": "EXECUTING", "zone": 4, "source": "AUTOMATIC",
+                        "start_time": 9999999000 * 1000,
+                        "end_time": 9999999900 * 1000,
+                        "zone_name": "Real",
+                    },
+                ]
+            }
+        }
+        states, active_name = sprinkler_handler.process_schedules(response)
+        active_zone = next(s for s in states if s["key"] == "activeZone")
+        assert active_zone["value"] == 4
+        assert active_name == "Automatic"
+
+    def test_process_schedules_stale_executing_v2_tz_aware(self, sprinkler_handler):
+        """V2 ISO with explicit +00:00 offset is handled and compared correctly."""
+        response = {
+            "status": "OK",
+            "data": {
+                "schedules": [
+                    {
+                        "status": "EXECUTING", "zone": 1, "source": "MANUAL",
+                        "start_time": "2000-01-01T00:00:00+00:00",
+                        "end_time": "2000-01-01T00:10:00+00:00",
+                        "zone_name": "Front Garden",
+                    }
+                ]
+            }
+        }
+        states, active_name = sprinkler_handler.process_schedules(
+            response, api_version="2"
+        )
+        active_zone = next(s for s in states if s["key"] == "activeZone")
+        assert active_zone["value"] == 0
+        assert active_name is None
+
+    def test_schedule_actually_executing_non_dict_schedule(self):
+        """Malformed schedules array entry (non-dict) is treated as not-executing."""
+        from device_handlers import SprinklerHandler
+        assert SprinklerHandler._schedule_actually_executing(None) is False
+        assert SprinklerHandler._schedule_actually_executing("not-a-dict") is False
+        assert SprinklerHandler._schedule_actually_executing(42) is False
+
+    def test_schedule_actually_executing_time_boundary(self, monkeypatch):
+        """End_time exactly at or before now is stale; strictly greater is live."""
+        from device_handlers import SprinklerHandler
+        fixed_now = 1_700_000_000.0
+        monkeypatch.setattr("device_handlers.time.time", lambda: fixed_now)
+        # One second before now — stale
+        assert SprinklerHandler._schedule_actually_executing({
+            "status": "EXECUTING", "end_time": (fixed_now - 1) * 1000,
+        }) is False
+        # Exactly now — stale (strict >)
+        assert SprinklerHandler._schedule_actually_executing({
+            "status": "EXECUTING", "end_time": fixed_now * 1000,
+        }) is False
+        # One second after — live
+        assert SprinklerHandler._schedule_actually_executing({
+            "status": "EXECUTING", "end_time": (fixed_now + 1) * 1000,
+        }) is True
 
     # -------------------------------------------------------------------------
     # Malformed JSON Tests (TEST-04)

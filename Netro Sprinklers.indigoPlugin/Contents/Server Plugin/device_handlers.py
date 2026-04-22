@@ -33,6 +33,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from constants import V2_ONLINE_STATUSES
 from utils import get_key_from_dict
 
+_MODULE_LOGGER = logging.getLogger(__name__)
+
 
 __all__ = ["SprinklerHandler", "WhispererHandler", "ZoneHandler"]
 
@@ -172,6 +174,11 @@ class SprinklerHandler:
                 # EXECUTING entries left behind by Netro cloud)
                 if self._schedule_actually_executing(sch_dict, api_version):
                     current_schedule_dict = sch_dict
+                elif sch_dict.get("status") == "EXECUTING":
+                    self.logger.debug(
+                        "Ignoring stale EXECUTING schedule id=%s zone=%s end_time=%s",
+                        sch_dict.get("id"), sch_dict.get("zone"), sch_dict.get("end_time"),
+                    )
                 # Find next valid (upcoming) schedule with earliest start time
                 elif sch_dict.get("status") == "VALID":
                     start_time = self._parse_schedule_sort_key(
@@ -230,7 +237,11 @@ class SprinklerHandler:
             else:
                 # V1: Millisecond timestamp (may be string)
                 return float(raw_value) if isinstance(raw_value, str) else float(raw_value)
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as exc:
+            _MODULE_LOGGER.debug(
+                "Unparseable Netro timestamp %r (api v%s): %s",
+                raw_value, api_version, exc,
+            )
             return float('inf')  # Unparseable schedules sort last (never "next")
 
     @staticmethod
@@ -250,17 +261,19 @@ class SprinklerHandler:
         end_time is in the future. Returns False for a "stale" EXECUTING
         whose end_time has already passed.
         """
+        if not isinstance(schedule, dict):
+            return False  # malformed entry — caller should not act on it
         if schedule.get("status") != "EXECUTING":
             return False
         end_raw = schedule.get("end_time")
         if end_raw in (None, ""):
             return True  # can't verify — trust cloud
         end_seconds = SprinklerHandler._parse_schedule_sort_key(end_raw, api_version)
+        if end_seconds == float('inf'):
+            return True  # unparseable — trust cloud
         if api_version != "2":
             # V1 returned raw ms; convert to seconds for comparison
             end_seconds = end_seconds / 1000.0
-        if end_seconds == float('inf'):
-            return True  # unparseable — trust cloud
         return end_seconds > time.time()
 
     def _format_next_schedule(
@@ -652,9 +665,18 @@ class ZoneHandler:
                     if SprinklerHandler._schedule_actually_executing(sch, api_version):
                         is_irrigating = True
                     else:
-                        # Stale EXECUTING (end_time in past) — treat as completed
+                        # Stale EXECUTING (end_time in past) — Netro left it stuck.
+                        # Demote to a completed-schedule record so the zone's
+                        # lastWatering* fields still show when the run happened.
+                        # Overwrite status so the UI doesn't say "Last watering:
+                        # Executing" for a watering that has actually ended.
+                        self.logger.debug(
+                            "Ignoring stale EXECUTING schedule id=%s zone=%s end_time=%s",
+                            sch.get("id"), sch.get("zone"), sch.get("end_time"),
+                        )
                         if last_schedule is None or sch.get("id", 0) > last_schedule.get("id", 0):
-                            last_schedule = sch
+                            last_schedule = dict(sch)
+                            last_schedule["status"] = "EXECUTED"
                 elif status in ("EXECUTED", "CANCELLED"):
                     if last_schedule is None or sch.get("id", 0) > last_schedule.get("id", 0):
                         last_schedule = sch
