@@ -310,6 +310,11 @@
                 <TriggerLabel>Moisture Level (%)</TriggerLabel>
                 <ControlPageLabel>Moisture Level (%)</ControlPageLabel>
             </State>
+            <State id="moistureForecast">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Moisture Forecast (%)</TriggerLabel>
+                <ControlPageLabel>Moisture Forecast (%)</ControlPageLabel>
+            </State>
             <State id="enabled">
                 <ValueType>Boolean</ValueType>
                 <TriggerLabel>Zone Enabled</TriggerLabel>
