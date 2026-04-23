@@ -1158,6 +1158,28 @@ class Plugin(indigo.PluginBase):
         return [(s.id, s.name) for s in indigo.devices.iter(filter="self")]
 
     ########################################
+    # pylint: disable=unused-argument
+    def getWhispererDevices(self, filter="", valuesDict=None, typeId="", targetId=0):
+        """Populate the `linkedWhispererDeviceId` dropdown on zone ConfigUI.
+
+        Returns a list of (value, label) tuples:
+          - First entry: ("", "(Unpaired — use Netro forecast)") sentinel.
+          - Remaining entries: this plugin's Whisperer devices, sorted
+            case-insensitively by name. Value is the Indigo device ID as a
+            string; label is the device name.
+
+        Called by Indigo when the ConfigUI is opened / reloaded.
+        """
+        options = [("", "(Unpaired — use Netro forecast)")]
+        whisperers = sorted(
+            (d for d in indigo.devices.iter(filter="self")
+             if d.deviceTypeId == "Whisperer"),
+            key=lambda d: d.name.lower(),
+        )
+        options.extend((str(d.id), d.name) for d in whisperers)
+        return options
+
+    ########################################
     # Validation callbacks
     ########################################
     # pylint: disable=unused-argument
