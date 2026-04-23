@@ -207,3 +207,24 @@ def test_missing_forecast_but_paired_fresh_writes_sensor(plugin_instance, mock_i
     assert keys["moisture"] == 24
     # No moistureForecast write when moisture_response is None.
     assert "moistureForecast" not in keys
+
+
+def test_paired_stale_falls_back_to_forecast(plugin_instance, mock_indigo):
+    """End-to-end: paired Whisperer with stale reading → moisture shows forecast."""
+    zone = _zone_dev(zone_num=1, linked_id="999")
+    mock_indigo._devices_by_id[999] = _whisperer(soil=24, hours_old=20)
+    plugin_instance._get_zone_devices = lambda parent_id: {1: zone}
+    parent = SimpleNamespace(id=42, name="Sprite")
+
+    with patch("utils._now_utc", return_value=FROZEN_NOW):
+        plugin_instance._update_zone_devices(
+            parent, _device_data(),
+            schedule_response=None,
+            moisture_response=_moistures_response(1, forecast_val=89),
+            api_version="1",
+        )
+
+    keys = {s["key"]: s["value"] for s in zone._replaced_states}
+    # Stale Whisperer → fall back to forecast for both states.
+    assert keys["moisture"] == 89
+    assert keys["moistureForecast"] == 89

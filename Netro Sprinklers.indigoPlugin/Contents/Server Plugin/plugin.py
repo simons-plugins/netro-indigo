@@ -734,11 +734,14 @@ class Plugin(indigo.PluginBase):
                             forecast_states = self.zone_handler.process_zone_moisture(
                                 moisture_response, zone_num
                             )
+                            found = False
                             for entry in forecast_states:
-                                if entry.get("key") == "moisture":
-                                    entry["key"] = "moistureForecast"
+                                if not found and entry.get("key") == "moisture":
                                     forecast_val = entry.get("value")
-                            states.extend(forecast_states)
+                                    states.append({**entry, "key": "moistureForecast"})
+                                    found = True
+                                else:
+                                    states.append(entry)
                         except Exception:
                             self.logger.exception(
                                 f"Error processing moisture for zone {zone_num} "
