@@ -1222,7 +1222,10 @@ class Plugin(indigo.PluginBase):
         if soil is None or age_hours is None or age_hours > WHISPERER_STALENESS_HOURS:
             return forecast_val, "forecast-stale"
 
-        return int(soil), "whisperer"
+        try:
+            return int(soil), "whisperer"
+        except (TypeError, ValueError):
+            return forecast_val, "forecast-stale"
 
     ########################################
     # Validation callbacks

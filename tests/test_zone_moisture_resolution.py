@@ -156,3 +156,31 @@ def test_paired_no_soil_state(plugin_instance, mock_indigo):
     with patch("utils._now_utc", return_value=FROZEN_NOW):
         val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=89)
     assert (val, src) == (89, "forecast-stale")
+
+
+# --- Paired, v1 epoch-millis readingTime ---
+
+def test_paired_fresh_v1_epoch_millis(plugin_instance, mock_indigo):
+    """v1 API stores readingTime as an epoch-millis int — resolver should honour it."""
+    two_hours_ago_ms = int((FROZEN_NOW - timedelta(hours=2)).timestamp() * 1000)
+    whisperer = _fake_whisperer(soil=28, reading_time=two_hours_ago_ms)
+    mock_indigo._devices_by_id[999] = whisperer
+    zone = _fake_zone(linked_id="999")
+    with patch("utils._now_utc", return_value=FROZEN_NOW):
+        val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=89)
+    assert (val, src) == (28, "whisperer")
+
+
+# --- Paired, non-numeric soilMoisture (defensive) ---
+
+def test_paired_non_numeric_soil_treated_as_stale(plugin_instance, mock_indigo):
+    """Non-numeric soilMoisture (should never happen in practice) falls back safely."""
+    whisperer = SimpleNamespace(
+        enabled=True,
+        states={"soilMoisture": "unknown", "readingTime": "2026-04-23T10:00:00"},
+    )
+    mock_indigo._devices_by_id[999] = whisperer
+    zone = _fake_zone(linked_id="999")
+    with patch("utils._now_utc", return_value=FROZEN_NOW):
+        val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=89)
+    assert (val, src) == (89, "forecast-stale")
