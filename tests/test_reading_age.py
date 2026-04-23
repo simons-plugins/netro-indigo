@@ -74,3 +74,15 @@ class TestParseReadingAgeHours:
         with patch("utils._now_utc", return_value=fixed_now):
             age = utils.parse_reading_age_hours(future)
         assert age == 0.0
+
+    def test_bool_input_returns_none(self):
+        """Booleans (subclass of int) must NOT be treated as epoch millis."""
+        assert utils.parse_reading_age_hours(True) is None
+        assert utils.parse_reading_age_hours(False) is None
+
+    def test_iso_with_triple_z_suffix_rejected(self):
+        """Malformed ISO with multiple 'Z's is not silently stripped to valid."""
+        # Only a single trailing 'Z' is accepted; "...ZZZ" is malformed input
+        # and should return None rather than silently parsing as if it were "...Z".
+        result = utils.parse_reading_age_hours("2026-04-23T10:00:00ZZZ")
+        assert result is None

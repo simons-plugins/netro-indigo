@@ -169,7 +169,7 @@ def parse_reading_age_hours(
 
     # Try ISO 8601 first (covers v2 and any pre-formatted strings).
     if isinstance(reading_time, str):
-        candidate = reading_time.rstrip("Z").strip()
+        candidate = reading_time.removesuffix("Z").strip()
         try:
             parsed = datetime.fromisoformat(candidate)
         except ValueError:
@@ -187,7 +187,8 @@ def parse_reading_age_hours(
             return None
 
     # Epoch millis (int or float from numeric-string fallthrough above).
-    if isinstance(reading_time, (int, float)):
+    # Reject bool explicitly — bool is a subclass of int.
+    if isinstance(reading_time, (int, float)) and not isinstance(reading_time, bool):
         try:
             seconds = float(reading_time) / 1000.0
             parsed = datetime.fromtimestamp(seconds, tz=timezone.utc)
