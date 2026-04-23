@@ -61,6 +61,19 @@ Track your daily API call usage directly from Indigo device states. The Netro AP
 
 Integrate Whisperer soil sensors to monitor temperature, humidity, and moisture levels independently of your sprinkler zones.
 
+### Pairing a Whisperer to a Zone
+
+Each zone device has a **Paired Whisperer** dropdown in its config UI.
+When paired and the Whisperer has reported within the last 12 hours,
+the zone's `moisture` state mirrors the Whisperer's `soilMoisture`
+reading (the actual measured value). Otherwise the zone falls back to
+Netro's daily forecast.
+
+The `/moistures.json` forecast is always visible separately on the
+`moistureForecast` state — useful for comparing model predictions to
+the sensor's ground truth, and for tuning schedules. See
+[`docs/API_NOTES.md`](docs/API_NOTES.md) §6 for details.
+
 ### Indigo Triggers
 
 Create automations based on sprinkler events:
