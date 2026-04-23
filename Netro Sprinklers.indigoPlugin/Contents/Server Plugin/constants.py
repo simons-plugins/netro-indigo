@@ -185,6 +185,15 @@ TOKEN_PAUSE_THRESHOLD: Final[int] = 100
 TOKEN_WARNING_THRESHOLD: Final[int] = 200
 """Token count below which warnings are logged."""
 
+WHISPERER_STALENESS_HOURS: Final[int] = 12
+"""Maximum age (hours) for a Whisperer reading to be considered fresh.
+
+Whisperers report every 1-6 hours depending on battery level. 12h = 2-12
+missed readings — tolerates brief API outages but catches a dead battery
+within a day. When a paired Whisperer reading is older than this, the
+zone falls back to Netro's /moistures.json forecast.
+"""
+
 
 # =============================================================================
 # V2 Online Status Values
