@@ -1227,6 +1227,56 @@ class Plugin(indigo.PluginBase):
         except (TypeError, ValueError):
             return forecast_val, "forecast-stale"
 
+    def _log_moisture_source_transition(self, zone_dev, new_source):
+        """Log a transition between moisture-source categories for a zone.
+
+        Persists the current source in ``zone_dev.pluginProps['lastMoistureSource']``
+        and only emits a log line when the category changes, to avoid spam.
+        The first-ever call on a fresh install is silent (no prior state).
+
+        Args:
+            zone_dev: Indigo zone device.
+            new_source: One of the source tags returned by
+                ``_resolve_zone_moisture``.
+        """
+        prev = zone_dev.pluginProps.get("lastMoistureSource")
+        if prev == new_source:
+            return
+
+        if prev is not None:
+            if new_source == "whisperer":
+                if prev == "forecast-stale":
+                    self.logger.info(
+                        f"Zone '{zone_dev.name}': Whisperer reading recovered — "
+                        f"moisture now tracking paired sensor."
+                    )
+                else:
+                    self.logger.info(
+                        f"Zone '{zone_dev.name}': paired Whisperer reading active — "
+                        f"moisture now tracking sensor."
+                    )
+            elif new_source == "forecast-stale":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer reading stale "
+                    f"(>12h old) — falling back to Netro forecast."
+                )
+            elif new_source == "forecast-missing-device":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer device no longer "
+                    f"exists — falling back to Netro forecast."
+                )
+            elif new_source == "forecast-disabled-device":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer device is disabled "
+                    f"— falling back to Netro forecast."
+                )
+
+        # Persist the new source so the next poll can detect the next transition.
+        new_props = dict(zone_dev.pluginProps)
+        new_props["lastMoistureSource"] = new_source
+        zone_dev.pluginProps = new_props  # keep test-side dict in sync
+        zone_dev.replacePluginPropsOnServer(new_props)
+
     ########################################
     # Validation callbacks
     ########################################
