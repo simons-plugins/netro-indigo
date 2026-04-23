@@ -728,10 +728,33 @@ class Plugin(indigo.PluginBase):
                             )
                         )
 
+                    forecast_val = None
                     if moisture_response:
-                        states.extend(
-                            self.zone_handler.process_zone_moisture(moisture_response, zone_num)
-                        )
+                        try:
+                            forecast_states = self.zone_handler.process_zone_moisture(
+                                moisture_response, zone_num
+                            )
+                            for entry in forecast_states:
+                                if entry.get("key") == "moisture":
+                                    entry["key"] = "moistureForecast"
+                                    forecast_val = entry.get("value")
+                            states.extend(forecast_states)
+                        except Exception:
+                            self.logger.exception(
+                                f"Error processing moisture for zone {zone_num} "
+                                f"on '{zone_dev.name}'"
+                            )
+
+                    moisture_val, source = self._resolve_zone_moisture(
+                        zone_dev, forecast_val
+                    )
+                    if moisture_val is not None:
+                        states.append({
+                            "key": "moisture",
+                            "value": moisture_val,
+                            "uiValue": f"{moisture_val}%",
+                        })
+                    self._log_moisture_source_transition(zone_dev, source)
 
                 if states:
                     zone_dev.updateStatesOnServer(states)
