@@ -113,6 +113,22 @@ def test_repeated_warning_suppressed(plugin_instance):
     assert plugin_instance.logger.warning.call_count == 1
 
 
+def test_log_warning_on_missing_reading(plugin_instance):
+    """Paired, but Whisperer has no reading yet (readingID==0) → warning."""
+    zone = _zone(last_source="whisperer")
+    plugin_instance._log_moisture_source_transition(zone, "forecast-missing-reading")
+    plugin_instance.logger.warning.assert_called_once()
+    assert "no reading yet" in plugin_instance.logger.warning.call_args[0][0].lower()
+
+
+def test_log_warning_on_unparseable_time(plugin_instance):
+    """Paired, but readingTime can't be parsed → warning."""
+    zone = _zone(last_source="whisperer")
+    plugin_instance._log_moisture_source_transition(zone, "forecast-unparseable-time")
+    plugin_instance.logger.warning.assert_called_once()
+    assert "unparseable" in plugin_instance.logger.warning.call_args[0][0].lower()
+
+
 def test_replace_props_failure_logs_warning_not_raises(plugin_instance):
     """If replacePluginPropsOnServer raises, logger.warning is called and no exception escapes."""
     zone = _zone(last_source="whisperer")

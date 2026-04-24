@@ -39,18 +39,27 @@ def mock_indigo(monkeypatch):
 @pytest.fixture
 def plugin_instance(mock_indigo):
     from plugin import Plugin  # noqa: WPS433
-    return Plugin.__new__(Plugin)
+    plugin = Plugin.__new__(Plugin)
+    plugin.logger = MagicMock()
+    return plugin
 
 
-def _fake_whisperer(enabled=True, soil=30, reading_time="2026-04-23T10:00:00"):
+def _fake_whisperer(enabled=True, soil=30, reading_time="2026-04-23T10:00:00", reading_id=1001):
     return SimpleNamespace(
         enabled=enabled,
-        states={"soilMoisture": soil, "readingTime": reading_time},
+        states={
+            "soilMoisture": soil,
+            "readingTime": reading_time,
+            "readingID": reading_id,
+        },
     )
 
 
-def _fake_zone(linked_id=""):
-    return SimpleNamespace(pluginProps={"linkedWhispererDeviceId": linked_id})
+def _fake_zone(linked_id="", name="Test Zone"):
+    return SimpleNamespace(
+        name=name,
+        pluginProps={"linkedWhispererDeviceId": linked_id},
+    )
 
 
 FROZEN_NOW = datetime(2026, 4, 23, 12, 0, 0, tzinfo=timezone.utc)
@@ -141,7 +150,7 @@ def test_paired_unparseable_reading_time(plugin_instance, mock_indigo):
     mock_indigo._devices_by_id[999] = whisperer
     zone = _fake_zone(linked_id="999")
     val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=89)
-    assert (val, src) == (89, "forecast-stale")
+    assert (val, src) == (89, "forecast-unparseable-time")
 
 
 # --- Paired, no soilMoisture state ---
@@ -149,13 +158,13 @@ def test_paired_unparseable_reading_time(plugin_instance, mock_indigo):
 def test_paired_no_soil_state(plugin_instance, mock_indigo):
     whisperer = SimpleNamespace(
         enabled=True,
-        states={"readingTime": "2026-04-23T10:00:00"},  # soilMoisture missing
+        states={"readingTime": "2026-04-23T10:00:00", "readingID": 1001},  # soilMoisture missing
     )
     mock_indigo._devices_by_id[999] = whisperer
     zone = _fake_zone(linked_id="999")
     with patch("utils._now_utc", return_value=FROZEN_NOW):
         val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=89)
-    assert (val, src) == (89, "forecast-stale")
+    assert (val, src) == (89, "forecast-missing-reading")
 
 
 # --- Paired, v1 epoch-millis readingTime ---
@@ -173,14 +182,44 @@ def test_paired_fresh_v1_epoch_millis(plugin_instance, mock_indigo):
 
 # --- Paired, non-numeric soilMoisture (defensive) ---
 
-def test_paired_non_numeric_soil_treated_as_stale(plugin_instance, mock_indigo):
+def test_paired_non_numeric_soil_treated_as_missing_reading(plugin_instance, mock_indigo):
     """Non-numeric soilMoisture (should never happen in practice) falls back safely."""
     whisperer = SimpleNamespace(
         enabled=True,
-        states={"soilMoisture": "unknown", "readingTime": "2026-04-23T10:00:00"},
+        states={
+            "soilMoisture": "unknown",
+            "readingTime": "2026-04-23T10:00:00",
+            "readingID": 1001,
+        },
     )
     mock_indigo._devices_by_id[999] = whisperer
     zone = _fake_zone(linked_id="999")
     with patch("utils._now_utc", return_value=FROZEN_NOW):
         val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=89)
-    assert (val, src) == (89, "forecast-stale")
+    assert (val, src) == (89, "forecast-missing-reading")
+
+
+# --- Paired, readingID == 0 (sensor uninitialised) ---
+
+def test_paired_reading_id_zero_is_missing_reading(plugin_instance, mock_indigo):
+    """readingID == 0 (Indigo Integer-state default) → sensor hasn't reported yet."""
+    fresh = (FROZEN_NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    whisperer = _fake_whisperer(soil=24, reading_time=fresh, reading_id=0)
+    mock_indigo._devices_by_id[999] = whisperer
+    zone = _fake_zone(linked_id="999")
+    with patch("utils._now_utc", return_value=FROZEN_NOW):
+        val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=89)
+    assert (val, src) == (89, "forecast-missing-reading")
+
+
+# --- Paired, real soil=0 reading ---
+
+def test_paired_soil_integer_zero_with_valid_reading(plugin_instance, mock_indigo):
+    """soil=0 with readingID>0 and fresh time IS a valid sensor report (bone-dry)."""
+    fresh = (FROZEN_NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
+    whisperer = _fake_whisperer(soil=0, reading_time=fresh, reading_id=1001)
+    mock_indigo._devices_by_id[999] = whisperer
+    zone = _fake_zone(linked_id="999")
+    with patch("utils._now_utc", return_value=FROZEN_NOW):
+        val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=89)
+    assert (val, src) == (0, "whisperer")

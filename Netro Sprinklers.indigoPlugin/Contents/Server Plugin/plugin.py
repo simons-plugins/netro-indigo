@@ -1217,14 +1217,18 @@ class Plugin(indigo.PluginBase):
     def _resolve_zone_moisture(self, zone_dev, forecast_val):
         """Resolve the "moisture" state value for a zone device.
 
-        Pure function (no state writes, no logging). Returns a
-        ``(value, source_tag)`` pair where source_tag is one of:
+        Returns a ``(value, source_tag)`` pair where source_tag is one of:
 
         - ``"forecast"``: zone has no paired Whisperer; returns forecast_val.
         - ``"whisperer"``: paired Whisperer exists, is enabled, has a fresh
           (<= WHISPERER_STALENESS_HOURS old) ``soilMoisture`` reading.
-        - ``"forecast-stale"``: paired but reading is missing, too old, or
-          ``readingTime`` is unparseable.
+        - ``"forecast-missing-reading"``: paired but ``readingID`` is 0 (the
+          Indigo Integer-state default — sensor hasn't reported yet) or
+          ``soilMoisture`` is missing/non-numeric.
+        - ``"forecast-unparseable-time"``: paired and reading present but
+          ``readingTime`` cannot be parsed.
+        - ``"forecast-stale"``: paired, readingID > 0, soil numeric, age
+          parsed, but > WHISPERER_STALENESS_HOURS old.
         - ``"forecast-missing-device"``: paired device id does not resolve
           to an Indigo device (deleted or invalid id).
         - ``"forecast-disabled-device"``: paired device exists but is
@@ -1233,6 +1237,9 @@ class Plugin(indigo.PluginBase):
         ``value`` may be ``None`` if forecast_val is None and no Whisperer
         value is available; the caller should skip writing ``moisture`` in
         that case.
+
+        Note: emits a debug breadcrumb (no other logging) when readingTime
+        is unparseable so support debugging has the raw value.
         """
         linked_id = zone_dev.pluginProps.get("linkedWhispererDeviceId", "")
         if not linked_id:
@@ -1246,16 +1253,29 @@ class Plugin(indigo.PluginBase):
         if not whisperer.enabled:
             return forecast_val, "forecast-disabled-device"
 
+        reading_id = whisperer.states.get("readingID") or 0
         soil = whisperer.states.get("soilMoisture")
         reading_time = whisperer.states.get("readingTime", "")
+
+        if reading_id == 0 or soil is None:
+            return forecast_val, "forecast-missing-reading"
+
         age_hours = parse_reading_age_hours(reading_time)
-        if soil is None or age_hours is None or age_hours > WHISPERER_STALENESS_HOURS:
+        if age_hours is None:
+            # Leave a debug breadcrumb with the raw value so support debugging has the data.
+            self.logger.debug(
+                f"Zone '{zone_dev.name}': paired Whisperer readingTime "
+                f"{reading_time!r} is unparseable — treating as stale."
+            )
+            return forecast_val, "forecast-unparseable-time"
+
+        if age_hours > WHISPERER_STALENESS_HOURS:
             return forecast_val, "forecast-stale"
 
         try:
             return int(soil), "whisperer"
         except (TypeError, ValueError):
-            return forecast_val, "forecast-stale"
+            return forecast_val, "forecast-missing-reading"
 
     def _log_moisture_source_transition(self, zone_dev, new_source):
         """Log a transition between moisture-source categories for a zone.
@@ -1289,6 +1309,16 @@ class Plugin(indigo.PluginBase):
                 self.logger.warning(
                     f"Zone '{zone_dev.name}': paired Whisperer reading stale "
                     f"(>12h old) — falling back to Netro forecast."
+                )
+            elif new_source == "forecast-missing-reading":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer has no reading yet "
+                    f"— showing Netro forecast until sensor reports."
+                )
+            elif new_source == "forecast-unparseable-time":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer readingTime is "
+                    f"unparseable — showing Netro forecast. Check Whisperer poll."
                 )
             elif new_source == "forecast-missing-device":
                 self.logger.warning(

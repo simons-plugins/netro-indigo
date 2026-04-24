@@ -89,7 +89,7 @@ def _zone_dev(zone_num=1, linked_id="", name="Front Lawn"):
     return dev
 
 
-def _whisperer(soil=24, hours_old=2):
+def _whisperer(soil=24, hours_old=2, reading_id=1001):
     return SimpleNamespace(
         enabled=True,
         states={
@@ -97,6 +97,7 @@ def _whisperer(soil=24, hours_old=2):
             "readingTime": (FROZEN_NOW - timedelta(hours=hours_old)).strftime(
                 "%Y-%m-%dT%H:%M:%S"
             ),
+            "readingID": reading_id,
         },
     )
 
