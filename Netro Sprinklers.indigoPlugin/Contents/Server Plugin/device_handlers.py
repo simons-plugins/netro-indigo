@@ -698,7 +698,7 @@ class ZoneHandler:
         try:
             moistures = api_response["data"]["moistures"]
             if not moistures:
-                return [{"key": "moisture", "value": 0, "uiValue": "0%"}]
+                return []
 
             moistures_sorted = sorted(moistures, key=lambda x: x.get("id", 0), reverse=True)
             max_date = moistures_sorted[0].get("date")
@@ -708,11 +708,11 @@ class ZoneHandler:
                     val = m.get("moisture", 0)
                     return [{"key": "moisture", "value": val, "uiValue": f"{val}%"}]
 
-            return [{"key": "moisture", "value": 0, "uiValue": "0%"}]
+            return []
 
         except (KeyError, TypeError, IndexError) as exc:
             self.logger.error(f"Error parsing zone moisture: {exc}")
-            return [{"key": "moisture", "value": 0, "uiValue": "0%"}]
+            return []
 
     def extract_zone_states(self, zones, zone_number):
         """Extract enabled and smartMode for a single zone from info data.

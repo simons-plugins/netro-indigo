@@ -221,11 +221,11 @@ class TestProcessZoneMoisture:
         states = zone_handler.process_zone_moisture(
             sample_moistures_response, zone_number=99
         )
-        state_dict = {s["key"]: s["value"] for s in states}
-        assert state_dict["moisture"] == 0
+        # Empty list signals "no data for this zone" — caller skips writing.
+        assert states == []
 
     def test_empty_moistures(self, zone_handler):
         response = {"data": {"moistures": []}}
         states = zone_handler.process_zone_moisture(response, zone_number=1)
-        state_dict = {s["key"]: s["value"] for s in states}
-        assert state_dict["moisture"] == 0
+        # Empty list signals "no data" — caller skips moistureForecast write.
+        assert states == []

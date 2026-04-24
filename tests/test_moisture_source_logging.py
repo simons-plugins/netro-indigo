@@ -1,27 +1,12 @@
 """Tests for Plugin._log_moisture_source_transition."""
-import sys
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
 import pytest
 
 
-class _PluginBase:
-    """Stand-in for indigo.PluginBase."""
-
-
 @pytest.fixture
-def mock_indigo(monkeypatch):
-    indigo = MagicMock()
-    indigo.PluginBase = _PluginBase
-    indigo.Dict = dict
-    monkeypatch.setitem(sys.modules, "indigo", indigo)
-    monkeypatch.delitem(sys.modules, "plugin", raising=False)
-    return indigo
-
-
-@pytest.fixture
-def plugin_instance(mock_indigo):
+def plugin_instance(mock_indigo_base):
     from plugin import Plugin  # noqa: WPS433
     plugin = Plugin.__new__(Plugin)
     plugin.logger = MagicMock()
@@ -56,6 +41,17 @@ def test_no_log_when_source_unchanged(plugin_instance):
     plugin_instance.logger.info.assert_not_called()
     # pluginProps still reflect the (unchanged) value.
     assert zone.pluginProps.get("lastMoistureSource") == "whisperer"
+    # Repeated calls with same source must not hit replacePluginPropsOnServer.
+    assert zone._replaced == []
+
+
+def test_no_log_when_cold_start_whisperer(plugin_instance):
+    """Paired zone, first poll with no prior lastMoistureSource → silent."""
+    zone = _zone(last_source=None)
+    plugin_instance._log_moisture_source_transition(zone, "whisperer")
+    plugin_instance.logger.warning.assert_not_called()
+    plugin_instance.logger.info.assert_not_called()
+    assert zone.pluginProps["lastMoistureSource"] == "whisperer"
 
 
 def test_log_info_on_forecast_to_whisperer(plugin_instance):

@@ -1,5 +1,4 @@
 """Tests for Plugin._resolve_zone_moisture."""
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -7,20 +6,10 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-class _PluginBase:
-    """Stand-in for indigo.PluginBase used at Plugin class definition time."""
-
-
 @pytest.fixture
-def mock_indigo(monkeypatch):
-    """Install a minimal `indigo` module into sys.modules for plugin import.
-
-    `PluginBase` must be a real class so `class Plugin(indigo.PluginBase):`
-    at import time produces a real class — not a MagicMock attribute.
-    """
-    indigo = MagicMock()
-    indigo.PluginBase = _PluginBase
-    indigo.Dict = dict
+def mock_indigo(mock_indigo_base):
+    """Extend the shared mock_indigo_base with a `_devices_by_id` lookup."""
+    indigo = mock_indigo_base
     indigo._devices_by_id = {}
 
     def _getitem(dev_id):
@@ -29,10 +18,6 @@ def mock_indigo(monkeypatch):
         return indigo._devices_by_id[dev_id]
 
     indigo.devices.__getitem__.side_effect = _getitem
-    monkeypatch.setitem(sys.modules, "indigo", indigo)
-    # Force a fresh import of `plugin` so the Plugin class is rebuilt against
-    # this fixture's mock (previous tests may have cached a stale module).
-    monkeypatch.delitem(sys.modules, "plugin", raising=False)
     return indigo
 
 
@@ -223,3 +208,22 @@ def test_paired_soil_integer_zero_with_valid_reading(plugin_instance, mock_indig
     with patch("utils._now_utc", return_value=FROZEN_NOW):
         val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=89)
     assert (val, src) == (0, "whisperer")
+
+
+# --- Boundary: WHISPERER_STALENESS_HOURS is strict > (not >=) ---
+
+@pytest.mark.parametrize("hours_old,expected_source", [
+    (11.9, "whisperer"),
+    (12.0, "whisperer"),  # boundary is > not >=
+    (12.1, "forecast-stale"),
+])
+def test_staleness_threshold_boundary(plugin_instance, mock_indigo, hours_old, expected_source):
+    whisperer = _fake_whisperer(
+        soil=24,
+        reading_time=(FROZEN_NOW - timedelta(hours=hours_old)).strftime("%Y-%m-%dT%H:%M:%S"),
+    )
+    mock_indigo._devices_by_id[999] = whisperer
+    zone = _fake_zone(linked_id="999")
+    with patch("utils._now_utc", return_value=FROZEN_NOW):
+        _, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=89)
+    assert src == expected_source

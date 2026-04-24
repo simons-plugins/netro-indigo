@@ -742,10 +742,11 @@ class Plugin(indigo.PluginBase):
                                     found = True
                                 else:
                                     states.append(entry)
-                        except Exception:
+                        except (AttributeError, TypeError, KeyError, IndexError):
                             self.logger.exception(
-                                f"Error processing moisture for zone {zone_num} "
-                                f"on '{zone_dev.name}'"
+                                f"Error processing moisture for zone {zone_num} on "
+                                f"'{zone_dev.name}' — moisture + moistureForecast "
+                                f"states will not update this cycle."
                             )
 
                     moisture_val, source = self._resolve_zone_moisture(

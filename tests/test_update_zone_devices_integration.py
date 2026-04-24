@@ -5,7 +5,6 @@ These tests verify the call-site rewiring:
   - moisture gets the resolved value (Whisperer if fresh + paired, else forecast).
   - Source transitions are logged.
 """
-import sys
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -16,15 +15,10 @@ import pytest
 FROZEN_NOW = datetime(2026, 4, 23, 12, 0, 0, tzinfo=timezone.utc)
 
 
-class _PluginBase:
-    pass
-
-
 @pytest.fixture
-def mock_indigo(monkeypatch):
-    indigo = MagicMock()
-    indigo.PluginBase = _PluginBase
-    indigo.Dict = dict
+def mock_indigo(mock_indigo_base):
+    """Extend the shared mock_indigo_base with a `_devices_by_id` lookup."""
+    indigo = mock_indigo_base
     indigo._devices_by_id = {}
 
     def _getitem(dev_id):
@@ -33,8 +27,6 @@ def mock_indigo(monkeypatch):
         return indigo._devices_by_id[dev_id]
 
     indigo.devices.__getitem__.side_effect = _getitem
-    monkeypatch.setitem(sys.modules, "indigo", indigo)
-    monkeypatch.delitem(sys.modules, "plugin", raising=False)
     return indigo
 
 
@@ -212,6 +204,47 @@ def test_missing_forecast_but_paired_fresh_writes_sensor(plugin_instance, mock_i
     assert keys["moisture"] == 24
     # No moistureForecast write when moisture_response is None.
     assert "moistureForecast" not in keys
+
+
+def test_source_transition_logged_during_update(plugin_instance, mock_indigo):
+    """Verify _update_zone_devices actually wires up the transition logger."""
+    zone = _zone_dev(zone_num=1, linked_id="999")
+    zone.pluginProps["lastMoistureSource"] = "whisperer"  # prior state
+    mock_indigo._devices_by_id[999] = _whisperer(soil=24, hours_old=20)  # now stale
+    plugin_instance._get_zone_devices = lambda parent_id: {1: zone}
+    parent = SimpleNamespace(id=42, name="Sprite")
+
+    with patch("utils._now_utc", return_value=FROZEN_NOW):
+        plugin_instance._update_zone_devices(
+            parent, _device_data(),
+            schedule_response=None,
+            moisture_response=_moistures_response(1, forecast_val=89),
+            api_version="1",
+        )
+
+    assert plugin_instance.logger.warning.call_count >= 1
+    # The transition should have been recorded.
+    assert zone.pluginProps.get("lastMoistureSource") == "forecast-stale"
+
+
+def test_empty_moistures_response_skips_forecast_write(plugin_instance, mock_indigo):
+    """Empty data.moistures → moistureForecast not written (no fake 0%)."""
+    zone = _zone_dev(zone_num=1, linked_id="")
+    plugin_instance._get_zone_devices = lambda parent_id: {1: zone}
+    parent = SimpleNamespace(id=42, name="Sprite")
+
+    empty_response = {"status": "OK", "data": {"moistures": []}}
+
+    plugin_instance._update_zone_devices(
+        parent, _device_data(),
+        schedule_response=None,
+        moisture_response=empty_response,
+        api_version="1",
+    )
+
+    keys = {s["key"]: s.get("value") for s in zone._replaced_states}
+    assert "moistureForecast" not in keys
+    assert "moisture" not in keys
 
 
 def test_paired_stale_falls_back_to_forecast(plugin_instance, mock_indigo):
