@@ -37,6 +37,9 @@ def _zone(last_source=None, name="Test Zone"):
 
     def _replace(new_props):
         replaced.append(dict(new_props))
+        # Simulate Indigo's real behavior: pluginProps reflects the server write.
+        props.clear()
+        props.update(new_props)
 
     return SimpleNamespace(
         name=name,

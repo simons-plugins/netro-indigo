@@ -1300,7 +1300,6 @@ class Plugin(indigo.PluginBase):
         # Persist the new source so the next poll can detect the next transition.
         new_props = dict(zone_dev.pluginProps)
         new_props["lastMoistureSource"] = new_source
-        zone_dev.pluginProps = new_props  # keep test-side dict in sync
         zone_dev.replacePluginPropsOnServer(new_props)
 
     ########################################

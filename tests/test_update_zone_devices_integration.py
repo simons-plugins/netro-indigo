@@ -58,20 +58,24 @@ def _zone_dev(zone_num=1, linked_id="", name="Front Lawn"):
     """
     replaced_states = []
     replaced_props = []
+    props = {
+        "zoneNumber": str(zone_num),
+        "linkedWhispererDeviceId": linked_id,
+    }
 
     def _update_states(states):
         replaced_states.extend(states)
 
-    def _replace_props(props):
-        replaced_props.append(dict(props))
+    def _replace_props(new_props):
+        replaced_props.append(dict(new_props))
+        # Simulate Indigo's real behavior: pluginProps reflects the server write.
+        props.clear()
+        props.update(new_props)
 
     dev = SimpleNamespace(
         id=1000 + zone_num,
         name=name,
-        pluginProps={
-            "zoneNumber": str(zone_num),
-            "linkedWhispererDeviceId": linked_id,
-        },
+        pluginProps=props,
         enabled=True,
         states={},
         deviceTypeId="zone",
