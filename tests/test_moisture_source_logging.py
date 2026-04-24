@@ -111,3 +111,20 @@ def test_repeated_warning_suppressed(plugin_instance):
     plugin_instance._log_moisture_source_transition(zone, "forecast-stale")
     plugin_instance._log_moisture_source_transition(zone, "forecast-stale")
     assert plugin_instance.logger.warning.call_count == 1
+
+
+def test_replace_props_failure_logs_warning_not_raises(plugin_instance):
+    """If replacePluginPropsOnServer raises, logger.warning is called and no exception escapes."""
+    zone = _zone(last_source="whisperer")
+
+    def _failing_replace(new_props):
+        raise RuntimeError("IOM hiccup")
+
+    zone.replacePluginPropsOnServer = _failing_replace
+    # Should not raise.
+    plugin_instance._log_moisture_source_transition(zone, "forecast-stale")
+    # The stale transition warning AND the persistence-failure warning should both have fired.
+    assert plugin_instance.logger.warning.call_count >= 1
+    # Verify at least one warning mentions persistence failure.
+    messages = [call.args[0] for call in plugin_instance.logger.warning.call_args_list]
+    assert any("could not persist moisture source" in m for m in messages)

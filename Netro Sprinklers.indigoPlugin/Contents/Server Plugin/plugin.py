@@ -757,10 +757,14 @@ class Plugin(indigo.PluginBase):
                             "value": moisture_val,
                             "uiValue": f"{moisture_val}%",
                         })
-                    self._log_moisture_source_transition(zone_dev, source)
 
+                # State write FIRST — it's the authoritative side effect.
                 if states:
                     zone_dev.updateStatesOnServer(states)
+
+                # Transition log is auxiliary; must not gate the state write.
+                if is_enabled:
+                    self._log_moisture_source_transition(zone_dev, source)
 
                 # Set error state and icon after state update
                 if not is_enabled:
@@ -1300,7 +1304,14 @@ class Plugin(indigo.PluginBase):
         # Persist the new source so the next poll can detect the next transition.
         new_props = dict(zone_dev.pluginProps)
         new_props["lastMoistureSource"] = new_source
-        zone_dev.replacePluginPropsOnServer(new_props)
+        try:
+            zone_dev.replacePluginPropsOnServer(new_props)
+        except Exception as exc:
+            self.logger.warning(
+                f"Zone '{zone_dev.name}': could not persist moisture source "
+                f"'{new_source}' ({type(exc).__name__}: {exc}) — transition "
+                f"log may repeat next cycle."
+            )
 
     ########################################
     # Validation callbacks
