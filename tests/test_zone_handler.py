@@ -73,7 +73,7 @@ def sample_schedules_response():
             "schedules": [
                 {
                     "id": 100, "zone": 1, "zone_name": "Lawn",
-                    "start_time": 1700000000000, "end_time": 1700000900000,
+                    "start_time": 4070908800000, "end_time": 4070909700000,
                     "duration": 900, "source": "SMART", "status": "EXECUTING"
                 },
                 {
@@ -187,6 +187,130 @@ class TestProcessZoneSchedules:
         assert "2026-04-07" in state_dict["nextWateringStart"]
         assert state_dict["lastWateringSource"] == "Smart"
         assert state_dict["nextWateringSource"] == "Fix"
+
+
+class TestStuckExecutingSchedule:
+    """Regression: Netro sometimes leaves a completed schedule marked EXECUTING.
+
+    If its end_time is in the past, the zone isn't really irrigating and the
+    schedule should be treated as completed (moved to lastWatering*).
+    """
+
+    def _response(self, schedule):
+        return {"data": {"schedules": [schedule]}}
+
+    def test_executing_with_past_end_time_v1_not_irrigating(self, zone_handler):
+        past_start_ms = 1000000000 * 1000
+        past_end_ms = 1000000900 * 1000
+        states = zone_handler.process_zone_schedules(
+            self._response({
+                "id": 100, "zone": 1,
+                "start_time": past_start_ms, "end_time": past_end_ms,
+                "source": "MANUAL", "status": "EXECUTING",
+            }),
+            zone_number=1,
+        )
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["isIrrigating"] is False
+        assert state_dict["lastWateringSource"] == "Manual"
+        # Demoted stale EXECUTING is relabelled so the UI doesn't show
+        # "Last watering: Executing" for a run that has actually ended.
+        assert state_dict["lastWateringStatus"] == "Executed"
+
+    def test_executing_with_past_end_time_v2_not_irrigating(self, zone_handler):
+        states = zone_handler.process_zone_schedules(
+            self._response({
+                "id": 513114600, "zone": 1,
+                "start_time": "2000-01-01T00:00:00",
+                "end_time": "2000-01-01T00:10:00",
+                "source": "MANUAL", "status": "EXECUTING",
+            }),
+            zone_number=1,
+            api_version="2",
+        )
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["isIrrigating"] is False
+        assert "2000-01-01" in state_dict["lastWateringStart"]
+        assert state_dict["lastWateringSource"] == "Manual"
+        assert state_dict["lastWateringStatus"] == "Executed"
+
+    def test_executing_with_future_end_time_still_irrigating(self, zone_handler):
+        future_start_ms = 9999999000 * 1000
+        future_end_ms = 9999999900 * 1000
+        states = zone_handler.process_zone_schedules(
+            self._response({
+                "id": 100, "zone": 1,
+                "start_time": future_start_ms, "end_time": future_end_ms,
+                "source": "MANUAL", "status": "EXECUTING",
+            }),
+            zone_number=1,
+        )
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["isIrrigating"] is True
+
+    def test_executing_with_missing_end_time_trusts_status(self, zone_handler):
+        states = zone_handler.process_zone_schedules(
+            self._response({
+                "id": 100, "zone": 1,
+                "start_time": 1000000000 * 1000,
+                "source": "MANUAL", "status": "EXECUTING",
+            }),
+            zone_number=1,
+        )
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["isIrrigating"] is True
+
+    def test_executing_with_unparseable_end_time_trusts_status(self, zone_handler):
+        """Malformed end_time (unparseable string) falls back to trusting status."""
+        states = zone_handler.process_zone_schedules(
+            self._response({
+                "id": 100, "zone": 1,
+                "start_time": 1000000000 * 1000, "end_time": "not-a-timestamp",
+                "source": "MANUAL", "status": "EXECUTING",
+            }),
+            zone_number=1,
+        )
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["isIrrigating"] is True
+
+    def test_stale_and_genuine_executing_same_zone_is_irrigating(self, zone_handler):
+        """If any EXECUTING for a zone is still live, isIrrigating is True."""
+        response = {"data": {"schedules": [
+            {"id": 100, "zone": 1, "source": "MANUAL", "status": "EXECUTING",
+             "start_time": 1000000000 * 1000, "end_time": 1000000900 * 1000},
+            {"id": 101, "zone": 1, "source": "AUTOMATIC", "status": "EXECUTING",
+             "start_time": 9999999000 * 1000, "end_time": 9999999900 * 1000},
+        ]}}
+        states = zone_handler.process_zone_schedules(response, zone_number=1)
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["isIrrigating"] is True
+
+    def test_stale_executing_wins_id_comparison_over_older_executed(self, zone_handler):
+        """Demoted stale EXECUTING (id=100) beats older EXECUTED (id=99) by id."""
+        response = {"data": {"schedules": [
+            {"id": 99, "zone": 1, "source": "SMART", "status": "EXECUTED",
+             "start_time": 900000000 * 1000, "end_time": 900000900 * 1000},
+            {"id": 100, "zone": 1, "source": "MANUAL", "status": "EXECUTING",
+             "start_time": 1000000000 * 1000, "end_time": 1000000900 * 1000},
+        ]}}
+        states = zone_handler.process_zone_schedules(response, zone_number=1)
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["isIrrigating"] is False
+        assert state_dict["lastWateringSource"] == "Manual"
+
+    def test_newer_executed_wins_id_comparison_over_stale_executing(self, zone_handler):
+        """Real EXECUTED (id=200) beats demoted stale EXECUTING (id=100) by id."""
+        response = {"data": {"schedules": [
+            {"id": 100, "zone": 1, "source": "MANUAL", "status": "EXECUTING",
+             "start_time": 1000000000 * 1000, "end_time": 1000000900 * 1000},
+            {"id": 200, "zone": 1, "source": "SMART", "status": "EXECUTED",
+             "start_time": 1100000000 * 1000, "end_time": 1100000900 * 1000},
+        ]}}
+        states = zone_handler.process_zone_schedules(response, zone_number=1)
+        state_dict = {s["key"]: s["value"] for s in states}
+        assert state_dict["isIrrigating"] is False
+        assert state_dict["lastWateringSource"] == "Smart"
+        assert state_dict["lastWateringStatus"] == "Executed"
 
 
 @pytest.fixture
