@@ -225,6 +225,10 @@ def test_source_transition_logged_during_update(plugin_instance, mock_indigo):
     assert plugin_instance.logger.warning.call_count >= 1
     # The transition should have been recorded.
     assert zone.pluginProps.get("lastMoistureSource") == "forecast-stale"
+    # Pin the user-facing wording so a refactor of the warning message would fail loudly.
+    warn_msgs = [c.args[0] for c in plugin_instance.logger.warning.call_args_list]
+    assert any("stale" in m.lower() for m in warn_msgs), warn_msgs
+    assert any("Netro forecast" in m for m in warn_msgs), warn_msgs
 
 
 def test_empty_moistures_response_skips_forecast_write(plugin_instance, mock_indigo):
@@ -266,6 +270,30 @@ def test_paired_stale_falls_back_to_forecast(plugin_instance, mock_indigo):
     # Stale Whisperer → fall back to forecast for both states.
     assert keys["moisture"] == 89
     assert keys["moistureForecast"] == 89
+
+
+def test_malformed_moisture_response_swallows_and_continues(plugin_instance, mock_indigo):
+    """A malformed moisture_response triggers the inner except; other state writes survive."""
+    zone = _zone_dev(zone_num=1, linked_id="")
+    plugin_instance._get_zone_devices = lambda pid: {1: zone}
+    parent = SimpleNamespace(id=42, name="Sprite")
+
+    # data.moistures wrong shape → handler can return [] cleanly OR (worst case)
+    # caller's loop hits AttributeError on entry.get(). Either way the inner
+    # except in _update_zone_devices must catch it.
+    bogus = {"status": "OK", "data": {"moistures": "not-a-list"}}
+
+    plugin_instance._update_zone_devices(
+        parent, _device_data(),
+        schedule_response=None,
+        moisture_response=bogus,
+        api_version="1",
+    )
+
+    # Test reaches this line means no exception escaped to the outer per-zone try/except.
+    keys = {s["key"] for s in zone._replaced_states}
+    # moistureForecast not written (bogus moistures path):
+    assert "moistureForecast" not in keys
 
 
 def test_resolver_exception_falls_back_to_forecast(plugin_instance, mock_indigo, monkeypatch):

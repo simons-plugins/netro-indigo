@@ -184,12 +184,20 @@ def test_paired_non_numeric_soil_treated_as_invalid_reading(plugin_instance, moc
     assert (val, src) == (89, "forecast-invalid-reading")
 
 
-# --- Paired, readingID == 0 (sensor uninitialised) ---
+# --- Paired, readingID == 0 or absent (sensor uninitialised / state missing) ---
 
-def test_paired_reading_id_zero_is_missing_reading(plugin_instance, mock_indigo):
-    """readingID == 0 (Indigo Integer-state default) → sensor hasn't reported yet."""
-    fresh = (FROZEN_NOW - timedelta(hours=1)).strftime("%Y-%m-%dT%H:%M:%S")
-    whisperer = _fake_whisperer(soil=24, reading_time=fresh, reading_id=0)
+@pytest.mark.parametrize("reading_id_value", [0, None])
+def test_paired_reading_id_zero_or_missing_is_missing_reading(
+    plugin_instance, mock_indigo, reading_id_value
+):
+    """readingID == 0 OR readingID None (key missing) both → forecast-missing-reading."""
+    states = {
+        "soilMoisture": 24,
+        "readingTime": (FROZEN_NOW - timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%S"),
+    }
+    if reading_id_value is not None:
+        states["readingID"] = reading_id_value
+    whisperer = SimpleNamespace(enabled=True, states=states)
     mock_indigo._devices_by_id[999] = whisperer
     zone = _fake_zone(linked_id="999")
     with patch("utils._now_utc", return_value=FROZEN_NOW):

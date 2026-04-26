@@ -1,31 +1,15 @@
 """Tests for Plugin.getWhispererDevices ConfigUI callback."""
-import sys
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
 
 @pytest.fixture
-def mock_indigo(monkeypatch):
-    """Install a minimal `indigo` module into sys.modules for plugin import.
-
-    `PluginBase` must be a real class so `class Plugin(indigo.PluginBase):`
-    at import time produces a real class — not a MagicMock attribute.
-    """
-    indigo = MagicMock()
-
-    class _PluginBase:
-        pass
-
-    indigo.PluginBase = _PluginBase
-    indigo.Dict = dict
-    indigo.devices.iter = MagicMock(return_value=iter([]))
-    monkeypatch.setitem(sys.modules, "indigo", indigo)
-    # Force a fresh import of `plugin` so the Plugin class is rebuilt against
-    # this fixture's mock (previous tests may have cached a stale module).
-    monkeypatch.delitem(sys.modules, "plugin", raising=False)
-    return indigo
+def mock_indigo(mock_indigo_base):
+    """Extend conftest mock_indigo_base with iter() for callback tests."""
+    mock_indigo_base.devices.iter = MagicMock(return_value=iter([]))
+    return mock_indigo_base
 
 
 def _fake_device(dev_id, name, type_id="Whisperer"):
