@@ -106,6 +106,11 @@ class Plugin(indigo.PluginBase):
         super().__init__(pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
         # Used to control when to show connection errors (vs just repeated retries)
         self._displayed_connection_error = False
+        # In-memory fallback for moisture-source transition logging — keyed by zone
+        # device id. Survives IOM persistence failures so the same transition is
+        # not re-logged every poll. Lazy-init in `_log_moisture_source_transition`
+        # for tests that bypass __init__ via Plugin.__new__(Plugin).
+        self._last_logged_moisture_source = {}
         self.pluginId = pluginId
         self.debug = pluginPrefs.get("showDebugInfo", False)
         self.timeout = int(pluginPrefs.get("apiTimeout", DEFAULT_API_TIMEOUT_SECONDS))
