@@ -266,3 +266,31 @@ def test_paired_stale_falls_back_to_forecast(plugin_instance, mock_indigo):
     # Stale Whisperer → fall back to forecast for both states.
     assert keys["moisture"] == 89
     assert keys["moistureForecast"] == 89
+
+
+def test_resolver_exception_falls_back_to_forecast(plugin_instance, mock_indigo, monkeypatch):
+    """If _resolve_zone_moisture raises, the zone falls back to forecast and other states still write."""
+    zone = _zone_dev(zone_num=1, linked_id="999")
+    plugin_instance._get_zone_devices = lambda pid: {1: zone}
+    parent = SimpleNamespace(id=42, name="Sprite")
+
+    def _bad_resolver(*args, **kwargs):
+        raise AttributeError("simulated IOM corruption")
+
+    monkeypatch.setattr(plugin_instance, "_resolve_zone_moisture", _bad_resolver)
+
+    plugin_instance._update_zone_devices(
+        parent, _device_data(),
+        schedule_response=None,
+        moisture_response=_moistures_response(1, forecast_val=55),
+        api_version="1",
+    )
+
+    keys = {s["key"]: s["value"] for s in zone._replaced_states}
+    # Forecast still wrote (the resolver failed AFTER moistureForecast was added):
+    assert keys.get("moistureForecast") == 55
+    # Moisture wrote with forecast fallback (resolver returned (forecast_val, "forecast")):
+    assert keys.get("moisture") == 55
+    # Warning was emitted with the right context:
+    msgs = [c.args[0] for c in plugin_instance.logger.warning.call_args_list]
+    assert any("could not resolve moisture source" in m for m in msgs)

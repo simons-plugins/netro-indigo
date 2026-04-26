@@ -749,9 +749,16 @@ class Plugin(indigo.PluginBase):
                                 f"states will not update this cycle."
                             )
 
-                    moisture_val, source = self._resolve_zone_moisture(
-                        zone_dev, forecast_val
-                    )
+                    try:
+                        moisture_val, source = self._resolve_zone_moisture(
+                            zone_dev, forecast_val
+                        )
+                    except (AttributeError, KeyError, TypeError) as exc:
+                        self.logger.warning(
+                            f"Zone '{zone_dev.name}': could not resolve moisture source "
+                            f"({type(exc).__name__}: {exc}) — falling back to forecast."
+                        )
+                        moisture_val, source = forecast_val, "forecast"
                     if moisture_val is not None:
                         states.append({
                             "key": "moisture",
@@ -1290,7 +1297,18 @@ class Plugin(indigo.PluginBase):
             new_source: One of the source tags returned by
                 ``_resolve_zone_moisture``.
         """
-        prev = zone_dev.pluginProps.get("lastMoistureSource")
+        # Lazy-init the in-memory fallback (Plugin.__new__ in tests skips __init__).
+        log_cache = getattr(self, "_last_logged_moisture_source", None)
+        if log_cache is None:
+            log_cache = {}
+            self._last_logged_moisture_source = log_cache
+
+        # Prefer in-memory value when available — it survives IOM persistence
+        # failures, so we don't re-emit the same warning every poll.
+        prev_persisted = zone_dev.pluginProps.get("lastMoistureSource")
+        prev_logged = log_cache.get(zone_dev.id)
+        prev = prev_logged if prev_logged is not None else prev_persisted
+
         if prev == new_source:
             return
 
@@ -1332,16 +1350,23 @@ class Plugin(indigo.PluginBase):
                     f"— falling back to Netro forecast."
                 )
 
-        # Persist the new source so the next poll can detect the next transition.
+        # Update the in-memory marker BEFORE attempting persistence so a
+        # persistence failure doesn't cause repeat-logs next cycle.
+        log_cache[zone_dev.id] = new_source
+
+        # Best-effort persist via Indigo's IOM. Failures are tolerated.
         new_props = dict(zone_dev.pluginProps)
         new_props["lastMoistureSource"] = new_source
         try:
             zone_dev.replacePluginPropsOnServer(new_props)
-        except Exception as exc:
+        # Tolerate any IOM error — the in-memory fallback above ensures we
+        # don't log-spam if persistence is unavailable. Narrowing would
+        # reintroduce fragility against unexpected Indigo exception types.
+        except Exception as exc:  # pylint: disable=broad-exception-caught
             self.logger.warning(
                 f"Zone '{zone_dev.name}': could not persist moisture source "
-                f"'{new_source}' ({type(exc).__name__}: {exc}) — transition "
-                f"log may repeat next cycle."
+                f"'{new_source}' ({type(exc).__name__}: {exc}) — using "
+                f"in-memory fallback so the transition log will not repeat."
             )
 
     ########################################

@@ -13,6 +13,9 @@ def plugin_instance(mock_indigo_base):
     return plugin
 
 
+_NEXT_ZONE_ID = [9000]
+
+
 def _zone(last_source=None, name="Test Zone"):
     """A fake zone with a mutable pluginProps dict and a replacePluginPropsOnServer stub."""
     props = {}
@@ -26,7 +29,10 @@ def _zone(last_source=None, name="Test Zone"):
         props.clear()
         props.update(new_props)
 
+    # Each fake zone gets a unique id so the in-memory transition cache can key on it.
+    _NEXT_ZONE_ID[0] += 1
     return SimpleNamespace(
+        id=_NEXT_ZONE_ID[0],
         name=name,
         pluginProps=props,
         replacePluginPropsOnServer=_replace,
@@ -140,3 +146,29 @@ def test_replace_props_failure_logs_warning_not_raises(plugin_instance):
     # Verify at least one warning mentions persistence failure.
     messages = [call.args[0] for call in plugin_instance.logger.warning.call_args_list]
     assert any("could not persist moisture source" in m for m in messages)
+
+
+def test_repeated_transition_with_persist_failure_logs_once(plugin_instance):
+    """When replacePluginPropsOnServer keeps failing, the transition log fires only once.
+
+    Pre-fix: every poll re-logged the same transition because pluginProps never updated.
+    Post-fix: in-memory cache prevents the spam while IOM is broken.
+    """
+    zone = _zone(last_source="whisperer")
+    # Give the zone an id so the in-memory cache can key on it.
+    zone.id = 1234
+    zone.replacePluginPropsOnServer = lambda new_props: (_ for _ in ()).throw(RuntimeError("IOM"))
+
+    # First call: transition logs the stale warning + the persist-failure warning.
+    plugin_instance._log_moisture_source_transition(zone, "forecast-stale")
+
+    # Second and third calls with the SAME source must not re-log the transition.
+    plugin_instance._log_moisture_source_transition(zone, "forecast-stale")
+    plugin_instance._log_moisture_source_transition(zone, "forecast-stale")
+
+    # Persistence still fails on every call, but the *transition* warning fires only once.
+    transition_msgs = [
+        c.args[0] for c in plugin_instance.logger.warning.call_args_list
+        if "stale" in c.args[0].lower() and "Netro forecast" in c.args[0]
+    ]
+    assert len(transition_msgs) == 1, transition_msgs
