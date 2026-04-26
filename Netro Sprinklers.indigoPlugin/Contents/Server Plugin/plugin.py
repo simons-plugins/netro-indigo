@@ -1229,7 +1229,7 @@ class Plugin(indigo.PluginBase):
 
         - ``"forecast"``: zone has no paired Whisperer; returns forecast_val.
         - ``"whisperer"``: paired Whisperer is enabled, has a fresh
-          (<= WHISPERER_STALENESS_HOURS old) numeric ``soilMoisture`` reading.
+          (≤ WHISPERER_STALENESS_HOURS old) numeric ``soilMoisture`` reading.
         - ``"forecast-missing-device"``: paired device id does not resolve
           (deleted or invalid id).
         - ``"forecast-disabled-device"``: paired device exists but is disabled.
@@ -1241,8 +1241,8 @@ class Plugin(indigo.PluginBase):
           unexpected payload — investigate sensor / API).
         - ``"forecast-unparseable-time"``: paired and reporting numeric soil,
           but ``readingTime`` can't be parsed.
-        - ``"forecast-stale"``: paired, parseable, but reading is older than
-          WHISPERER_STALENESS_HOURS.
+        - ``"forecast-stale"``: paired, parseable, but reading is
+          > WHISPERER_STALENESS_HOURS old.
 
         ``value`` may be ``None`` if forecast_val is None and no Whisperer
         value is available; the caller should skip writing ``moisture`` in
@@ -1295,9 +1295,16 @@ class Plugin(indigo.PluginBase):
     def _log_moisture_source_transition(self, zone_dev, new_source):
         """Log a transition between moisture-source categories for a zone.
 
-        Persists the current source in ``zone_dev.pluginProps['lastMoistureSource']``
-        and only emits a log line when the category changes, to avoid spam.
-        The first-ever call on a fresh install is silent (no prior state).
+        Maintains an in-memory fallback (``_last_logged_moisture_source``) keyed
+        by zone device id so a known-logged transition isn't re-emitted across
+        polls. The persistence side effect (``replacePluginPropsOnServer`` of
+        ``lastMoistureSource``) is best-effort — failures are caught and logged
+        at WARNING, but never propagated, and never block the in-memory
+        suppression. After plugin restart the in-memory cache resets and the
+        first transition per zone is re-emitted from the persisted value.
+
+        Logs are emitted only on category change. The first call on a fresh
+        install (no prior persisted source AND no in-memory entry) is silent.
 
         Args:
             zone_dev: Indigo zone device.

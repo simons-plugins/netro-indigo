@@ -311,6 +311,8 @@
                 <Label>Paired Whisperer:</Label>
                 <List class="self" method="getWhispererDevices" dynamicReload="true"/>
             </Field>
+            <!-- Help text references "12 hours" — keep in sync with
+                 constants.py::WHISPERER_STALENESS_HOURS if that value changes. -->
             <Field id="sensorHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
                 <Label>When paired, the zone's moisture state mirrors the Whisperer's soil reading (if fresh within 12 hours). Otherwise, it shows Netro's daily forecast. The forecast is always available separately as the "Moisture Forecast" state.</Label>
             </Field>

@@ -693,7 +693,19 @@ class ZoneHandler:
             zone_number: Zone ith number (1-based)
 
         Returns:
-            List with single moisture state update dict
+            A list containing a single
+            ``{"key": "moisture", "value": int, "uiValue": "<n>%"}`` dict when
+            a reading for ``zone_number`` exists on the most recent date.
+            Returns ``[]`` (empty list) when:
+              - ``moistures`` is empty or missing,
+              - no entry matches ``zone_number`` on the most-recent date, or
+              - the response shape triggers ``KeyError``/``TypeError``/
+                ``IndexError`` (the error is logged via ``self.logger.error``,
+                not raised).
+
+            The empty-list shape signals "no forecast data this cycle" so the
+            caller can skip writing ``moistureForecast`` rather than persisting
+            a fake 0%.
         """
         try:
             moistures = api_response["data"]["moistures"]

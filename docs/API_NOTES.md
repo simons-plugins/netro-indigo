@@ -196,7 +196,7 @@ disagree. Observed example: same zone, same moment — `/moistures.json`
   `/moistures.json` value.
 - The zone `moisture` state resolves to: the paired Whisperer's current
   `soilMoisture` if the pairing is configured on the zone device and
-  the reading is less than 12 hours old, else `moistureForecast`.
+  the reading is ≤ 12 hours old (see `WHISPERER_STALENESS_HOURS`), else `moistureForecast`.
 - Pairing is plugin-side (zone ConfigUI → "Paired Whisperer" dropdown),
   independent of any Netro-side pairing. Both can coexist; they don't
   interact.

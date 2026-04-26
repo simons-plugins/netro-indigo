@@ -193,11 +193,15 @@ def sample_v2_schedules():
 
 
 class _IndigoPluginBaseStub:
-    """Stand-in for indigo.PluginBase used at Plugin class definition time.
+    """Stand-in for ``indigo.PluginBase`` used at Plugin class definition time.
 
-    Real Indigo's PluginBase performs server-bound initialisation the tests
-    don't need; subclassing this empty stub lets `class Plugin(indigo.PluginBase):`
-    succeed under MagicMock-based test doubles.
+    Real Indigo's ``PluginBase`` performs server-bound initialisation the
+    tests don't need; subclassing this empty stub lets
+    ``class Plugin(indigo.PluginBase):`` import-succeed under
+    MagicMock-based test doubles. The class is deliberately method-less —
+    any base-class behaviour exercised by tests (e.g. ``self.logger``) is
+    supplied per-test, not by this stub. See also ``mock_indigo_base``
+    which installs this into ``sys.modules['indigo']``.
     """
 
 
