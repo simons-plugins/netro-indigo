@@ -57,6 +57,7 @@ from constants import (
     OPERATIONAL_ERROR_EVENTS,
     COMM_ERROR_EVENTS,
     DEVICE_EVENT_TYPES,
+    WHISPERER_STALENESS_HOURS,
 )
 from exceptions import ThrottleDelayError
 from validators import (
@@ -67,7 +68,11 @@ from validators import (
 )
 from api_client import NetroAPIClient
 from device_handlers import SprinklerHandler, WhispererHandler, ZoneHandler
-from utils import convert_weather_us_to_metric, convert_weather_metric_to_us
+from utils import (
+    convert_weather_us_to_metric,
+    convert_weather_metric_to_us,
+    parse_reading_age_hours,
+)
 from tomorrow_client import TomorrowClient
 
 
@@ -101,6 +106,11 @@ class Plugin(indigo.PluginBase):
         super().__init__(pluginId, pluginDisplayName, pluginVersion, pluginPrefs)
         # Used to control when to show connection errors (vs just repeated retries)
         self._displayed_connection_error = False
+        # In-memory fallback for moisture-source transition logging — keyed by zone
+        # device id. Survives IOM persistence failures so the same transition is
+        # not re-logged every poll. Lazy-init in `_log_moisture_source_transition`
+        # for tests that bypass __init__ via Plugin.__new__(Plugin).
+        self._last_logged_moisture_source = {}
         self.pluginId = pluginId
         self.debug = pluginPrefs.get("showDebugInfo", False)
         self.timeout = int(pluginPrefs.get("apiTimeout", DEFAULT_API_TIMEOUT_SECONDS))
@@ -723,13 +733,51 @@ class Plugin(indigo.PluginBase):
                             )
                         )
 
+                    forecast_val = None
                     if moisture_response:
-                        states.extend(
-                            self.zone_handler.process_zone_moisture(moisture_response, zone_num)
-                        )
+                        try:
+                            forecast_states = self.zone_handler.process_zone_moisture(
+                                moisture_response, zone_num
+                            )
+                            found = False
+                            for entry in forecast_states:
+                                if not found and entry.get("key") == "moisture":
+                                    forecast_val = entry.get("value")
+                                    states.append({**entry, "key": "moistureForecast"})
+                                    found = True
+                                else:
+                                    states.append(entry)
+                        except (AttributeError, TypeError, KeyError, IndexError):
+                            self.logger.exception(
+                                f"Error processing moisture for zone {zone_num} on "
+                                f"'{zone_dev.name}' — moisture + moistureForecast "
+                                f"states will not update this cycle."
+                            )
 
+                    try:
+                        moisture_val, source = self._resolve_zone_moisture(
+                            zone_dev, forecast_val
+                        )
+                    except (AttributeError, KeyError, TypeError) as exc:
+                        self.logger.warning(
+                            f"Zone '{zone_dev.name}': could not resolve moisture source "
+                            f"({type(exc).__name__}: {exc}) — falling back to forecast."
+                        )
+                        moisture_val, source = forecast_val, "forecast"
+                    if moisture_val is not None:
+                        states.append({
+                            "key": "moisture",
+                            "value": moisture_val,
+                            "uiValue": f"{moisture_val}%",
+                        })
+
+                # State write FIRST — it's the authoritative side effect.
                 if states:
                     zone_dev.updateStatesOnServer(states)
+
+                # Transition log is auxiliary; must not gate the state write.
+                if is_enabled:
+                    self._log_moisture_source_transition(zone_dev, source)
 
                 # Set error state and icon after state update
                 if not is_enabled:
@@ -1156,6 +1204,195 @@ class Plugin(indigo.PluginBase):
         """
         self.logger.threaddebug("sprinklerList")
         return [(s.id, s.name) for s in indigo.devices.iter(filter="self")]
+
+    ########################################
+    # pylint: disable=unused-argument
+    def getWhispererDevices(self, filter="", valuesDict=None, typeId="", targetId=0):
+        """Populate the `linkedWhispererDeviceId` dropdown on zone ConfigUI.
+
+        Returns a list of (value, label) tuples:
+          - First entry: ("", "(Unpaired — use Netro forecast)") sentinel.
+          - Remaining entries: this plugin's Whisperer devices, sorted
+            case-insensitively by name. Value is the Indigo device ID as a
+            string; label is the device name.
+
+        Called by Indigo when the ConfigUI is opened / reloaded.
+        """
+        options = [("", "(Unpaired — use Netro forecast)")]
+        whisperers = sorted(
+            (d for d in indigo.devices.iter(filter="self")
+             if d.deviceTypeId == "Whisperer"),
+            key=lambda d: d.name.lower(),
+        )
+        options.extend((str(d.id), d.name) for d in whisperers)
+        return options
+
+    def _resolve_zone_moisture(self, zone_dev, forecast_val):
+        """Resolve the "moisture" state value for a zone device.
+
+        Returns a ``(value, source_tag)`` pair where source_tag is one of:
+
+        - ``"forecast"``: zone has no paired Whisperer; returns forecast_val.
+        - ``"whisperer"``: paired Whisperer is enabled, has a fresh
+          (≤ WHISPERER_STALENESS_HOURS old) numeric ``soilMoisture`` reading.
+        - ``"forecast-missing-device"``: paired device id does not resolve
+          (deleted or invalid id).
+        - ``"forecast-disabled-device"``: paired device exists but is disabled.
+        - ``"forecast-missing-reading"``: paired but the sensor has not
+          reported yet — ``readingID`` is 0 (Indigo Integer-state default)
+          or ``soilMoisture`` is None.
+        - ``"forecast-invalid-reading"``: paired and reporting, but
+          ``soilMoisture`` is present and not coercible to int (corrupt or
+          unexpected payload — investigate sensor / API).
+        - ``"forecast-unparseable-time"``: paired and reporting numeric soil,
+          but ``readingTime`` can't be parsed.
+        - ``"forecast-stale"``: paired, parseable, but reading is
+          > WHISPERER_STALENESS_HOURS old.
+
+        ``value`` may be ``None`` if forecast_val is None and no Whisperer
+        value is available; the caller should skip writing ``moisture`` in
+        that case.
+
+        Note: emits a debug breadcrumb (no other logging) when readingTime
+        is unparseable or soilMoisture is non-numeric, so support debugging
+        has the raw values.
+        """
+        linked_id = zone_dev.pluginProps.get("linkedWhispererDeviceId", "")
+        if not linked_id:
+            return forecast_val, "forecast"
+
+        try:
+            whisperer = indigo.devices[int(linked_id)]
+        except (KeyError, ValueError):
+            return forecast_val, "forecast-missing-device"
+
+        if not whisperer.enabled:
+            return forecast_val, "forecast-disabled-device"
+
+        reading_id = whisperer.states.get("readingID") or 0
+        soil = whisperer.states.get("soilMoisture")
+        reading_time = whisperer.states.get("readingTime", "")
+
+        if reading_id == 0 or soil is None:
+            return forecast_val, "forecast-missing-reading"
+
+        age_hours = parse_reading_age_hours(reading_time)
+        if age_hours is None:
+            # Leave a debug breadcrumb with the raw value so support debugging has the data.
+            self.logger.debug(
+                f"Zone '{zone_dev.name}': paired Whisperer readingTime "
+                f"{reading_time!r} is unparseable — treating as stale."
+            )
+            return forecast_val, "forecast-unparseable-time"
+
+        if age_hours > WHISPERER_STALENESS_HOURS:
+            return forecast_val, "forecast-stale"
+
+        try:
+            return int(soil), "whisperer"
+        except (TypeError, ValueError):
+            self.logger.debug(
+                f"Zone '{zone_dev.name}': paired Whisperer soilMoisture "
+                f"{soil!r} is non-numeric — treating as invalid reading."
+            )
+            return forecast_val, "forecast-invalid-reading"
+
+    def _log_moisture_source_transition(self, zone_dev, new_source):
+        """Log a transition between moisture-source categories for a zone.
+
+        Maintains an in-memory fallback (``_last_logged_moisture_source``) keyed
+        by zone device id so a known-logged transition isn't re-emitted across
+        polls. The persistence side effect (``replacePluginPropsOnServer`` of
+        ``lastMoistureSource``) is best-effort — failures are caught and logged
+        at WARNING, but never propagated, and never block the in-memory
+        suppression. After plugin restart the in-memory cache resets and the
+        first transition per zone is re-emitted from the persisted value.
+
+        Logs are emitted only on category change. The first call on a fresh
+        install (no prior persisted source AND no in-memory entry) is silent.
+
+        Args:
+            zone_dev: Indigo zone device.
+            new_source: One of the source tags returned by
+                ``_resolve_zone_moisture``.
+        """
+        # Lazy-init the in-memory fallback (Plugin.__new__ in tests skips __init__).
+        log_cache = getattr(self, "_last_logged_moisture_source", None)
+        if log_cache is None:
+            log_cache = {}
+            self._last_logged_moisture_source = log_cache
+
+        # Prefer in-memory value when available — it survives IOM persistence
+        # failures, so we don't re-emit the same warning every poll.
+        prev_persisted = zone_dev.pluginProps.get("lastMoistureSource")
+        prev_logged = log_cache.get(zone_dev.id)
+        prev = prev_logged if prev_logged is not None else prev_persisted
+
+        if prev == new_source:
+            return
+
+        if prev is not None:
+            if new_source == "whisperer":
+                if prev == "forecast-stale":
+                    self.logger.info(
+                        f"Zone '{zone_dev.name}': Whisperer reading recovered — "
+                        f"moisture now tracking paired sensor."
+                    )
+                else:
+                    self.logger.info(
+                        f"Zone '{zone_dev.name}': paired Whisperer reading active — "
+                        f"moisture now tracking sensor."
+                    )
+            elif new_source == "forecast-stale":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer reading stale "
+                    f"(>12h old) — falling back to Netro forecast."
+                )
+            elif new_source == "forecast-missing-reading":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer has no reading yet "
+                    f"— showing Netro forecast until sensor reports."
+                )
+            elif new_source == "forecast-invalid-reading":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer reported a "
+                    f"non-numeric soil value — showing Netro forecast. Check "
+                    f"sensor firmware or Netro API response."
+                )
+            elif new_source == "forecast-unparseable-time":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer readingTime is "
+                    f"unparseable — showing Netro forecast. Check Whisperer poll."
+                )
+            elif new_source == "forecast-missing-device":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer device no longer "
+                    f"exists — falling back to Netro forecast."
+                )
+            elif new_source == "forecast-disabled-device":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer device is disabled "
+                    f"— falling back to Netro forecast."
+                )
+
+        # Update the in-memory marker BEFORE attempting persistence so a
+        # persistence failure doesn't cause repeat-logs next cycle.
+        log_cache[zone_dev.id] = new_source
+
+        # Best-effort persist via Indigo's IOM. Failures are tolerated.
+        new_props = dict(zone_dev.pluginProps)
+        new_props["lastMoistureSource"] = new_source
+        try:
+            zone_dev.replacePluginPropsOnServer(new_props)
+        # Tolerate any IOM error — the in-memory fallback above ensures we
+        # don't log-spam if persistence is unavailable. Narrowing would
+        # reintroduce fragility against unexpected Indigo exception types.
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            self.logger.warning(
+                f"Zone '{zone_dev.name}': could not persist moisture source "
+                f"'{new_source}' ({type(exc).__name__}: {exc}) — using "
+                f"in-memory fallback so the transition log will not repeat."
+            )
 
     ########################################
     # Validation callbacks

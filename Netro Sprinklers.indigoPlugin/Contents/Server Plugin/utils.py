@@ -6,6 +6,8 @@ This module provides common utility functions used throughout the plugin:
   rainfall, wind speed, and pressure
 - Weather data conversion: convert_weather_us_to_metric / convert_weather_metric_to_us
   for transforming weather dicts between API v1 (US) and v2 (metric) formats
+- parse_reading_age_hours: Parse Whisperer reading timestamps (v1 epoch millis
+  or v2 ISO 8601) and return age in hours
 - get_key_from_dict: Safely retrieve values from dictionaries
 
 These functions are extracted from plugin.py to enable reuse and testing.
@@ -15,7 +17,8 @@ Note:
     It has no dependencies on other plugin modules to prevent circular imports.
 """
 
-from typing import Any, Dict
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional, Union
 
 
 def fahrenheit_to_celsius(f: float) -> float:
@@ -124,6 +127,77 @@ def convert_weather_metric_to_us(weather_data: Dict[str, Any]) -> Dict[str, Any]
         converted["pressure"] = round(hpa_to_inhg(float(converted["pressure"])), 2)
 
     return converted
+
+
+def _now_utc() -> datetime:
+    """Return current time as a timezone-aware UTC datetime.
+
+    Indirected through a module-level function so tests can patch it
+    deterministically without depending on freezegun or similar.
+    """
+    return datetime.now(tz=timezone.utc)
+
+
+def parse_reading_age_hours(
+    reading_time: Union[str, int, float, None]
+) -> Optional[float]:
+    """Compute age (hours) of a Whisperer reading timestamp.
+
+    Accepts both API v1 and v2 timestamp formats emitted by
+    ``WhispererHandler.process_sensor_data``:
+
+    - **V1 (epoch millis)**: e.g. ``1234567890000`` (int or numeric string)
+    - **V2 (ISO 8601)**: e.g. ``"2026-04-07T10:00:00"`` or ``"...Z"``
+
+    Args:
+        reading_time: Value from the Whisperer ``readingTime`` state.
+
+    Returns:
+        Age in hours (non-negative float) if parseable, ``None`` otherwise.
+        Returns ``0.0`` when the reading is in the future (clock skew).
+
+    Note:
+        V2 ISO strings without an explicit timezone are assumed to be UTC.
+        Netro's ``time`` field is the sensor's UTC timestamp; ``local_time``
+        is the pre-formatted local variant. We intentionally use the UTC
+        form for age math to avoid DST/tz drift.
+    """
+    if reading_time is None or reading_time == "":
+        return None
+
+    now = _now_utc()
+
+    # Try ISO 8601 first (covers v2 and any pre-formatted strings).
+    if isinstance(reading_time, str):
+        candidate = reading_time.removesuffix("Z").strip()
+        try:
+            parsed = datetime.fromisoformat(candidate)
+        except ValueError:
+            parsed = None
+        else:
+            if parsed.tzinfo is None:
+                parsed = parsed.replace(tzinfo=timezone.utc)
+            delta = (now - parsed).total_seconds() / 3600.0
+            return max(0.0, delta)
+
+        # Fall through: maybe it's a stringified epoch millis.
+        try:
+            reading_time = int(candidate)
+        except (TypeError, ValueError):
+            return None
+
+    # Epoch millis (int or float from numeric-string fallthrough above).
+    # Reject bool explicitly — bool is a subclass of int.
+    if isinstance(reading_time, (int, float)) and not isinstance(reading_time, bool):
+        try:
+            seconds = float(reading_time) / 1000.0
+            parsed = datetime.fromtimestamp(seconds, tz=timezone.utc)
+        except (OSError, OverflowError, ValueError):
+            return None
+        delta = (now - parsed).total_seconds() / 3600.0
+        return max(0.0, delta)
+
+    return None
 
 
 def get_key_from_dict(key: str, data: dict, default: Any = None) -> Any:

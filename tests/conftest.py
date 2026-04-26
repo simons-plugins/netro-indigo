@@ -6,7 +6,7 @@ mechanism.
 """
 import sys
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import MagicMock, Mock
 import pytest
 
 # Add Server Plugin directory to path for imports
@@ -190,6 +190,34 @@ def sample_v2_schedules():
             "token_reset": "2026-04-08T00:00:00"
         }
     }
+
+
+class _IndigoPluginBaseStub:
+    """Stand-in for ``indigo.PluginBase`` used at Plugin class definition time.
+
+    Real Indigo's ``PluginBase`` performs server-bound initialisation the
+    tests don't need; subclassing this empty stub lets
+    ``class Plugin(indigo.PluginBase):`` import-succeed under
+    MagicMock-based test doubles. The class is deliberately method-less —
+    any base-class behaviour exercised by tests (e.g. ``self.logger``) is
+    supplied per-test, not by this stub. See also ``mock_indigo_base``
+    which installs this into ``sys.modules['indigo']``.
+    """
+
+
+@pytest.fixture
+def mock_indigo_base(monkeypatch):
+    """Install a minimal indigo module into sys.modules.
+
+    Tests that need `indigo.devices[id]` lookups can extend the returned
+    MagicMock with their own `_devices_by_id` dict and side_effect.
+    """
+    indigo = MagicMock()
+    indigo.PluginBase = _IndigoPluginBaseStub
+    indigo.Dict = dict
+    monkeypatch.setitem(sys.modules, "indigo", indigo)
+    monkeypatch.delitem(sys.modules, "plugin", raising=False)
+    return indigo
 
 
 @pytest.fixture

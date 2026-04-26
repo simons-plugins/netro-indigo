@@ -693,12 +693,24 @@ class ZoneHandler:
             zone_number: Zone ith number (1-based)
 
         Returns:
-            List with single moisture state update dict
+            A list containing a single
+            ``{"key": "moisture", "value": int, "uiValue": "<n>%"}`` dict when
+            a reading for ``zone_number`` exists on the most recent date.
+            Returns ``[]`` (empty list) when:
+              - ``moistures`` is empty or missing,
+              - no entry matches ``zone_number`` on the most-recent date, or
+              - the response shape triggers ``KeyError``/``TypeError``/
+                ``IndexError`` (the error is logged via ``self.logger.error``,
+                not raised).
+
+            The empty-list shape signals "no forecast data this cycle" so the
+            caller can skip writing ``moistureForecast`` rather than persisting
+            a fake 0%.
         """
         try:
             moistures = api_response["data"]["moistures"]
             if not moistures:
-                return [{"key": "moisture", "value": 0, "uiValue": "0%"}]
+                return []
 
             moistures_sorted = sorted(moistures, key=lambda x: x.get("id", 0), reverse=True)
             max_date = moistures_sorted[0].get("date")
@@ -708,11 +720,11 @@ class ZoneHandler:
                     val = m.get("moisture", 0)
                     return [{"key": "moisture", "value": val, "uiValue": f"{val}%"}]
 
-            return [{"key": "moisture", "value": 0, "uiValue": "0%"}]
+            return []
 
         except (KeyError, TypeError, IndexError) as exc:
             self.logger.error(f"Error parsing zone moisture: {exc}")
-            return [{"key": "moisture", "value": 0, "uiValue": "0%"}]
+            return []
 
     def extract_zone_states(self, zones, zone_number):
         """Extract enabled and smartMode for a single zone from info data.

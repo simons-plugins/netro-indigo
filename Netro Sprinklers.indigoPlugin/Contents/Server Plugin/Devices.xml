@@ -303,12 +303,30 @@
             <Field id="zoneNumber" type="textfield" hidden="true">
                 <Label/>
             </Field>
+            <Field id="sep_sensor" type="separator"/>
+            <Field id="sensorLabel" type="label">
+                <Label>Soil Moisture Source</Label>
+            </Field>
+            <Field id="linkedWhispererDeviceId" type="menu" defaultValue="">
+                <Label>Paired Whisperer:</Label>
+                <List class="self" method="getWhispererDevices" dynamicReload="true"/>
+            </Field>
+            <!-- Help text references "12 hours" — keep in sync with
+                 constants.py::WHISPERER_STALENESS_HOURS if that value changes. -->
+            <Field id="sensorHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+                <Label>When paired, the zone's moisture state mirrors the Whisperer's soil reading (if fresh within 12 hours). Otherwise, it shows Netro's daily forecast. The forecast is always available separately as the "Moisture Forecast" state.</Label>
+            </Field>
         </ConfigUI>
         <States>
             <State id="moisture">
                 <ValueType>Integer</ValueType>
                 <TriggerLabel>Moisture Level (%)</TriggerLabel>
                 <ControlPageLabel>Moisture Level (%)</ControlPageLabel>
+            </State>
+            <State id="moistureForecast">
+                <ValueType>Integer</ValueType>
+                <TriggerLabel>Moisture Forecast (%)</TriggerLabel>
+                <ControlPageLabel>Moisture Forecast (%)</ControlPageLabel>
             </State>
             <State id="enabled">
                 <ValueType>Boolean</ValueType>
