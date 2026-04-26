@@ -1228,26 +1228,29 @@ class Plugin(indigo.PluginBase):
         Returns a ``(value, source_tag)`` pair where source_tag is one of:
 
         - ``"forecast"``: zone has no paired Whisperer; returns forecast_val.
-        - ``"whisperer"``: paired Whisperer exists, is enabled, has a fresh
-          (<= WHISPERER_STALENESS_HOURS old) ``soilMoisture`` reading.
-        - ``"forecast-missing-reading"``: paired but ``readingID`` is 0 (the
-          Indigo Integer-state default — sensor hasn't reported yet) or
-          ``soilMoisture`` is missing/non-numeric.
-        - ``"forecast-unparseable-time"``: paired and reading present but
-          ``readingTime`` cannot be parsed.
-        - ``"forecast-stale"``: paired, readingID > 0, soil numeric, age
-          parsed, but > WHISPERER_STALENESS_HOURS old.
+        - ``"whisperer"``: paired Whisperer is enabled, has a fresh
+          (<= WHISPERER_STALENESS_HOURS old) numeric ``soilMoisture`` reading.
         - ``"forecast-missing-device"``: paired device id does not resolve
-          to an Indigo device (deleted or invalid id).
-        - ``"forecast-disabled-device"``: paired device exists but is
-          disabled in Indigo.
+          (deleted or invalid id).
+        - ``"forecast-disabled-device"``: paired device exists but is disabled.
+        - ``"forecast-missing-reading"``: paired but the sensor has not
+          reported yet — ``readingID`` is 0 (Indigo Integer-state default)
+          or ``soilMoisture`` is None.
+        - ``"forecast-invalid-reading"``: paired and reporting, but
+          ``soilMoisture`` is present and not coercible to int (corrupt or
+          unexpected payload — investigate sensor / API).
+        - ``"forecast-unparseable-time"``: paired and reporting numeric soil,
+          but ``readingTime`` can't be parsed.
+        - ``"forecast-stale"``: paired, parseable, but reading is older than
+          WHISPERER_STALENESS_HOURS.
 
         ``value`` may be ``None`` if forecast_val is None and no Whisperer
         value is available; the caller should skip writing ``moisture`` in
         that case.
 
         Note: emits a debug breadcrumb (no other logging) when readingTime
-        is unparseable so support debugging has the raw value.
+        is unparseable or soilMoisture is non-numeric, so support debugging
+        has the raw values.
         """
         linked_id = zone_dev.pluginProps.get("linkedWhispererDeviceId", "")
         if not linked_id:
@@ -1283,7 +1286,11 @@ class Plugin(indigo.PluginBase):
         try:
             return int(soil), "whisperer"
         except (TypeError, ValueError):
-            return forecast_val, "forecast-missing-reading"
+            self.logger.debug(
+                f"Zone '{zone_dev.name}': paired Whisperer soilMoisture "
+                f"{soil!r} is non-numeric — treating as invalid reading."
+            )
+            return forecast_val, "forecast-invalid-reading"
 
     def _log_moisture_source_transition(self, zone_dev, new_source):
         """Log a transition between moisture-source categories for a zone.
@@ -1333,6 +1340,12 @@ class Plugin(indigo.PluginBase):
                 self.logger.warning(
                     f"Zone '{zone_dev.name}': paired Whisperer has no reading yet "
                     f"— showing Netro forecast until sensor reports."
+                )
+            elif new_source == "forecast-invalid-reading":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': paired Whisperer reported a "
+                    f"non-numeric soil value — showing Netro forecast. Check "
+                    f"sensor firmware or Netro API response."
                 )
             elif new_source == "forecast-unparseable-time":
                 self.logger.warning(

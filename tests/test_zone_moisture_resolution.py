@@ -167,7 +167,7 @@ def test_paired_fresh_v1_epoch_millis(plugin_instance, mock_indigo):
 
 # --- Paired, non-numeric soilMoisture (defensive) ---
 
-def test_paired_non_numeric_soil_treated_as_missing_reading(plugin_instance, mock_indigo):
+def test_paired_non_numeric_soil_treated_as_invalid_reading(plugin_instance, mock_indigo):
     """Non-numeric soilMoisture (should never happen in practice) falls back safely."""
     whisperer = SimpleNamespace(
         enabled=True,
@@ -181,7 +181,7 @@ def test_paired_non_numeric_soil_treated_as_missing_reading(plugin_instance, moc
     zone = _fake_zone(linked_id="999")
     with patch("utils._now_utc", return_value=FROZEN_NOW):
         val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=89)
-    assert (val, src) == (89, "forecast-missing-reading")
+    assert (val, src) == (89, "forecast-invalid-reading")
 
 
 # --- Paired, readingID == 0 (sensor uninitialised) ---

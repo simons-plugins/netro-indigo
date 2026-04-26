@@ -131,6 +131,14 @@ def test_log_warning_on_unparseable_time(plugin_instance):
     assert "unparseable" in plugin_instance.logger.warning.call_args[0][0].lower()
 
 
+def test_log_warning_on_invalid_reading(plugin_instance):
+    """Paired, but soilMoisture is non-numeric → distinct warning from missing-reading."""
+    zone = _zone(last_source="whisperer")
+    plugin_instance._log_moisture_source_transition(zone, "forecast-invalid-reading")
+    plugin_instance.logger.warning.assert_called_once()
+    assert "non-numeric soil value" in plugin_instance.logger.warning.call_args[0][0].lower()
+
+
 def test_replace_props_failure_logs_warning_not_raises(plugin_instance):
     """If replacePluginPropsOnServer raises, logger.warning is called and no exception escapes."""
     zone = _zone(last_source="whisperer")
