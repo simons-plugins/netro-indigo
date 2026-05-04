@@ -2,18 +2,10 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<key>PluginVersion</key>
-	<string>2026.5.5</string>
-	<key>ServerApiVersion</key>
-	<string>3.6</string>
-	<key>IwsApiVersion</key>
-	<string>1.0.0</string>
 	<key>CFBundleDisplayName</key>
 	<string>Netro Smart Sprinklers</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.simons-plugins.netro</string>
-	<key>CFBundleVersion</key>
-	<string>2.0.0</string>
 	<key>CFBundleShortVersionString</key>
 	<string>2.0</string>
 	<key>CFBundleURLTypes</key>
@@ -23,6 +15,8 @@
 			<string>https://github.com/simons-plugins/netro-indigo</string>
 		</dict>
 	</array>
+	<key>CFBundleVersion</key>
+	<string>2.0.0</string>
 	<key>GithubInfo</key>
 	<dict>
 		<key>GithubRepo</key>
@@ -30,5 +24,11 @@
 		<key>GithubUser</key>
 		<string>simons-plugins</string>
 	</dict>
+	<key>IwsApiVersion</key>
+	<string>1.0.0</string>
+	<key>PluginVersion</key>
+	<string>2026.5.6</string>
+	<key>ServerApiVersion</key>
+	<string>3.6</string>
 </dict>
 </plist>
