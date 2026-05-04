@@ -44,3 +44,7 @@ testpaths = ["tests"]
 python_files = "test_*.py"
 python_classes = "Test*"
 python_functions = "test_*"
+# TestingBase lives in tests/venv/ and tests/shared/ (submodule). Don't
+# recurse there from the main env — they need their own venv to import
+# `shared`. tests/integration/ runs only via that venv too.
+norecursedirs = ["tests/integration", "tests/shared", "tests/venv"]
