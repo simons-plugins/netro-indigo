@@ -1,1 +1,7 @@
 -r shared/module-requirements.txt
+
+# Pytest runs the unittest.TestCase classes from TestingBase. Upstream's
+# module-requirements doesn't include it; we add it here so this venv
+# can run `pytest tests/integration/`.
+pytest
+
