@@ -49,3 +49,7 @@ test_results/
 
 docs/
 requirements-dev.txt
+
+# TestingBase — gitignored test creds and dedicated venv
+tests/.env
+tests/venv/
