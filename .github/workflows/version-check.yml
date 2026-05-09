@@ -18,7 +18,7 @@ jobs:
       - name: Determine plugin name
         id: get_plugin_name
         run: |
-          PLUGIN_BUNDLE=$(find . -maxdepth 1 -name "*.indigoPlugin" -type d | head -1)
+          PLUGIN_BUNDLE=$(find . -maxdepth 1 -iname "*.indigoPlugin" -type d | head -1)
           if [ -z "$PLUGIN_BUNDLE" ]; then
             echo "Error: No .indigoPlugin directory found in repository root." >&2
             exit 1
