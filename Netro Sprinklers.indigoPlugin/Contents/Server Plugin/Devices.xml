@@ -350,11 +350,25 @@
                 <Title>Remove Selected</Title>
                 <CallbackMethod>removeExternalSensors</CallbackMethod>
             </Field>
+            <Field id="externalAggregation" type="menu" defaultValue="average">
+                <Label>Aggregation Method:</Label>
+                <List>
+                    <Option value="average">Average (default)</Option>
+                    <Option value="minimum">Minimum (driest sensor)</Option>
+                    <Option value="maximum">Maximum (wettest sensor)</Option>
+                </List>
+            </Field>
+            <Field id="externalMaxAgeDays" type="textfield" defaultValue="">
+                <Label>Ignore readings older than (days):</Label>
+            </Field>
+            <Field id="externalMaxAgeDaysHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+                <Label>Leave empty for no limit. A sensor whose device hasn't updated within this many days is excluded, so a dead sensor doesn't distort the result while others are live.</Label>
+            </Field>
             <Field id="externalSensorsJson" type="textfield" hidden="true" defaultValue="[]">
                 <Label/>
             </Field>
             <Field id="externalSensorsHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
-                <Label>Readings from all linked sensors are averaged and pushed to Netro whenever a sensor updates, overriding Netro's own moisture model for smart scheduling.</Label>
+                <Label>Readings from all linked sensors are averaged and pushed to Netro whenever a linked sensor's reading changes, overriding Netro's own moisture model for smart scheduling.</Label>
             </Field>
         </ConfigUI>
         <States>
