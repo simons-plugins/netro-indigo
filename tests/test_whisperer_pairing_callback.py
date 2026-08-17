@@ -23,7 +23,7 @@ def test_returns_unpaired_sentinel_when_no_whisperers(mock_indigo):
     from plugin import Plugin  # noqa: WPS433
     plugin = Plugin.__new__(Plugin)  # skip __init__
     result = plugin.getWhispererDevices()
-    assert result[0] == ("", "(Unpaired — use Netro forecast)")
+    assert result[0] == ("-1", "(Unpaired — use Netro forecast)")
     assert len(result) == 1
 
 
@@ -39,7 +39,7 @@ def test_returns_whisperers_sorted_by_name(mock_indigo):
     from plugin import Plugin  # noqa: WPS433
     plugin = Plugin.__new__(Plugin)
     result = plugin.getWhispererDevices()
-    assert result[0] == ("", "(Unpaired — use Netro forecast)")
+    assert result[0] == ("-1", "(Unpaired — use Netro forecast)")
     assert result[1:] == [("102", "apple"), ("103", "Mango"), ("101", "Zebra")]
 
 

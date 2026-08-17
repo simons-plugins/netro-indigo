@@ -307,7 +307,7 @@
             <Field id="sensorLabel" type="label">
                 <Label>Soil Moisture Source</Label>
             </Field>
-            <Field id="linkedWhispererDeviceId" type="menu" defaultValue="">
+            <Field id="linkedWhispererDeviceId" type="menu" defaultValue="-1">
                 <Label>Paired Whisperer:</Label>
                 <List class="self" method="getWhispererDevices" dynamicReload="true"/>
             </Field>
@@ -320,12 +320,12 @@
             <Field id="externalSensorsLabel" type="label">
                 <Label>External Soil Sensors (average → pushed to Netro)</Label>
             </Field>
-            <Field id="externalSensorDevice" type="menu" defaultValue="">
+            <Field id="externalSensorDevice" type="menu" defaultValue="-1">
                 <Label>Sensor Device:</Label>
                 <List class="self" method="getExternalSensorDevices" dynamicReload="true"/>
                 <CallbackMethod>externalSensorDeviceChanged</CallbackMethod>
             </Field>
-            <Field id="externalSensorState" type="menu" defaultValue="">
+            <Field id="externalSensorState" type="menu" defaultValue="-1">
                 <Label>Sensor State:</Label>
                 <List class="self" method="getExternalSensorStates" dynamicReload="true"/>
             </Field>

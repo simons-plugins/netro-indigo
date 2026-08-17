@@ -1228,14 +1228,16 @@ class Plugin(indigo.PluginBase):
         """Populate the `linkedWhispererDeviceId` dropdown on zone ConfigUI.
 
         Returns a list of (value, label) tuples:
-          - First entry: ("", "(Unpaired — use Netro forecast)") sentinel.
+          - First entry: ("-1", "(Unpaired — use Netro forecast)") sentinel.
+            Indigo rejects empty-string option IDs, so "-1" is used; ""
+            remains a valid stored value for zones saved before this change.
           - Remaining entries: this plugin's Whisperer devices, sorted
             case-insensitively by name. Value is the Indigo device ID as a
             string; label is the device name.
 
         Called by Indigo when the ConfigUI is opened / reloaded.
         """
-        options = [("", "(Unpaired — use Netro forecast)")]
+        options = [("-1", "(Unpaired — use Netro forecast)")]
         whisperers = sorted(
             (d for d in indigo.devices.iter(filter="self")
              if d.deviceTypeId == "Whisperer"),
@@ -1250,7 +1252,8 @@ class Plugin(indigo.PluginBase):
         """Populate the `externalSensorDevice` dropdown on zone ConfigUI.
 
         Returns a list of (value, label) tuples:
-          - First entry: ("", "(Select a sensor device)") sentinel.
+          - First entry: ("-1", "(Select a sensor device)") sentinel. Indigo
+            rejects empty-string option IDs, so "-1" is used.
           - Remaining entries: every Indigo device except this plugin's own
             devices, sorted case-insensitively by name. Value is the Indigo
             device ID as a string; label is the device name.
@@ -1260,7 +1263,7 @@ class Plugin(indigo.PluginBase):
             (d for d in indigo.devices if d.id not in own_ids),
             key=lambda d: d.name.lower(),
         )
-        options = [("", "(Select a sensor device)")]
+        options = [("-1", "(Select a sensor device)")]
         options.extend((str(d.id), d.name) for d in others)
         return options
 
@@ -1273,17 +1276,18 @@ class Plugin(indigo.PluginBase):
         `externalSensorDevice` (read from valuesDict), labeled as
         "stateKey (current: value)". Keys containing "moist", "humid", or
         "sensorValue" (case-insensitive) sort first, then alphabetically.
-        Returns a single "(Select a device first)" sentinel when no device
-        is selected or it can't be resolved.
+        Returns a single "(Select a device first)" sentinel (value "-1";
+        Indigo rejects empty-string option IDs) when no device is selected
+        or it can't be resolved.
         """
         values = valuesDict or {}
         dev_id_str = values.get("externalSensorDevice", "")
-        if not dev_id_str:
-            return [("", "(Select a device first)")]
+        if not dev_id_str or dev_id_str == "-1":
+            return [("-1", "(Select a device first)")]
         try:
             dev = indigo.devices[int(dev_id_str)]
         except (KeyError, ValueError, TypeError):
-            return [("", "(Select a device first)")]
+            return [("-1", "(Select a device first)")]
 
         priority_terms = ("moist", "humid", "sensorvalue")
 
@@ -1319,7 +1323,7 @@ class Plugin(indigo.PluginBase):
         state_id = valuesDict.get("externalSensorState", "")
         scale = valuesDict.get("externalSensorScale", "percent")
 
-        if not dev_id_str or not state_id:
+        if not dev_id_str or dev_id_str == "-1" or not state_id or state_id == "-1":
             self.logger.warning("Select a sensor device and state before clicking Add Sensor.")
             return valuesDict
 
@@ -1345,8 +1349,8 @@ class Plugin(indigo.PluginBase):
             entries.append({"dev_id": dev_id, "state_id": state_id, "scale": scale})
             valuesDict["externalSensorsJson"] = json.dumps(entries)
 
-        valuesDict["externalSensorDevice"] = ""
-        valuesDict["externalSensorState"] = ""
+        valuesDict["externalSensorDevice"] = "-1"
+        valuesDict["externalSensorState"] = "-1"
         return valuesDict
 
     ########################################
@@ -1448,7 +1452,7 @@ class Plugin(indigo.PluginBase):
                 return ext_avg, "external"
 
         linked_id = zone_dev.pluginProps.get("linkedWhispererDeviceId", "")
-        if not linked_id:
+        if not linked_id or linked_id == "-1":
             return forecast_val, "forecast"
 
         try:
@@ -2601,7 +2605,7 @@ class Plugin(indigo.PluginBase):
             start_time = pluginAction.props.get("start_time", "").strip()
 
             # Validate parameters
-            if not zone_id:
+            if not zone_id or zone_id == "-1":
                 self.logger.error("No zone selected")
                 return
 
@@ -2745,14 +2749,15 @@ class Plugin(indigo.PluginBase):
                             zone_list.append((zone_id, zone_name))
 
             # If no zones found, return a helpful message
+            # (value "-1": Indigo rejects empty-string option IDs)
             if not zone_list:
-                zone_list = [("", "No zones configured - update device first")]
+                zone_list = [("-1", "No zones configured - update device first")]
 
             return zone_list
 
         except Exception as exc:
             self.logger.debug(f"Error getting zone list: {exc}\n{traceback.format_exc(10)}")
-            return [("", "Error loading zones")]
+            return [("-1", "Error loading zones")]
 
     ########################################
     # Menu callbacks defined in MenuItems.xml

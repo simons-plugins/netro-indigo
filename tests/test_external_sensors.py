@@ -685,18 +685,22 @@ class TestGetExternalSensorDevices:
 
         result = plugin_instance.getExternalSensorDevices()
 
-        assert result[0] == ("", "(Select a sensor device)")
+        assert result[0] == ("-1", "(Select a sensor device)")
         assert result[1:] == [("2", "apple Sensor"), ("1", "Zebra Sensor")]
 
 
 class TestGetExternalSensorStates:
     def test_no_device_selected_returns_sentinel(self, mock_indigo, plugin_instance):
         result = plugin_instance.getExternalSensorStates(valuesDict={})
-        assert result == [("", "(Select a device first)")]
+        assert result == [("-1", "(Select a device first)")]
+
+    def test_sentinel_device_selected_returns_sentinel(self, mock_indigo, plugin_instance):
+        result = plugin_instance.getExternalSensorStates(valuesDict={"externalSensorDevice": "-1"})
+        assert result == [("-1", "(Select a device first)")]
 
     def test_invalid_device_id_returns_sentinel(self, mock_indigo, plugin_instance):
         result = plugin_instance.getExternalSensorStates(valuesDict={"externalSensorDevice": "999"})
-        assert result == [("", "(Select a device first)")]
+        assert result == [("-1", "(Select a device first)")]
 
     def test_priority_states_sort_first(self, mock_indigo, plugin_instance):
         sensor = _fake_sensor(1, states={"batteryLevel": 90, "soilMoisture": 45, "humidity": 33})
@@ -714,6 +718,12 @@ class TestAddExternalSensor:
         assert result["externalSensorDevice"] == ""
         plugin_instance.logger.warning.assert_called_once()
 
+    def test_sentinel_selection_logs_warning_and_returns_unchanged(self, plugin_instance):
+        values = {"externalSensorDevice": "-1", "externalSensorState": "-1"}
+        result = plugin_instance.addExternalSensor(dict(values), "zone", 500)
+        assert result["externalSensorDevice"] == "-1"
+        plugin_instance.logger.warning.assert_called_once()
+
     def test_adds_entry(self, plugin_instance):
         values = {
             "externalSensorDevice": "42",
@@ -724,8 +734,8 @@ class TestAddExternalSensor:
         result = plugin_instance.addExternalSensor(values, "zone", 500)
         entries = json.loads(result["externalSensorsJson"])
         assert entries == [{"dev_id": 42, "state_id": "soilMoisture", "scale": "percent"}]
-        assert result["externalSensorDevice"] == ""
-        assert result["externalSensorState"] == ""
+        assert result["externalSensorDevice"] == "-1"
+        assert result["externalSensorState"] == "-1"
 
     def test_dedupes_existing_entry(self, plugin_instance):
         existing = json.dumps([{"dev_id": 42, "state_id": "soilMoisture", "scale": "percent"}])
@@ -1012,3 +1022,23 @@ class TestResolveZoneMoistureExternalBranch:
         )
         val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=77)
         assert (val, src) == (77, "forecast")
+
+
+# =============================================================================
+# Dynamic list callbacks must never return an empty-string option value —
+# Indigo logs "UI dynamic list function returned illegal ID string" and
+# ignores the option, so all sentinels use "-1" instead.
+# =============================================================================
+
+class TestDynamicListSentinelsNonEmpty:
+    def test_no_callback_returns_empty_value_option(self, mock_indigo, plugin_instance):
+        mock_indigo.devices.iter = MagicMock(return_value=iter([]))
+        mock_indigo.devices.__iter__ = MagicMock(return_value=iter([]))
+        callbacks = [
+            plugin_instance.getWhispererDevices,
+            plugin_instance.getExternalSensorDevices,
+            lambda: plugin_instance.getExternalSensorStates(valuesDict={}),
+        ]
+        for callback in callbacks:
+            for value, _label in callback():
+                assert value != ""

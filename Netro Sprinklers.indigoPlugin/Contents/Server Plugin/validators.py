@@ -528,8 +528,9 @@ def _validate_start_zone_action(
         except (ValueError, TypeError):
             errors["start_time"] = "Start time must be a valid Unix timestamp (integer)"
 
-    # Validate zone selected
-    if not values.get("zone"):
+    # Validate zone selected ("-1" is the getZoneList sentinel for "none selected")
+    zone = values.get("zone")
+    if not zone or zone == "-1":
         errors["zone"] = "You must select a zone"
 
 

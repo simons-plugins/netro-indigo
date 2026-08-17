@@ -216,6 +216,16 @@ class TestActionConfigValidation:
         assert is_valid is False
         assert "zone" in errors
 
+    def test_start_zone_sentinel_zone_errors(self):
+        """"-1" (getZoneList's placeholder sentinel) counts as unselected."""
+        values = {"duration": "15", "delay": "0", "zone": "-1"}
+        is_valid, sanitized, errors = validate_action_config(
+            values, "startZoneWithDelay"
+        )
+        assert is_valid is False
+        assert "zone" in errors
+        assert "select" in errors["zone"].lower()
+
     def test_start_zone_valid_start_time(self):
         """Valid start_time (Unix timestamp) passes."""
         values = {"duration": "15", "delay": "0", "zone": "zone1", "start_time": "1706814000"}
