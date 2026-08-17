@@ -111,6 +111,19 @@ class Plugin(indigo.PluginBase):
         # not re-logged every poll. Lazy-init in `_log_moisture_source_transition`
         # for tests that bypass __init__ via Plugin.__new__(Plugin).
         self._last_logged_moisture_source = {}
+        # External soil sensor → zone index: {sensor_dev_id: set(zone_dev_id)}.
+        # Rebuilt (unconditional reassignment, no guard needed) from zone
+        # pluginProps in startup()/deviceStartComm()/deviceStopComm(). The lookup
+        # path (deviceUpdated) is the one that needs the getattr guard, for tests
+        # that bypass __init__ via Plugin.__new__(Plugin).
+        self._external_sensor_index = {}
+        # Last averaged moisture value pushed to Netro per zone device id — avoids
+        # repeat API calls when the average hasn't changed.
+        self._last_pushed_external_moisture = {}
+        # Zone device ids for which the "no usable external sensor readings"
+        # warning has already been logged — avoids repeat-logging every poll.
+        # Discarded on the next successful push so the warning re-arms.
+        self._external_unusable_warned = set()
         self.pluginId = pluginId
         self.debug = pluginPrefs.get("showDebugInfo", False)
         self.timeout = int(pluginPrefs.get("apiTimeout", DEFAULT_API_TIMEOUT_SECONDS))
@@ -1118,6 +1131,10 @@ class Plugin(indigo.PluginBase):
         # Subscribe to variable changes for zone moisture auto-link
         indigo.variables.subscribeToChanges()
 
+        # Subscribe to device changes for external soil sensor → zone moisture push
+        indigo.devices.subscribeToChanges()
+        self._rebuild_external_sensor_index()
+
     ########################################
     def shutdown(self):
         """Called when plugin is disabled or Indigo quits.
@@ -1211,14 +1228,16 @@ class Plugin(indigo.PluginBase):
         """Populate the `linkedWhispererDeviceId` dropdown on zone ConfigUI.
 
         Returns a list of (value, label) tuples:
-          - First entry: ("", "(Unpaired — use Netro forecast)") sentinel.
+          - First entry: ("-1", "(Unpaired — use Netro forecast)") sentinel.
+            Indigo rejects empty-string option IDs, so "-1" is used; ""
+            remains a valid stored value for zones saved before this change.
           - Remaining entries: this plugin's Whisperer devices, sorted
             case-insensitively by name. Value is the Indigo device ID as a
             string; label is the device name.
 
         Called by Indigo when the ConfigUI is opened / reloaded.
         """
-        options = [("", "(Unpaired — use Netro forecast)")]
+        options = [("-1", "(Unpaired — use Netro forecast)")]
         whisperers = sorted(
             (d for d in indigo.devices.iter(filter="self")
              if d.deviceTypeId == "Whisperer"),
@@ -1227,11 +1246,181 @@ class Plugin(indigo.PluginBase):
         options.extend((str(d.id), d.name) for d in whisperers)
         return options
 
+    ########################################
+    # pylint: disable=unused-argument
+    def getExternalSensorDevices(self, filter="", valuesDict=None, typeId="", targetId=0):
+        """Populate the `externalSensorDevice` dropdown on zone ConfigUI.
+
+        Returns a list of (value, label) tuples:
+          - First entry: ("-1", "(Select a sensor device)") sentinel. Indigo
+            rejects empty-string option IDs, so "-1" is used.
+          - Remaining entries: every Indigo device except this plugin's own
+            devices, sorted case-insensitively by name. Value is the Indigo
+            device ID as a string; label is the device name.
+        """
+        own_ids = {d.id for d in indigo.devices.iter(filter="self")}
+        others = sorted(
+            (d for d in indigo.devices if d.id not in own_ids),
+            key=lambda d: d.name.lower(),
+        )
+        options = [("-1", "(Select a sensor device)")]
+        options.extend((str(d.id), d.name) for d in others)
+        return options
+
+    ########################################
+    # pylint: disable=unused-argument
+    def getExternalSensorStates(self, filter="", valuesDict=None, typeId="", targetId=0):
+        """Populate the `externalSensorState` dropdown on zone ConfigUI.
+
+        Returns the state keys of the device currently selected in
+        `externalSensorDevice` (read from valuesDict), labeled as
+        "stateKey (current: value)". Keys containing "moist", "humid", or
+        "sensorValue" (case-insensitive) sort first, then alphabetically.
+        Returns a single "(Select a device first)" sentinel (value "-1";
+        Indigo rejects empty-string option IDs) when no device is selected
+        or it can't be resolved.
+        """
+        values = valuesDict or {}
+        dev_id_str = values.get("externalSensorDevice", "")
+        if not dev_id_str or dev_id_str == "-1":
+            return [("-1", "(Select a device first)")]
+        try:
+            dev = indigo.devices[int(dev_id_str)]
+        except (KeyError, ValueError, TypeError):
+            return [("-1", "(Select a device first)")]
+
+        priority_terms = ("moist", "humid", "sensorvalue")
+
+        def sort_key(state_id):
+            lower = state_id.lower()
+            is_priority = any(term in lower for term in priority_terms)
+            return (0 if is_priority else 1, lower)
+
+        state_ids = sorted(dev.states.keys(), key=sort_key)
+        return [(sid, f"{sid} (current: {dev.states.get(sid)})") for sid in state_ids]
+
+    ########################################
+    # pylint: disable=unused-argument
+    def externalSensorDeviceChanged(self, valuesDict, typeId, devId):
+        """Menu callback for `externalSensorDevice` — no state change needed.
+
+        Its only purpose is to trigger a dynamicReload of the dependent
+        `externalSensorState` list.
+        """
+        return valuesDict
+
+    ########################################
+    def addExternalSensor(self, valuesDict, typeId, devId):
+        """Button callback: append the selected device/state to `externalSensorsJson`.
+
+        Validates that a device and state are selected (logs a warning and
+        returns valuesDict unchanged otherwise). Dedupes on (dev_id, state_id).
+        Clears the device/state selections after processing — whether the
+        entry was newly added or skipped as a duplicate — so the fields are
+        ready for the next sensor to add.
+        """
+        dev_id_str = valuesDict.get("externalSensorDevice", "")
+        state_id = valuesDict.get("externalSensorState", "")
+        scale = valuesDict.get("externalSensorScale", "percent")
+
+        if not dev_id_str or dev_id_str == "-1" or not state_id or state_id == "-1":
+            self.logger.warning("Select a sensor device and state before clicking Add Sensor.")
+            return valuesDict
+
+        try:
+            dev_id = int(dev_id_str)
+        except (ValueError, TypeError):
+            self.logger.warning(f"Invalid external sensor device id '{dev_id_str}'.")
+            return valuesDict
+
+        try:
+            entries = json.loads(valuesDict.get("externalSensorsJson", "") or "[]")
+            if not isinstance(entries, list):
+                raise TypeError("externalSensorsJson must be a JSON list")
+        except (json.JSONDecodeError, TypeError):
+            self.logger.warning(
+                f"Zone {devId}: stored external sensor list was corrupt — resetting it."
+            )
+            entries = []
+
+        if any(e.get("dev_id") == dev_id and e.get("state_id") == state_id for e in entries):
+            self.logger.warning(f"Sensor state '{state_id}' is already linked — skipping duplicate.")
+        else:
+            entries.append({"dev_id": dev_id, "state_id": state_id, "scale": scale})
+            valuesDict["externalSensorsJson"] = json.dumps(entries)
+
+        valuesDict["externalSensorDevice"] = "-1"
+        valuesDict["externalSensorState"] = "-1"
+        return valuesDict
+
+    ########################################
+    # pylint: disable=unused-argument
+    def getConfiguredExternalSensors(self, filter="", valuesDict=None, typeId="", targetId=0):
+        """Populate the `externalSensorsList` list field on zone ConfigUI.
+
+        Parses `externalSensorsJson` and returns one entry per configured
+        sensor, labeled "DeviceName → stateKey (scale)" with value
+        "devId:stateKey".
+        """
+        values = valuesDict or {}
+        try:
+            entries = json.loads(values.get("externalSensorsJson", "") or "[]")
+            if not isinstance(entries, list):
+                raise TypeError("externalSensorsJson must be a JSON list")
+        except (json.JSONDecodeError, TypeError):
+            self.logger.debug("externalSensorsJson is corrupt — showing empty sensor list.")
+            entries = []
+
+        options = []
+        for entry in entries:
+            dev_id = entry.get("dev_id")
+            state_id = entry.get("state_id", "")
+            scale = entry.get("scale", "percent")
+            try:
+                dev_name = indigo.devices[int(dev_id)].name
+            except (KeyError, ValueError, TypeError):
+                dev_name = f"(missing device {dev_id})"
+            options.append((f"{dev_id}:{state_id}", f"{dev_name} → {state_id} ({scale})"))
+        return options
+
+    ########################################
+    def removeExternalSensors(self, valuesDict, typeId, devId):
+        """Button callback: remove the entries selected in `externalSensorsList`."""
+        selected = valuesDict.get("externalSensorsList", [])
+        if isinstance(selected, str):
+            selected = [selected] if selected else []
+        selected_keys = set(selected)
+        if not selected_keys:
+            return valuesDict
+
+        try:
+            entries = json.loads(valuesDict.get("externalSensorsJson", "") or "[]")
+            if not isinstance(entries, list):
+                raise TypeError("externalSensorsJson must be a JSON list")
+        except (json.JSONDecodeError, TypeError):
+            self.logger.warning(
+                f"Zone {devId}: stored external sensor list was corrupt — resetting it."
+            )
+            entries = []
+
+        remaining = [
+            e for e in entries
+            if f"{e.get('dev_id')}:{e.get('state_id')}" not in selected_keys
+        ]
+        valuesDict["externalSensorsJson"] = json.dumps(remaining)
+        return valuesDict
+
     def _resolve_zone_moisture(self, zone_dev, forecast_val):
         """Resolve the "moisture" state value for a zone device.
 
         Returns a ``(value, source_tag)`` pair where source_tag is one of:
 
+        - ``"external"``: zone has a non-empty ``externalSensorsJson`` and at
+          least one linked sensor produced a usable reading. Highest
+          precedence — checked before, and overrides, any paired Whisperer
+          or forecast. If external sensors are configured but none produced
+          a usable reading, falls through to the Whisperer/forecast chain
+          below instead.
         - ``"forecast"``: zone has no paired Whisperer; returns forecast_val.
         - ``"whisperer"``: paired Whisperer is enabled, has a fresh
           (≤ WHISPERER_STALENESS_HOURS old) numeric ``soilMoisture`` reading.
@@ -1257,8 +1446,13 @@ class Plugin(indigo.PluginBase):
         is unparseable or soilMoisture is non-numeric, so support debugging
         has the raw values.
         """
+        if zone_dev.pluginProps.get("externalSensorsJson", ""):
+            ext_avg, _ext_used, _ext_total = self._compute_external_average(zone_dev)
+            if ext_avg is not None:
+                return ext_avg, "external"
+
         linked_id = zone_dev.pluginProps.get("linkedWhispererDeviceId", "")
-        if not linked_id:
+        if not linked_id or linked_id == "-1":
             return forecast_val, "forecast"
 
         try:
@@ -1332,7 +1526,17 @@ class Plugin(indigo.PluginBase):
             return
 
         if prev is not None:
-            if new_source == "whisperer":
+            if new_source == "external":
+                self.logger.info(
+                    f"Zone '{zone_dev.name}': moisture now tracking external "
+                    f"sensor average."
+                )
+            elif prev == "external":
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': external sensor readings "
+                    f"unavailable — falling back to '{new_source}'."
+                )
+            elif new_source == "whisperer":
                 if prev == "forecast-stale":
                     self.logger.info(
                         f"Zone '{zone_dev.name}': Whisperer reading recovered — "
@@ -1374,6 +1578,13 @@ class Plugin(indigo.PluginBase):
                     f"Zone '{zone_dev.name}': paired Whisperer device is disabled "
                     f"— falling back to Netro forecast."
                 )
+            else:
+                # Catch-all for any tag combination without a specific message
+                # above (e.g. unlinking a Whisperer entirely: * -> "forecast").
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': moisture source changed from "
+                    f"'{prev}' to '{new_source}'."
+                )
 
         # Update the in-memory marker BEFORE attempting persistence so a
         # persistence failure doesn't cause repeat-logs next cycle.
@@ -1393,6 +1604,296 @@ class Plugin(indigo.PluginBase):
                 f"'{new_source}' ({type(exc).__name__}: {exc}) — using "
                 f"in-memory fallback so the transition log will not repeat."
             )
+
+    ########################################
+    # External soil sensor -> zone moisture push
+    ########################################
+    def _rebuild_external_sensor_index(self):
+        """Rebuild the external sensor -> zone index from all zone devices.
+
+        Iterates this plugin's enabled zone devices, parses each one's
+        ``externalSensorsJson`` pluginProp, and rebuilds
+        ``self._external_sensor_index`` as {sensor_dev_id: set(zone_dev_id)}.
+        Corrupt per-zone JSON — either a parse failure or a value that isn't
+        a JSON list — is tolerated (warning logged, zone skipped) rather than
+        failing the whole rebuild. Disabled zones are skipped entirely.
+        """
+        index = {}
+        for zone_dev in indigo.devices.iter(filter="self"):
+            if zone_dev.deviceTypeId != "zone":
+                continue
+            if not zone_dev.enabled:
+                continue
+            raw = zone_dev.pluginProps.get("externalSensorsJson", "")
+            if not raw:
+                continue
+            try:
+                entries = json.loads(raw)
+                if not isinstance(entries, list):
+                    raise TypeError("externalSensorsJson must be a JSON list")
+            except (json.JSONDecodeError, TypeError):
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': externalSensorsJson is corrupt — "
+                    f"skipping external sensor linkage for this zone."
+                )
+                continue
+            for entry in entries:
+                try:
+                    sensor_id = int(entry.get("dev_id"))
+                except (AttributeError, TypeError, ValueError):
+                    self.logger.warning(
+                        f"Zone '{zone_dev.name}': external sensor entry has an "
+                        f"invalid dev_id {entry.get('dev_id')!r} — skipping it."
+                    )
+                    continue
+                index.setdefault(sensor_id, set()).add(zone_dev.id)
+        self._external_sensor_index = index
+
+    def _normalize_external_reading(self, raw, scale):
+        """Normalize a raw external sensor reading to an int percentage.
+
+        Args:
+            raw: Raw state value — int, float, or str (may have a trailing
+                "%" and/or surrounding whitespace).
+            scale: "percent" (0-100 as-is) or "fraction" (0.0-1.0, scaled by 100).
+
+        Returns:
+            int in [0, 100], or None if the value is missing, non-numeric,
+            or out of range after scaling.
+        """
+        if isinstance(raw, bool):
+            # bool is a subclass of int — reject explicitly so an accidentally
+            # selected on/off state doesn't silently push 1%/0% moisture.
+            self.logger.debug(f"External sensor reading rejected (boolean state): {raw!r}")
+            return None
+
+        if isinstance(raw, str):
+            stripped = raw.strip()
+            if stripped.endswith("%"):
+                stripped = stripped[:-1].strip()
+            raw = stripped
+
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            self.logger.debug(f"External sensor reading rejected (not numeric): {raw!r}")
+            return None
+
+        if scale == "fraction":
+            value *= 100
+
+        result = round(value)
+        if result < 0 or result > 100:
+            self.logger.debug(
+                f"External sensor reading rejected (out of range 0-100): "
+                f"{raw!r} (scale={scale}) -> {result}"
+            )
+            return None
+        return int(result)
+
+    @staticmethod
+    def _parse_external_max_age_days(zone_dev):
+        """Parse the zone's `externalMaxAgeDays` pluginProp.
+
+        Returns:
+            A positive float number of days, or None if the prop is
+            unset/blank/non-numeric/<= 0 — all of which mean "no limit".
+        """
+        raw = zone_dev.pluginProps.get("externalMaxAgeDays", "")
+        if raw in (None, ""):
+            return None
+        try:
+            days = float(raw)
+        except (TypeError, ValueError):
+            return None
+        return days if days > 0 else None
+
+    @staticmethod
+    def _external_sensor_age_days(sensor_dev):
+        """Age (in days) of `sensor_dev.lastChanged`, or None if unavailable.
+
+        `lastChanged` availability/type varies across Indigo device mocks
+        (and possibly real devices); any error reading or using it means
+        "unknown age" so the caller treats the sensor as fresh rather than
+        excluding it.
+        """
+        try:
+            last_changed = sensor_dev.lastChanged
+            if last_changed is None:
+                return None
+            return (datetime.now() - last_changed).total_seconds() / 86400.0
+        except (AttributeError, TypeError):
+            return None
+
+    def _is_external_sensor_stale(self, sensor_dev, max_age_days, zone_dev):
+        """True if `sensor_dev` hasn't updated within `max_age_days`.
+
+        Logs a debug breadcrumb (with the computed age) when excluding a
+        sensor as stale. A sensor with unknown age (see
+        `_external_sensor_age_days`) is never considered stale.
+        """
+        age_days = self._external_sensor_age_days(sensor_dev)
+        if age_days is None or age_days <= max_age_days:
+            return False
+        self.logger.debug(
+            f"Zone '{zone_dev.name}': sensor '{sensor_dev.name}' last changed "
+            f"{age_days:.1f} day(s) ago (limit {max_age_days:g}) — excluding "
+            f"as stale."
+        )
+        return True
+
+    def _compute_external_average(self, zone_dev):
+        """Aggregate the current readings of all sensors linked to a zone.
+
+        Aggregation method is controlled by the zone's `externalAggregation`
+        pluginProp — "average" (default), "minimum", or "maximum". Unknown
+        values fall back to "average". If `externalMaxAgeDays` is set to a
+        positive number, sensors whose device hasn't updated (`lastChanged`)
+        within that many days are excluded as stale.
+
+        Args:
+            zone_dev: Netro zone device.
+
+        Returns:
+            Tuple of (result, used, total):
+                result: int 0-100 per the configured aggregation method, or
+                    None if no sensor produced a usable reading.
+                used: count of sensors that produced a usable reading.
+                total: count of configured sensor entries for this zone.
+        """
+        raw = zone_dev.pluginProps.get("externalSensorsJson", "")
+        try:
+            entries = json.loads(raw) if raw else []
+        except (json.JSONDecodeError, TypeError):
+            entries = []
+        if not isinstance(entries, list):
+            entries = []
+
+        max_age_days = self._parse_external_max_age_days(zone_dev)
+
+        total = len(entries)
+        readings = []
+        for entry in entries:
+            try:
+                sensor_id = int(entry.get("dev_id"))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            state_id = entry.get("state_id", "")
+            scale = entry.get("scale", "percent")
+
+            try:
+                sensor_dev = indigo.devices[sensor_id]
+            except KeyError:
+                continue
+            if not sensor_dev.enabled:
+                continue
+
+            if max_age_days is not None and self._is_external_sensor_stale(
+                sensor_dev, max_age_days, zone_dev
+            ):
+                continue
+
+            normalized = self._normalize_external_reading(sensor_dev.states.get(state_id), scale)
+            if normalized is not None:
+                readings.append(normalized)
+
+        used = len(readings)
+        if used == 0:
+            return None, 0, total
+
+        aggregation = zone_dev.pluginProps.get("externalAggregation", "average")
+        if aggregation == "minimum":
+            return min(readings), used, total
+        if aggregation == "maximum":
+            return max(readings), used, total
+        return round(sum(readings) / used), used, total
+
+    @staticmethod
+    def _external_aggregation_label(zone_dev):
+        """Human-readable label for the zone's `externalAggregation` method, for logging."""
+        aggregation = zone_dev.pluginProps.get("externalAggregation", "average")
+        return {"minimum": "minimum", "maximum": "maximum"}.get(aggregation, "averaged")
+
+    def _push_external_moisture(self, zone_dev):
+        """Push the aggregated external-sensor moisture reading to Netro.
+
+        No-ops if the zone is disabled, if no sensors produced a usable
+        reading, or if the computed value matches the last value pushed
+        for this zone (protects the Netro API token budget from repeated
+        identical pushes). On success also writes the zone's ``moisture``
+        state directly — the poll loop no longer needs to catch up, since
+        ``_resolve_zone_moisture``'s "external" branch sources the same
+        aggregated value (per the zone's configured aggregation method —
+        see ``_compute_external_average``) on every poll and takes
+        precedence over Whisperer/forecast.
+
+        Args:
+            zone_dev: Netro zone device.
+        """
+        if not zone_dev.enabled:
+            return
+
+        warned = getattr(self, "_external_unusable_warned", None)
+        if warned is None:
+            warned = set()
+            self._external_unusable_warned = warned
+
+        avg, used, total = self._compute_external_average(zone_dev)
+        if avg is None:
+            self.logger.debug(
+                f"Zone '{zone_dev.name}': no usable external sensor readings "
+                f"({used} of {total}) — skipping moisture push."
+            )
+            if zone_dev.id not in warned:
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': no usable readings from its {total} "
+                    f"linked external sensor(s) — moisture is not being pushed "
+                    f"to Netro."
+                )
+                warned.add(zone_dev.id)
+            return
+
+        last_pushed = getattr(self, "_last_pushed_external_moisture", None)
+        if last_pushed is None:
+            last_pushed = {}
+            self._last_pushed_external_moisture = last_pushed
+
+        if last_pushed.get(zone_dev.id) == avg:
+            return
+
+        try:
+            zone_num = int(zone_dev.pluginProps.get("zoneNumber", 0))
+            parent_id = int(zone_dev.pluginProps.get("parentDeviceId", 0))
+            try:
+                parent_dev = indigo.devices[parent_id]
+            except KeyError:
+                self.logger.error(
+                    f"Parent controller (ID {parent_id}) "
+                    f"not found for zone '{zone_dev.name}'"
+                )
+                return
+
+            key, api_version = self._get_device_auth(parent_dev)
+            response = self.api_client.set_moisture(key, zone_num, avg, api_version=api_version)
+            if response.get("status") == "OK":
+                last_pushed[zone_dev.id] = avg
+                warned.discard(zone_dev.id)
+                zone_dev.updateStateOnServer("moisture", avg, uiValue=f"{avg}%")
+                self.logger.info(
+                    f"Pushed {self._external_aggregation_label(zone_dev)} soil moisture "
+                    f"{avg}% ({used} of {total} sensors) to Netro for zone '{zone_dev.name}'"
+                )
+            else:
+                self.logger.error(
+                    f"Error pushing averaged moisture for zone '{zone_dev.name}': "
+                    f"{response.get('status')}"
+                )
+        except Exception as exc:  # pylint: disable=broad-exception-caught
+            self.logger.error(
+                f"Could not push averaged external moisture for zone "
+                f"'{zone_dev.name}': {exc}"
+            )
+            self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
 
     ########################################
     # Validation callbacks
@@ -1571,11 +2072,16 @@ class Plugin(indigo.PluginBase):
             newDev: Updated device after edits
 
         Returns:
-            True if device ID changed (requires reconnection), False otherwise
+            For zone devices: True if `externalSensorsJson` changed, False
+            otherwise. For all other device types: True if device ID
+            changed (requires reconnection), False otherwise.
         """
         self.logger.threaddebug("didDeviceCommPropertyChange")
         if origDev.deviceTypeId == "zone":
-            return False
+            return (
+                origDev.pluginProps.get("externalSensorsJson", "")
+                != newDev.pluginProps.get("externalSensorsJson", "")
+            )
         return origDev.states.get("id") != newDev.states.get("id")
 
     ########################################
@@ -1583,15 +2089,31 @@ class Plugin(indigo.PluginBase):
     def deviceStartComm(self, dev):
         """Called when device communication should start.
 
-        The concurrent thread will handle the initial update within seconds,
-        so we don't need to make redundant API calls here.
+        The concurrent thread will handle the initial sprinkler/Whisperer
+        update within seconds, so we don't need to make redundant API calls
+        here for those device types.
+
+        For zone devices: comm only restarts here when
+        didDeviceCommPropertyChange() flagged an `externalSensorsJson`
+        change (or at plugin startup, when Indigo starts comm for every
+        device). Rebuilds the external-sensor index, clears any stale
+        dedupe-cache entry for this zone, and — if external sensors are
+        configured and the zone is enabled — performs an immediate push so
+        a config save (or plugin startup) doesn't have to wait for a linked
+        sensor to change before Netro sees a value.
 
         Args:
             dev: Device starting communication
         """
         # Don't update here - would cause duplicate API calls for each device
         # The concurrent thread handles regular updates
-        pass
+        if dev.deviceTypeId != "zone":
+            return
+
+        self._rebuild_external_sensor_index()
+        getattr(self, "_last_pushed_external_moisture", {}).pop(dev.id, None)
+        if dev.pluginProps.get("externalSensorsJson", "") and dev.enabled:
+            self._push_external_moisture(dev)
 
     # pylint: disable=unused-argument
     def deviceStopComm(self, dev):
@@ -1601,6 +2123,59 @@ class Plugin(indigo.PluginBase):
             dev: Device stopping communication
         """
         self.logger.debug("Stopping device")
+        if dev.deviceTypeId == "zone":
+            self._rebuild_external_sensor_index()
+
+    ########################################
+    def deviceUpdated(self, origDev, newDev):
+        """Called on any Indigo device update (subscribed via subscribeToChanges).
+
+        If the updated device is a linked external soil sensor, and its
+        configured state actually changed, pushes a fresh averaged moisture
+        reading to each Netro zone it's linked to.
+
+        Args:
+            origDev: Device before the change
+            newDev: Device after the change
+        """
+        super().deviceUpdated(origDev, newDev)
+
+        index = getattr(self, "_external_sensor_index", None)
+        if not index:
+            return
+        zone_ids = index.get(newDev.id)
+        if not zone_ids:
+            return
+
+        for zone_id in zone_ids:
+            try:
+                zone_dev = indigo.devices[zone_id]
+            except KeyError:
+                continue
+
+            raw = zone_dev.pluginProps.get("externalSensorsJson", "")
+            try:
+                entries = json.loads(raw) if raw else []
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(entries, list):
+                continue
+
+            changed = False
+            for entry in entries:
+                try:
+                    sensor_id = int(entry.get("dev_id"))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if sensor_id != newDev.id:
+                    continue
+                state_id = entry.get("state_id", "")
+                if origDev.states.get(state_id) != newDev.states.get(state_id):
+                    changed = True
+                    break
+
+            if changed:
+                self._push_external_moisture(zone_dev)
 
     ########################################
     # Event callbacks
@@ -1746,9 +2321,16 @@ class Plugin(indigo.PluginBase):
                             # Update the zone device state too
                             zone_devs = self._get_zone_devices(dev.id)
                             if int(zone_num) in zone_devs:
-                                zone_devs[int(zone_num)].updateStateOnServer(
+                                zone_dev = zone_devs[int(zone_num)]
+                                zone_dev.updateStateOnServer(
                                     "moisture", moisture, uiValue=f"{moisture}%"
                                 )
+                                # Re-arm the external-sensor dedupe cache so a
+                                # subsequent identical average isn't suppressed
+                                # by this auto-link override.
+                                getattr(
+                                    self, "_last_pushed_external_moisture", {}
+                                ).pop(zone_dev.id, None)
                         else:
                             self.logger.error(
                                 f"Error auto-setting moisture for zone {zone_num}: "
@@ -1976,6 +2558,9 @@ class Plugin(indigo.PluginBase):
             if response.get("status") == "OK":
                 self.logger.info(f"Moisture for '{dev.name}' set to {moisture}%")
                 dev.updateStateOnServer("moisture", moisture, uiValue=f"{moisture}%")
+                # Re-arm the external-sensor dedupe cache so a subsequent identical
+                # average isn't suppressed by this manual override.
+                getattr(self, "_last_pushed_external_moisture", {}).pop(dev.id, None)
             else:
                 self.logger.error(f"Error setting moisture for '{dev.name}': {response.get('status')}")
         except Exception:
@@ -2020,7 +2605,7 @@ class Plugin(indigo.PluginBase):
             start_time = pluginAction.props.get("start_time", "").strip()
 
             # Validate parameters
-            if not zone_id:
+            if not zone_id or zone_id == "-1":
                 self.logger.error("No zone selected")
                 return
 
@@ -2164,14 +2749,15 @@ class Plugin(indigo.PluginBase):
                             zone_list.append((zone_id, zone_name))
 
             # If no zones found, return a helpful message
+            # (value "-1": Indigo rejects empty-string option IDs)
             if not zone_list:
-                zone_list = [("", "No zones configured - update device first")]
+                zone_list = [("-1", "No zones configured - update device first")]
 
             return zone_list
 
         except Exception as exc:
             self.logger.debug(f"Error getting zone list: {exc}\n{traceback.format_exc(10)}")
-            return [("", "Error loading zones")]
+            return [("-1", "Error loading zones")]
 
     ########################################
     # Menu callbacks defined in MenuItems.xml

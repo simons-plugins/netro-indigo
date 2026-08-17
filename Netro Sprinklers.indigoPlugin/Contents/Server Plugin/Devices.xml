@@ -307,7 +307,7 @@
             <Field id="sensorLabel" type="label">
                 <Label>Soil Moisture Source</Label>
             </Field>
-            <Field id="linkedWhispererDeviceId" type="menu" defaultValue="">
+            <Field id="linkedWhispererDeviceId" type="menu" defaultValue="-1">
                 <Label>Paired Whisperer:</Label>
                 <List class="self" method="getWhispererDevices" dynamicReload="true"/>
             </Field>
@@ -315,6 +315,60 @@
                  constants.py::WHISPERER_STALENESS_HOURS if that value changes. -->
             <Field id="sensorHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
                 <Label>When paired, the zone's moisture state mirrors the Whisperer's soil reading (if fresh within 12 hours). Otherwise, it shows Netro's daily forecast. The forecast is always available separately as the "Moisture Forecast" state.</Label>
+            </Field>
+            <Field id="sep_external" type="separator"/>
+            <Field id="externalSensorsLabel" type="label">
+                <Label>External Soil Sensors (average → pushed to Netro)</Label>
+            </Field>
+            <Field id="externalSensorDevice" type="menu" defaultValue="-1">
+                <Label>Sensor Device:</Label>
+                <List class="self" method="getExternalSensorDevices" dynamicReload="true"/>
+                <CallbackMethod>externalSensorDeviceChanged</CallbackMethod>
+            </Field>
+            <Field id="externalSensorState" type="menu" defaultValue="-1">
+                <Label>Sensor State:</Label>
+                <List class="self" method="getExternalSensorStates" dynamicReload="true"/>
+            </Field>
+            <Field id="externalSensorScale" type="menu" defaultValue="percent">
+                <Label>Reading Scale:</Label>
+                <List>
+                    <Option value="percent">Percent (0–100)</Option>
+                    <Option value="fraction">Fraction (0.0–1.0)</Option>
+                </List>
+            </Field>
+            <Field id="addExternalSensorButton" type="button">
+                <Label/>
+                <Title>Add Sensor</Title>
+                <CallbackMethod>addExternalSensor</CallbackMethod>
+            </Field>
+            <Field id="externalSensorsList" type="list" rows="4">
+                <Label>Linked Sensors:</Label>
+                <List class="self" method="getConfiguredExternalSensors" dynamicReload="true"/>
+            </Field>
+            <Field id="removeExternalSensorsButton" type="button">
+                <Label/>
+                <Title>Remove Selected</Title>
+                <CallbackMethod>removeExternalSensors</CallbackMethod>
+            </Field>
+            <Field id="externalAggregation" type="menu" defaultValue="average">
+                <Label>Aggregation Method:</Label>
+                <List>
+                    <Option value="average">Average (default)</Option>
+                    <Option value="minimum">Minimum (driest sensor)</Option>
+                    <Option value="maximum">Maximum (wettest sensor)</Option>
+                </List>
+            </Field>
+            <Field id="externalMaxAgeDays" type="textfield" defaultValue="">
+                <Label>Ignore readings older than (days):</Label>
+            </Field>
+            <Field id="externalMaxAgeDaysHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+                <Label>Leave empty for no limit. A sensor whose device hasn't updated within this many days is excluded, so a dead sensor doesn't distort the result while others are live.</Label>
+            </Field>
+            <Field id="externalSensorsJson" type="textfield" hidden="true" defaultValue="[]">
+                <Label/>
+            </Field>
+            <Field id="externalSensorsHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+                <Label>Readings from all linked sensors are averaged and pushed to Netro whenever a linked sensor's reading changes, overriding Netro's own moisture model for smart scheduling.</Label>
             </Field>
         </ConfigUI>
         <States>

@@ -64,6 +64,13 @@ def test_unpaired_forecast_none(plugin_instance):
     assert (val, src) == (None, "forecast")
 
 
+def test_unpaired_sentinel_value_returns_forecast(plugin_instance):
+    """"-1" is the current unpaired sentinel (stored zones may still hold "")."""
+    zone = _fake_zone(linked_id="-1")
+    val, src = plugin_instance._resolve_zone_moisture(zone, forecast_val=55)
+    assert (val, src) == (55, "forecast")
+
+
 # --- Paired, fresh ---
 
 def test_paired_fresh_returns_whisperer(plugin_instance, mock_indigo):

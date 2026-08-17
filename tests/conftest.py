@@ -202,7 +202,19 @@ class _IndigoPluginBaseStub:
     any base-class behaviour exercised by tests (e.g. ``self.logger``) is
     supplied per-test, not by this stub. See also ``mock_indigo_base``
     which installs this into ``sys.modules['indigo']``.
+
+    ``deviceUpdated`` is the one exception: Plugin.deviceUpdated() calls
+    ``super().deviceUpdated(origDev, newDev)`` (mandatory per Indigo's own
+    docs — the base class's deviceUpdated() drives the comm-property-change
+    machinery, calling ``didDeviceCommPropertyChange()`` and issuing
+    stop/start comm), so a no-op stub is provided here to keep that call
+    from raising AttributeError in tests.
+    Tests that want to assert the super() call happened can monkeypatch this
+    method with a Mock.
     """
+
+    def deviceUpdated(self, origDev, newDev):
+        """No-op stand-in for indigo.PluginBase.deviceUpdated()."""
 
 
 @pytest.fixture

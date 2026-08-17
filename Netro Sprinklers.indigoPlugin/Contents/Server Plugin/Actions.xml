@@ -43,7 +43,7 @@
             <Field type="label" id="delay_info_label">
                 <Label>Start a zone with optional delay or scheduled start time. Allows more control than standard zone start action.</Label>
             </Field>
-            <Field type="menu" id="zone">
+            <Field type="menu" id="zone" defaultValue="-1">
                 <Label>Zone:</Label>
                 <List class="self" method="getZoneList" dynamicReload="true"/>
             </Field>

@@ -21,6 +21,7 @@ Note:
     to prevent circular imports and maintain testability.
 """
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -314,6 +315,102 @@ def validate_date_format(
 # =============================================================================
 
 
+def _is_valid_external_sensor_entry(entry: Any) -> bool:
+    """Check a single `externalSensorsJson` entry for the shape the runtime needs.
+
+    Mirrors what plugin.py's `_compute_external_average` / `_rebuild_external_sensor_index`
+    can actually use, so validation doesn't accept entries the runtime would
+    silently discard:
+        - "dev_id": an int, or a str/float that's int-coercible. bool is
+          rejected even though it's technically int-coercible (Indigo dropdown
+          values are strings; a bool here only appears from hand-edited JSON).
+        - "state_id": a non-empty string.
+        - "scale": exactly "percent" or "fraction".
+    """
+    if not isinstance(entry, dict):
+        return False
+
+    dev_id = entry.get("dev_id")
+    if isinstance(dev_id, bool):
+        return False
+    if isinstance(dev_id, int):
+        pass
+    elif isinstance(dev_id, (str, float)):
+        try:
+            int(dev_id)
+        except (TypeError, ValueError):
+            return False
+    else:
+        return False
+
+    if not isinstance(entry.get("state_id"), str) or not entry.get("state_id"):
+        return False
+
+    return entry.get("scale") in ("percent", "fraction")
+
+
+def _validate_zone_external_sensors_json(
+    values: Dict[str, Any],
+    errors: Dict[str, str],
+) -> None:
+    """Validate the zone device's `externalSensorsJson` pluginProp.
+
+    An absent/empty value is valid (no sensors linked yet). A non-empty
+    value must parse as a JSON list of entries, each with a usable
+    "dev_id", a non-empty string "state_id", and a "scale" of "percent" or
+    "fraction" — see `_is_valid_external_sensor_entry`.
+
+    Args:
+        values: Device configuration values from UI
+        errors: Dict to store error messages (modified in place)
+    """
+    raw_json = values.get("externalSensorsJson", "")
+    if not raw_json:
+        return
+
+    try:
+        parsed = json.loads(raw_json)
+        is_valid_shape = isinstance(parsed, list) and all(
+            _is_valid_external_sensor_entry(entry) for entry in parsed
+        )
+    except (json.JSONDecodeError, TypeError):
+        is_valid_shape = False
+
+    if not is_valid_shape:
+        errors["externalSensorsJson"] = (
+            "External sensor configuration is corrupt — remove and re-add sensors"
+        )
+
+
+def _validate_zone_external_max_age_days(
+    values: Dict[str, Any],
+    errors: Dict[str, str],
+) -> None:
+    """Validate the zone device's `externalMaxAgeDays` pluginProp.
+
+    Empty/whitespace is valid (no age limit). A non-empty value must parse
+    as a number >= 0 — 0 is accepted here and treated as "no limit" at
+    runtime (see `Plugin._parse_external_max_age_days`).
+
+    Args:
+        values: Device configuration values from UI
+        errors: Dict to store error messages (modified in place)
+    """
+    raw = values.get("externalMaxAgeDays", "")
+    if not str(raw).strip():
+        return
+
+    try:
+        days = float(raw)
+    except (TypeError, ValueError):
+        days = None
+
+    if days is None or days < 0:
+        errors["externalMaxAgeDays"] = (
+            "Must be a number of days (leave empty for no limit)"
+        )
+
+
 def validate_device_config(
     values: Dict[str, Any],
     type_id: str,
@@ -322,10 +419,12 @@ def validate_device_config(
 
     Validates serial numbers for sprinkler controllers and Whisperer sensors.
     For Whisperer devices, also sets capability flags in the sanitized values.
+    For zones, validates the `externalSensorsJson` and `externalMaxAgeDays`
+    pluginProps.
 
     Args:
         values: Device configuration values from UI
-        type_id: Device type ID ("sprinkler" or "Whisperer")
+        type_id: Device type ID ("sprinkler", "Whisperer", or "zone")
 
     Returns:
         ValidationResult tuple of (is_valid, sanitized_values, errors_dict).
@@ -333,7 +432,11 @@ def validate_device_config(
         errors_dict maps field names to error messages.
     """
     if type_id == "zone":
-        return (True, values, {})
+        sanitized_zone: Dict[str, Any] = dict(values)
+        zone_errors: Dict[str, str] = {}
+        _validate_zone_external_sensors_json(values, zone_errors)
+        _validate_zone_external_max_age_days(values, zone_errors)
+        return (len(zone_errors) == 0, sanitized_zone, zone_errors)
 
     sanitized: Dict[str, Any] = dict(values)
     errors: Dict[str, str] = {}
@@ -425,8 +528,9 @@ def _validate_start_zone_action(
         except (ValueError, TypeError):
             errors["start_time"] = "Start time must be a valid Unix timestamp (integer)"
 
-    # Validate zone selected
-    if not values.get("zone"):
+    # Validate zone selected ("-1" is the getZoneList sentinel for "none selected")
+    zone = values.get("zone")
+    if not zone or zone == "-1":
         errors["zone"] = "You must select a zone"
 
 
