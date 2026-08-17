@@ -21,6 +21,7 @@ Note:
     to prevent circular imports and maintain testability.
 """
 
+import json
 import re
 from dataclasses import dataclass
 from datetime import datetime
@@ -314,6 +315,41 @@ def validate_date_format(
 # =============================================================================
 
 
+def _validate_zone_external_sensors_json(
+    values: Dict[str, Any],
+    errors: Dict[str, str],
+) -> None:
+    """Validate the zone device's `externalSensorsJson` pluginProp.
+
+    An absent/empty value is valid (no sensors linked yet). A non-empty
+    value must parse as a JSON list of {"dev_id", "state_id", "scale"} dicts.
+
+    Args:
+        values: Device configuration values from UI
+        errors: Dict to store error messages (modified in place)
+    """
+    raw_json = values.get("externalSensorsJson", "")
+    if not raw_json:
+        return
+
+    try:
+        parsed = json.loads(raw_json)
+        is_valid_shape = isinstance(parsed, list) and all(
+            isinstance(entry, dict)
+            and "dev_id" in entry
+            and "state_id" in entry
+            and "scale" in entry
+            for entry in parsed
+        )
+    except (json.JSONDecodeError, TypeError):
+        is_valid_shape = False
+
+    if not is_valid_shape:
+        errors["externalSensorsJson"] = (
+            "External sensor configuration is corrupt — remove and re-add sensors"
+        )
+
+
 def validate_device_config(
     values: Dict[str, Any],
     type_id: str,
@@ -322,10 +358,11 @@ def validate_device_config(
 
     Validates serial numbers for sprinkler controllers and Whisperer sensors.
     For Whisperer devices, also sets capability flags in the sanitized values.
+    For zones, validates the `externalSensorsJson` pluginProp.
 
     Args:
         values: Device configuration values from UI
-        type_id: Device type ID ("sprinkler" or "Whisperer")
+        type_id: Device type ID ("sprinkler", "Whisperer", or "zone")
 
     Returns:
         ValidationResult tuple of (is_valid, sanitized_values, errors_dict).
@@ -333,7 +370,10 @@ def validate_device_config(
         errors_dict maps field names to error messages.
     """
     if type_id == "zone":
-        return (True, values, {})
+        sanitized_zone: Dict[str, Any] = dict(values)
+        zone_errors: Dict[str, str] = {}
+        _validate_zone_external_sensors_json(values, zone_errors)
+        return (len(zone_errors) == 0, sanitized_zone, zone_errors)
 
     sanitized: Dict[str, Any] = dict(values)
     errors: Dict[str, str] = {}

@@ -316,6 +316,46 @@
             <Field id="sensorHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
                 <Label>When paired, the zone's moisture state mirrors the Whisperer's soil reading (if fresh within 12 hours). Otherwise, it shows Netro's daily forecast. The forecast is always available separately as the "Moisture Forecast" state.</Label>
             </Field>
+            <Field id="sep_external" type="separator"/>
+            <Field id="externalSensorsLabel" type="label">
+                <Label>External Soil Sensors (average → pushed to Netro)</Label>
+            </Field>
+            <Field id="externalSensorDevice" type="menu" defaultValue="">
+                <Label>Sensor Device:</Label>
+                <List class="self" method="getExternalSensorDevices" dynamicReload="true"/>
+                <CallbackMethod>externalSensorDeviceChanged</CallbackMethod>
+            </Field>
+            <Field id="externalSensorState" type="menu" defaultValue="">
+                <Label>Sensor State:</Label>
+                <List class="self" method="getExternalSensorStates" dynamicReload="true"/>
+            </Field>
+            <Field id="externalSensorScale" type="menu" defaultValue="percent">
+                <Label>Reading Scale:</Label>
+                <List>
+                    <Option value="percent">Percent (0–100)</Option>
+                    <Option value="fraction">Fraction (0.0–1.0)</Option>
+                </List>
+            </Field>
+            <Field id="addExternalSensorButton" type="button">
+                <Label/>
+                <Title>Add Sensor</Title>
+                <CallbackMethod>addExternalSensor</CallbackMethod>
+            </Field>
+            <Field id="externalSensorsList" type="list" rows="4">
+                <Label>Linked Sensors:</Label>
+                <List class="self" method="getConfiguredExternalSensors" dynamicReload="true"/>
+            </Field>
+            <Field id="removeExternalSensorsButton" type="button">
+                <Label/>
+                <Title>Remove Selected</Title>
+                <CallbackMethod>removeExternalSensors</CallbackMethod>
+            </Field>
+            <Field id="externalSensorsJson" type="textfield" hidden="true" defaultValue="[]">
+                <Label/>
+            </Field>
+            <Field id="externalSensorsHelp" type="label" fontSize="small" fontColor="darkgray" alignWithControl="true">
+                <Label>Readings from all linked sensors are averaged and pushed to Netro whenever a sensor updates, overriding Netro's own moisture model for smart scheduling.</Label>
+            </Field>
         </ConfigUI>
         <States>
             <State id="moisture">

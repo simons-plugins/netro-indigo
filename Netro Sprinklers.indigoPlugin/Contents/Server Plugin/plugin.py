@@ -111,6 +111,14 @@ class Plugin(indigo.PluginBase):
         # not re-logged every poll. Lazy-init in `_log_moisture_source_transition`
         # for tests that bypass __init__ via Plugin.__new__(Plugin).
         self._last_logged_moisture_source = {}
+        # External soil sensor → zone index: {sensor_dev_id: set(zone_dev_id)}.
+        # Rebuilt from zone pluginProps in startup()/deviceStartComm()/deviceStopComm().
+        # Lazy-init guarded via getattr in the rebuild/lookup path for tests that
+        # bypass __init__ via Plugin.__new__(Plugin).
+        self._external_sensor_index = {}
+        # Last averaged moisture value pushed to Netro per zone device id — avoids
+        # repeat API calls when the average hasn't changed.
+        self._last_pushed_external_moisture = {}
         self.pluginId = pluginId
         self.debug = pluginPrefs.get("showDebugInfo", False)
         self.timeout = int(pluginPrefs.get("apiTimeout", DEFAULT_API_TIMEOUT_SECONDS))
@@ -1118,6 +1126,10 @@ class Plugin(indigo.PluginBase):
         # Subscribe to variable changes for zone moisture auto-link
         indigo.variables.subscribeToChanges()
 
+        # Subscribe to device changes for external soil sensor → zone moisture push
+        indigo.devices.subscribeToChanges()
+        self._rebuild_external_sensor_index()
+
     ########################################
     def shutdown(self):
         """Called when plugin is disabled or Indigo quits.
@@ -1226,6 +1238,160 @@ class Plugin(indigo.PluginBase):
         )
         options.extend((str(d.id), d.name) for d in whisperers)
         return options
+
+    ########################################
+    # pylint: disable=unused-argument
+    def getExternalSensorDevices(self, filter="", valuesDict=None, typeId="", targetId=0):
+        """Populate the `externalSensorDevice` dropdown on zone ConfigUI.
+
+        Returns a list of (value, label) tuples:
+          - First entry: ("", "(Select a sensor device)") sentinel.
+          - Remaining entries: every Indigo device except this plugin's own
+            devices, sorted case-insensitively by name. Value is the Indigo
+            device ID as a string; label is the device name.
+        """
+        own_ids = {d.id for d in indigo.devices.iter(filter="self")}
+        others = sorted(
+            (d for d in indigo.devices if d.id not in own_ids),
+            key=lambda d: d.name.lower(),
+        )
+        options = [("", "(Select a sensor device)")]
+        options.extend((str(d.id), d.name) for d in others)
+        return options
+
+    ########################################
+    # pylint: disable=unused-argument
+    def getExternalSensorStates(self, filter="", valuesDict=None, typeId="", targetId=0):
+        """Populate the `externalSensorState` dropdown on zone ConfigUI.
+
+        Returns the state keys of the device currently selected in
+        `externalSensorDevice` (read from valuesDict), labeled as
+        "stateKey (current: value)". Keys containing "moist", "humid", or
+        "sensorValue" (case-insensitive) sort first, then alphabetically.
+        Returns a single "(Select a device first)" sentinel when no device
+        is selected or it can't be resolved.
+        """
+        values = valuesDict or {}
+        dev_id_str = values.get("externalSensorDevice", "")
+        if not dev_id_str:
+            return [("", "(Select a device first)")]
+        try:
+            dev = indigo.devices[int(dev_id_str)]
+        except (KeyError, ValueError, TypeError):
+            return [("", "(Select a device first)")]
+
+        priority_terms = ("moist", "humid", "sensorvalue")
+
+        def sort_key(state_id):
+            lower = state_id.lower()
+            is_priority = any(term in lower for term in priority_terms)
+            return (0 if is_priority else 1, lower)
+
+        state_ids = sorted(dev.states.keys(), key=sort_key)
+        return [(sid, f"{sid} (current: {dev.states.get(sid)})") for sid in state_ids]
+
+    ########################################
+    # pylint: disable=unused-argument
+    def externalSensorDeviceChanged(self, valuesDict, typeId, devId):
+        """Menu callback for `externalSensorDevice` — no state change needed.
+
+        Its only purpose is to trigger a dynamicReload of the dependent
+        `externalSensorState` list.
+        """
+        return valuesDict
+
+    ########################################
+    def addExternalSensor(self, valuesDict, typeId, devId):
+        """Button callback: append the selected device/state to `externalSensorsJson`.
+
+        Validates that a device and state are selected (logs a warning and
+        returns valuesDict unchanged otherwise). Dedupes on (dev_id, state_id).
+        Clears the device/state selections on success so the fields are ready
+        for the next sensor to add.
+        """
+        dev_id_str = valuesDict.get("externalSensorDevice", "")
+        state_id = valuesDict.get("externalSensorState", "")
+        scale = valuesDict.get("externalSensorScale", "percent")
+
+        if not dev_id_str or not state_id:
+            self.logger.warning("Select a sensor device and state before clicking Add Sensor.")
+            return valuesDict
+
+        try:
+            dev_id = int(dev_id_str)
+        except (ValueError, TypeError):
+            self.logger.warning(f"Invalid external sensor device id '{dev_id_str}'.")
+            return valuesDict
+
+        try:
+            entries = json.loads(valuesDict.get("externalSensorsJson", "") or "[]")
+            if not isinstance(entries, list):
+                entries = []
+        except (json.JSONDecodeError, TypeError):
+            entries = []
+
+        if any(e.get("dev_id") == dev_id and e.get("state_id") == state_id for e in entries):
+            self.logger.warning(f"Sensor state '{state_id}' is already linked — skipping duplicate.")
+        else:
+            entries.append({"dev_id": dev_id, "state_id": state_id, "scale": scale})
+            valuesDict["externalSensorsJson"] = json.dumps(entries)
+
+        valuesDict["externalSensorDevice"] = ""
+        valuesDict["externalSensorState"] = ""
+        return valuesDict
+
+    ########################################
+    # pylint: disable=unused-argument
+    def getConfiguredExternalSensors(self, filter="", valuesDict=None, typeId="", targetId=0):
+        """Populate the `externalSensorsList` list field on zone ConfigUI.
+
+        Parses `externalSensorsJson` and returns one entry per configured
+        sensor, labeled "DeviceName -> stateKey (scale)" with value
+        "devId:stateKey".
+        """
+        values = valuesDict or {}
+        try:
+            entries = json.loads(values.get("externalSensorsJson", "") or "[]")
+            if not isinstance(entries, list):
+                entries = []
+        except (json.JSONDecodeError, TypeError):
+            entries = []
+
+        options = []
+        for entry in entries:
+            dev_id = entry.get("dev_id")
+            state_id = entry.get("state_id", "")
+            scale = entry.get("scale", "percent")
+            try:
+                dev_name = indigo.devices[int(dev_id)].name
+            except (KeyError, ValueError, TypeError):
+                dev_name = f"(missing device {dev_id})"
+            options.append((f"{dev_id}:{state_id}", f"{dev_name} → {state_id} ({scale})"))
+        return options
+
+    ########################################
+    def removeExternalSensors(self, valuesDict, typeId, devId):
+        """Button callback: remove the entries selected in `externalSensorsList`."""
+        selected = valuesDict.get("externalSensorsList", [])
+        if isinstance(selected, str):
+            selected = [selected] if selected else []
+        selected_keys = set(selected)
+        if not selected_keys:
+            return valuesDict
+
+        try:
+            entries = json.loads(valuesDict.get("externalSensorsJson", "") or "[]")
+            if not isinstance(entries, list):
+                entries = []
+        except (json.JSONDecodeError, TypeError):
+            entries = []
+
+        remaining = [
+            e for e in entries
+            if f"{e.get('dev_id')}:{e.get('state_id')}" not in selected_keys
+        ]
+        valuesDict["externalSensorsJson"] = json.dumps(remaining)
+        return valuesDict
 
     def _resolve_zone_moisture(self, zone_dev, forecast_val):
         """Resolve the "moisture" state value for a zone device.
@@ -1393,6 +1559,181 @@ class Plugin(indigo.PluginBase):
                 f"'{new_source}' ({type(exc).__name__}: {exc}) — using "
                 f"in-memory fallback so the transition log will not repeat."
             )
+
+    ########################################
+    # External soil sensor -> zone moisture push
+    ########################################
+    def _rebuild_external_sensor_index(self):
+        """Rebuild the external sensor -> zone index from all zone devices.
+
+        Iterates this plugin's zone devices, parses each one's
+        ``externalSensorsJson`` pluginProp, and rebuilds
+        ``self._external_sensor_index`` as {sensor_dev_id: set(zone_dev_id)}.
+        Corrupt per-zone JSON is tolerated (warning logged, zone skipped)
+        rather than failing the whole rebuild.
+        """
+        index = {}
+        for zone_dev in indigo.devices.iter(filter="self"):
+            if zone_dev.deviceTypeId != "zone":
+                continue
+            raw = zone_dev.pluginProps.get("externalSensorsJson", "")
+            if not raw:
+                continue
+            try:
+                entries = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                self.logger.warning(
+                    f"Zone '{zone_dev.name}': externalSensorsJson is corrupt — "
+                    f"skipping external sensor linkage for this zone."
+                )
+                continue
+            if not isinstance(entries, list):
+                continue
+            for entry in entries:
+                try:
+                    sensor_id = int(entry.get("dev_id"))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                index.setdefault(sensor_id, set()).add(zone_dev.id)
+        self._external_sensor_index = index
+
+    def _normalize_external_reading(self, raw, scale):
+        """Normalize a raw external sensor reading to an int percentage.
+
+        Args:
+            raw: Raw state value — int, float, or str (may have a trailing
+                "%" and/or surrounding whitespace).
+            scale: "percent" (0-100 as-is) or "fraction" (0.0-1.0, scaled by 100).
+
+        Returns:
+            int in [0, 100], or None if the value is missing, non-numeric,
+            or out of range after scaling.
+        """
+        if isinstance(raw, str):
+            stripped = raw.strip()
+            if stripped.endswith("%"):
+                stripped = stripped[:-1].strip()
+            raw = stripped
+
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            self.logger.debug(f"External sensor reading rejected (not numeric): {raw!r}")
+            return None
+
+        if scale == "fraction":
+            value *= 100
+
+        result = round(value)
+        if result < 0 or result > 100:
+            self.logger.debug(
+                f"External sensor reading rejected (out of range 0-100): "
+                f"{raw!r} (scale={scale}) -> {result}"
+            )
+            return None
+        return int(result)
+
+    def _compute_external_average(self, zone_dev):
+        """Average the current readings of all sensors linked to a zone.
+
+        Args:
+            zone_dev: Netro zone device.
+
+        Returns:
+            Tuple of (avg, used, total):
+                avg: int 0-100, or None if no sensor produced a usable reading.
+                used: count of sensors that produced a usable reading.
+                total: count of configured sensor entries for this zone.
+        """
+        raw = zone_dev.pluginProps.get("externalSensorsJson", "")
+        try:
+            entries = json.loads(raw) if raw else []
+        except (json.JSONDecodeError, TypeError):
+            entries = []
+        if not isinstance(entries, list):
+            entries = []
+
+        total = len(entries)
+        readings = []
+        for entry in entries:
+            try:
+                sensor_id = int(entry.get("dev_id"))
+            except (AttributeError, TypeError, ValueError):
+                continue
+            state_id = entry.get("state_id", "")
+            scale = entry.get("scale", "percent")
+
+            try:
+                sensor_dev = indigo.devices[sensor_id]
+            except KeyError:
+                continue
+            if not sensor_dev.enabled:
+                continue
+
+            normalized = self._normalize_external_reading(sensor_dev.states.get(state_id), scale)
+            if normalized is not None:
+                readings.append(normalized)
+
+        used = len(readings)
+        if used == 0:
+            return None, 0, total
+        return round(sum(readings) / used), used, total
+
+    def _push_external_moisture(self, zone_dev):
+        """Push the averaged external-sensor moisture reading to Netro.
+
+        No-ops if no sensors produced a usable reading, or if the computed
+        average matches the last value pushed for this zone (protects the
+        Netro API token budget from repeated identical pushes).
+
+        Args:
+            zone_dev: Netro zone device.
+        """
+        avg, used, total = self._compute_external_average(zone_dev)
+        if avg is None:
+            self.logger.debug(
+                f"Zone '{zone_dev.name}': no usable external sensor readings "
+                f"({used} of {total}) — skipping moisture push."
+            )
+            return
+
+        last_pushed = getattr(self, "_last_pushed_external_moisture", None)
+        if last_pushed is None:
+            last_pushed = {}
+            self._last_pushed_external_moisture = last_pushed
+
+        if last_pushed.get(zone_dev.id) == avg:
+            return
+
+        try:
+            zone_num = int(zone_dev.pluginProps.get("zoneNumber", 0))
+            parent_id = int(zone_dev.pluginProps.get("parentDeviceId", 0))
+            try:
+                parent_dev = indigo.devices[parent_id]
+            except KeyError:
+                self.logger.error(
+                    f"Parent controller (ID {parent_id}) "
+                    f"not found for zone '{zone_dev.name}'"
+                )
+                return
+
+            key, api_version = self._get_device_auth(parent_dev)
+            response = self.api_client.set_moisture(key, zone_num, avg, api_version=api_version)
+            if response.get("status") == "OK":
+                last_pushed[zone_dev.id] = avg
+                zone_dev.updateStateOnServer("moisture", avg, uiValue=f"{avg}%")
+                self.logger.info(
+                    f"Pushed averaged soil moisture {avg}% ({used} of {total} sensors) "
+                    f"to Netro for zone '{zone_dev.name}'"
+                )
+            else:
+                self.logger.error(
+                    f"Error pushing averaged moisture for zone '{zone_dev.name}': "
+                    f"{response.get('status')}"
+                )
+        except Exception:
+            self.logger.error(f"Could not push averaged external moisture for zone '{zone_dev.name}'")
+            self.logger.debug(f"API error: \n{traceback.format_exc(10)}")
 
     ########################################
     # Validation callbacks
@@ -1591,7 +1932,10 @@ class Plugin(indigo.PluginBase):
         """
         # Don't update here - would cause duplicate API calls for each device
         # The concurrent thread handles regular updates
-        pass
+        # Indigo restarts comm after a device config save, so this keeps the
+        # external-sensor index fresh after the user edits a zone's sensor list.
+        if dev.deviceTypeId == "zone":
+            self._rebuild_external_sensor_index()
 
     # pylint: disable=unused-argument
     def deviceStopComm(self, dev):
@@ -1601,6 +1945,59 @@ class Plugin(indigo.PluginBase):
             dev: Device stopping communication
         """
         self.logger.debug("Stopping device")
+        if dev.deviceTypeId == "zone":
+            self._rebuild_external_sensor_index()
+
+    ########################################
+    def deviceUpdated(self, origDev, newDev):
+        """Called on any Indigo device update (subscribed via subscribeToChanges).
+
+        If the updated device is a linked external soil sensor, and its
+        configured state actually changed, pushes a fresh averaged moisture
+        reading to each Netro zone it's linked to.
+
+        Args:
+            origDev: Device before the change
+            newDev: Device after the change
+        """
+        super().deviceUpdated(origDev, newDev)
+
+        index = getattr(self, "_external_sensor_index", None)
+        if not index:
+            return
+        zone_ids = index.get(newDev.id)
+        if not zone_ids:
+            return
+
+        for zone_id in zone_ids:
+            try:
+                zone_dev = indigo.devices[zone_id]
+            except KeyError:
+                continue
+
+            raw = zone_dev.pluginProps.get("externalSensorsJson", "")
+            try:
+                entries = json.loads(raw) if raw else []
+            except (json.JSONDecodeError, TypeError):
+                continue
+            if not isinstance(entries, list):
+                continue
+
+            changed = False
+            for entry in entries:
+                try:
+                    sensor_id = int(entry.get("dev_id"))
+                except (AttributeError, TypeError, ValueError):
+                    continue
+                if sensor_id != newDev.id:
+                    continue
+                state_id = entry.get("state_id", "")
+                if origDev.states.get(state_id) != newDev.states.get(state_id):
+                    changed = True
+                    break
+
+            if changed:
+                self._push_external_moisture(zone_dev)
 
     ########################################
     # Event callbacks
